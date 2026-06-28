@@ -24,3 +24,85 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Mobile responsive fixes for BEEN MEDIA ERP */
+html,
+body {
+  overflow-x: hidden;
+}
+
+@media (max-width: 768px) {
+  main {
+    width: 100%;
+    overflow-x: hidden;
+  }
+
+  h1.text-3xl {
+    font-size: 1.5rem !important;
+    line-height: 2rem !important;
+  }
+
+  .text-5xl {
+    font-size: 2rem !important;
+    line-height: 2.5rem !important;
+  }
+
+  .text-3xl {
+    font-size: 1.5rem !important;
+    line-height: 2rem !important;
+  }
+
+  .text-2xl {
+    font-size: 1.25rem !important;
+    line-height: 1.75rem !important;
+  }
+
+  .grid.grid-cols-5,
+  .grid.grid-cols-4,
+  .grid.grid-cols-3,
+  .grid.grid-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0.75rem !important;
+  }
+
+  .grid.grid-cols-5 > *,
+  .grid.grid-cols-4 > *,
+  .grid.grid-cols-3 > *,
+  .grid.grid-cols-2 > * {
+    min-width: 0;
+  }
+
+  .rounded-xl.p-6,
+  .rounded-xl.p-5 {
+    padding: 1rem !important;
+  }
+
+  .mb-8.flex.items-center.justify-between,
+  .flex.items-center.justify-between.mb-8 {
+    align-items: flex-start !important;
+    flex-direction: column !important;
+    gap: 0.75rem !important;
+  }
+
+  .mb-8.flex.items-center.justify-between button,
+  .flex.items-center.justify-between.mb-8 button {
+    width: 100% !important;
+  }
+
+  table {
+    white-space: nowrap;
+  }
+
+  .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+@media (max-width: 480px) {
+  .grid.grid-cols-5,
+  .grid.grid-cols-4,
+  .grid.grid-cols-3,
+  .grid.grid-cols-2 {
+    grid-template-columns: 1fr !important;
+  }
+}
