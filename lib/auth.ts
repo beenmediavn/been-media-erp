@@ -38,12 +38,12 @@ export const ROLE_OPTIONS: { value: AppRole; label: string }[] = [
 
 export const ROLE_PERMISSIONS: Record<AppRole, string[]> = {
   admin: ["dashboard", "customers", "schedule", "job", "employees", "reserve", "payments", "cashflow", "salary", "drive", "reports", "ai", "settings"],
-  coordinator: ["dashboard", "customers", "schedule", "job", "reserve", "drive"],
-  photographer: ["dashboard", "schedule", "job", "drive", "salary"],
-  videographer: ["dashboard", "schedule", "job", "drive", "salary"],
-  editor: ["dashboard", "job", "drive"],
-  accountant: ["dashboard", "customers", "payments", "cashflow", "salary", "reports"],
-  viewer: ["dashboard", "schedule", "job", "drive"],
+  coordinator: ["dashboard", "schedule", "job", "salary"],
+  photographer: ["dashboard", "schedule", "job", "salary"],
+  videographer: ["dashboard", "schedule", "job", "salary"],
+  editor: ["dashboard", "schedule", "job", "salary"],
+  accountant: ["dashboard", "schedule", "job", "salary"],
+  viewer: ["dashboard", "schedule", "job", "salary"],
 };
 
 export function normalizeRole(role: string | null | undefined): AppRole {
