@@ -26,7 +26,7 @@ export default function LoginPage() {
 
     const { data, error } = await supabase
       .from("employees")
-      .select("id, full_name, phone, role, app_role, username, password, active")
+      .select("*")
       .eq("username", user)
       .eq("password", pass)
       .maybeSingle();
@@ -38,7 +38,7 @@ export default function LoginPage() {
       return;
     }
 
-    if (!data || data.active === false) {
+    if (!data || data.active === false || (Object.prototype.hasOwnProperty.call(data, "can_login") && data.can_login === false)) {
       alert("Sai tài khoản/mật khẩu hoặc tài khoản đã bị khóa.");
       return;
     }
