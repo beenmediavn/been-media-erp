@@ -7,8 +7,8 @@ import { normalizeRole, ROLE_LABELS, saveSession } from "@/lib/auth";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("123456");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function handleLogin(e: React.FormEvent) {
@@ -57,7 +57,7 @@ export default function LoginPage() {
 
   return (
     <main className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-      <form onSubmit={handleLogin} className="w-full max-w-md rounded-3xl bg-white p-8 shadow-2xl">
+      <form onSubmit={handleLogin} autoComplete="off" className="w-full max-w-md rounded-3xl bg-white p-8 shadow-2xl">
         <div className="mb-8 text-center">
           <h1 className="text-3xl font-bold text-blue-600">BEEN MEDIA</h1>
           <p className="mt-1 text-slate-500">Đăng nhập ERP Management</p>
@@ -66,11 +66,11 @@ export default function LoginPage() {
         <div className="space-y-4">
           <div>
             <label className="mb-1 block text-sm font-semibold">Tài khoản</label>
-            <input className="w-full rounded-xl border p-3" value={username} onChange={(e) => setUsername(e.target.value)} />
+            <input name="erp_username" autoComplete="off" autoCapitalize="none" spellCheck={false} className="w-full rounded-xl border p-3" value={username} onChange={(e) => setUsername(e.target.value)} />
           </div>
           <div>
             <label className="mb-1 block text-sm font-semibold">Mật khẩu</label>
-            <input type="password" className="w-full rounded-xl border p-3" value={password} onChange={(e) => setPassword(e.target.value)} />
+            <input name="erp_password" type="password" autoComplete="new-password" className="w-full rounded-xl border p-3" value={password} onChange={(e) => setPassword(e.target.value)} />
           </div>
         </div>
 
@@ -78,9 +78,6 @@ export default function LoginPage() {
           {loading ? "Đang đăng nhập..." : "Đăng nhập"}
         </button>
 
-        <div className="mt-5 rounded-xl bg-slate-100 p-3 text-sm text-slate-600">
-          Tài khoản mặc định: <b>admin</b> / <b>123456</b>. Sau đó vào Nhân sự để tạo tài khoản cho thợ, editor, kế toán.
-        </div>
       </form>
     </main>
   );

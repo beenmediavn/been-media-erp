@@ -1,10 +1,16 @@
 {
+  "id": "/",
   "name": "BEEN MEDIA ERP",
   "short_name": "BEEN ERP",
-  "start_url": "/",
+  "start_url": "/?pwa=1",
   "scope": "/",
   "display": "standalone",
+  "orientation": "any",
   "background_color": "#f1f5f9",
   "theme_color": "#0f172a",
-  "description": "Quản lý Job, lịch, tài chính và nhân sự BEEN MEDIA"
+  "description": "Quản lý Job, lịch, tài chính và nhân sự BEEN MEDIA",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
 }
