@@ -1,0 +1,16 @@
+BEEN MEDIA ERP V7.8 AI
+
+1) Mở file .env.local trong thư mục app.
+2) Thêm 2 dòng:
+   OPENAI_API_KEY=sk-KEY_CUA_BAN
+   OPENAI_AI_MODEL=gpt-5.6-luna
+3) Lưu file.
+4) Tắt PowerShell đang chạy app rồi chạy lại:
+   npm run dev -- -p 3005
+5) Vào menu "AI Trợ lý".
+
+AI có 2 chức năng:
+- AI tạo Job: dán tin nhắn khách -> AI điền trước -> mở form Job -> bạn kiểm tra -> Lưu.
+- Hỏi AI: hỏi bằng tiếng Việt về Job, công nợ, Thu/Chi, lương và lịch.
+
+LƯU Ý: Không gửi API key cho người khác. Không đặt key trong NEXT_PUBLIC_... vì sẽ lộ trên trình duyệt.
