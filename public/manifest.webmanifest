@@ -2,8 +2,9 @@
   "name": "BEEN MEDIA ERP",
   "short_name": "BEEN ERP",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#15302b",
-  "theme_color": "#15302b",
+  "background_color": "#f1f5f9",
+  "theme_color": "#0f172a",
   "description": "Quản lý Job, lịch, tài chính và nhân sự BEEN MEDIA"
 }

@@ -21,10 +21,10 @@ const menus=[
 {key:"settings",name:"Cài đặt",icon:Settings,href:"/settings"},
 ];
 export default function Sidebar({user,open=false,onClose}:{user:AppUser;open?:boolean;onClose?:()=>void}){
- const pathname=usePathname(); const visible=menus.filter(i=>canAccess(user.role,i.key)); const brand=useBranding();
+ const pathname=usePathname(); const aiEnabled=process.env.NEXT_PUBLIC_ENABLE_AI==="true"; const visible=menus.filter(i=>canAccess(user.role,i.key) && (i.key!=="ai" || aiEnabled)); const brand=useBranding();
  return <aside className={`fixed inset-y-0 left-0 z-50 w-72 max-w-[82vw] bg-slate-950 p-5 text-white transition-transform duration-300 lg:sticky lg:top-0 lg:z-auto lg:min-h-screen lg:translate-x-0 lg:p-6 ${open?"translate-x-0":"-translate-x-full"}`}>
   <div className="mb-8 flex items-start justify-between gap-4"><Link href="/" className="flex min-w-0 items-center gap-3" onClick={onClose}>{brand.logo?<img src={brand.logo} alt="Logo" className="h-10 w-10 rounded-lg object-contain"/>:<span className="grid h-10 w-10 place-items-center rounded-lg bg-slate-900 text-blue-400"><Aperture size={25}/></span>}<div><h1 className="truncate text-xl font-bold text-blue-400">{brand.companyName}</h1><p className="text-xs text-gray-400">ERP Management</p></div></Link><button aria-label="Đóng menu" onClick={onClose} className="rounded-lg p-2 text-slate-300 hover:bg-slate-800 lg:hidden"><X size={22}/></button></div>
   <nav className="space-y-2">{visible.map(item=>{const I=item.icon;const active=item.href==="/"?pathname==="/":pathname.startsWith(item.href);return <Link key={item.name} href={item.href} onClick={onClose} className={`flex w-full items-center gap-3 rounded-xl p-3 transition ${active?"bg-blue-600 text-white shadow":"text-slate-200 hover:bg-slate-800"}`}><I size={20}/><span>{item.name}</span></Link>})}</nav>
-  <div className="mt-8 border-t border-slate-800 pt-3 text-[10px] text-slate-500">V7.8 • GIAO DIỆN GỐC + AI</div>
+  <div className="mt-8 border-t border-slate-800 pt-3 text-[10px] text-slate-500">V7.9 • BẢN VẬN HÀNH ỔN ĐỊNH</div>
  </aside>
 }

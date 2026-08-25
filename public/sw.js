@@ -1,8 +1,30 @@
-const CACHE='been-erp-v6-shell';
-const SHELL=['/','/job','/schedule','/payments','/salary','/reports','/cashflow','/settings','/manifest.webmanifest'];
-self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL).catch(()=>{}))));
-self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));
-self.addEventListener('fetch',e=>{
-  if(e.request.method!=='GET') return;
-  e.respondWith(fetch(e.request).then(r=>{const copy=r.clone();caches.open(CACHE).then(c=>c.put(e.request,copy)).catch(()=>{});return r;}).catch(()=>caches.match(e.request).then(r=>r||caches.match('/'))));
+const CACHE='been-erp-v7-9-shell';
+const SHELL=['/','/login','/customers','/schedule','/job','/employees','/reserve','/payments','/cashflow','/salary','/drive','/reports','/settings','/manifest.webmanifest'];
+self.addEventListener('install',event=>{
+  self.skipWaiting();
+  event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL).catch(()=>{})));
+});
+self.addEventListener('activate',event=>{
+  event.waitUntil(Promise.all([
+    self.clients.claim(),
+    caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k))))
+  ]));
+});
+self.addEventListener('fetch',event=>{
+  const req=event.request;
+  if(req.method!=='GET') return;
+  const url=new URL(req.url);
+  if(url.origin!==self.location.origin || url.pathname.startsWith('/api/')) return;
+  if(req.mode==='navigate'){
+    event.respondWith(fetch(req).then(res=>{
+      const copy=res.clone();
+      caches.open(CACHE).then(c=>c.put(req,copy)).catch(()=>{});
+      return res;
+    }).catch(()=>caches.match(req).then(r=>r||caches.match('/'))));
+    return;
+  }
+  event.respondWith(caches.match(req).then(cached=>cached||fetch(req).then(res=>{
+    if(res.ok){const copy=res.clone();caches.open(CACHE).then(c=>c.put(req,copy)).catch(()=>{});}
+    return res;
+  })));
 });

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 export const runtime = "nodejs";
 
 const MODEL = process.env.OPENAI_AI_MODEL || "gpt-5.6-luna";
+const AI_ENABLED = process.env.ENABLE_AI === "true" || process.env.NEXT_PUBLIC_ENABLE_AI === "true";
 const MAX_INPUT = 24000;
 
 function sameOrigin(req: NextRequest) {
@@ -40,11 +41,12 @@ async function callOpenAI(input: string) {
 }
 
 export async function GET() {
-  return NextResponse.json({ configured: Boolean(process.env.OPENAI_API_KEY), model: MODEL });
+  return NextResponse.json({ enabled: AI_ENABLED, configured: AI_ENABLED && Boolean(process.env.OPENAI_API_KEY), model: MODEL });
 }
 
 export async function POST(req: NextRequest) {
   try {
+    if (!AI_ENABLED) return NextResponse.json({ error: "AI đang tạm tắt. Có thể bật lại sau trong biến môi trường.", code: "AI_DISABLED" }, { status: 503 });
     if (!sameOrigin(req)) return NextResponse.json({ error: "Yêu cầu không hợp lệ." }, { status: 403 });
     const body = await req.json();
     const mode = String(body?.mode || "");

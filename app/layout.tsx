@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import PwaRegister from "./components/PwaRegister";
+import OnlineStatus from "./components/OnlineStatus";
 
 export const metadata: Metadata = {
   title: "BEEN MEDIA ERP",
   description: "Quản lý khách hàng, job, lịch chụp, nhân sự, lương và công nợ",
   manifest: "/manifest.webmanifest",
-  themeColor: "#f8fafc",
+  themeColor: "#f1f5f9",
 };
 
 export default function RootLayout({
@@ -16,7 +17,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="vi" className="h-full antialiased">
-      <body className="min-h-full flex flex-col"><PwaRegister />{children}</body>
+      <body className="min-h-full flex flex-col"><PwaRegister /><OnlineStatus />{children}</body>
     </html>
   );
 }
