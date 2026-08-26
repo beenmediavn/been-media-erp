@@ -7,7 +7,12 @@ export const metadata: Metadata = {
   title: "BEEN MEDIA ERP",
   description: "Quản lý khách hàng, job, lịch chụp, nhân sự, lương và công nợ",
   manifest: "/manifest.webmanifest",
-  themeColor: "#f1f5f9",
+  themeColor: "#ffffff",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "BEEN ERP",
+  },
 };
 
 export default function RootLayout({
