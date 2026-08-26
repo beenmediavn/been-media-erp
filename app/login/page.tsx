@@ -15,7 +15,7 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
 
-    const user = username.trim();
+    const user = username.trim().toLowerCase();
     const pass = password.trim();
 
     if (user === "admin" && pass === "123456") {
@@ -27,7 +27,7 @@ export default function LoginPage() {
     const { data, error } = await supabase
       .from("employees")
       .select("*")
-      .eq("username", user)
+      .ilike("username", user)
       .eq("password", pass)
       .maybeSingle();
 
@@ -39,7 +39,7 @@ export default function LoginPage() {
     }
 
     if (!data || data.active === false || (Object.prototype.hasOwnProperty.call(data, "can_login") && data.can_login === false)) {
-      alert("Sai tài khoản/mật khẩu hoặc tài khoản đã bị khóa.");
+      alert("Sai tài khoản/mật khẩu hoặc tài khoản chưa được cho phép đăng nhập.");
       return;
     }
 

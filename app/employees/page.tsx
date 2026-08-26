@@ -18,6 +18,7 @@ const emptyForm = {
   password: "123456",
   base_fee: 0,
   active: true,
+  can_login: true,
 };
 
 export default function EmployeesPage() {
@@ -70,6 +71,7 @@ export default function EmployeesPage() {
       password: employee.password || "123456",
       base_fee: Number(employee.base_fee || 0),
       active: employee.active ?? true,
+      can_login: employee.can_login ?? true,
     });
     setOpenForm(true);
   };
@@ -79,8 +81,34 @@ export default function EmployeesPage() {
       alert("Vui lòng nhập tên nhân sự");
       return;
     }
+    if (!form.username.trim()) {
+      alert("Vui lòng nhập tài khoản đăng nhập");
+      return;
+    }
+    if (!form.password.trim()) {
+      alert("Vui lòng nhập mật khẩu");
+      return;
+    }
 
-    const payload = { ...form, role: ROLE_OPTIONS.find((r) => r.value === form.app_role)?.label || form.role, base_fee: Number(form.base_fee || 0) };
+    const normalizedUsername = form.username.trim().toLowerCase();
+    const duplicate = employees.find(
+      (e) =>
+        String(e.username || "").trim().toLowerCase() === normalizedUsername &&
+        e.id !== editing?.id
+    );
+    if (duplicate) {
+      alert("Tài khoản đăng nhập đã tồn tại. Vui lòng chọn tài khoản khác.");
+      return;
+    }
+
+    const payload = {
+      ...form,
+      username: normalizedUsername,
+      password: form.password.trim(),
+      can_login: form.can_login !== false,
+      role: ROLE_OPTIONS.find((r) => r.value === form.app_role)?.label || form.role,
+      base_fee: Number(form.base_fee || 0),
+    };
     const request = editing
       ? supabase.from("employees").update(payload).eq("id", editing.id)
       : supabase.from("employees").insert([payload]);
@@ -219,6 +247,14 @@ export default function EmployeesPage() {
               <div className="grid grid-cols-2 gap-3">
                 <input className="border p-3 rounded-lg" placeholder="Username đăng nhập" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
                 <input className="border p-3 rounded-lg" placeholder="Mật khẩu" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+                <label className="flex items-center gap-2 border p-3 rounded-lg">
+                  <input
+                    type="checkbox"
+                    checked={form.can_login !== false}
+                    onChange={(e) => setForm({ ...form, can_login: e.target.checked })}
+                  />
+                  <span>Cho phép tài khoản này đăng nhập</span>
+                </label>
               </div>
               <MoneyInput className="border p-3 rounded-lg w-full" placeholder="Lương mặc định / ca" value={form.base_fee} onChange={(v) => setForm({ ...form, base_fee: v })} />
             </div>
