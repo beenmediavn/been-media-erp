@@ -1,16 +1,15 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CalendarDays,BriefcaseBusiness,House,WalletCards,BarChart3,Banknote } from "lucide-react";
+import { CalendarDays,BriefcaseBusiness,House,MessagesSquare,Banknote } from "lucide-react";
 import { canAccess,type AppUser } from "@/lib/auth";
 
 const items=[
  {href:"/schedule",label:"Lịch",icon:CalendarDays,permission:"schedule"},
  {href:"/job",label:"Job",icon:BriefcaseBusiness,permission:"job"},
  {href:"/",label:"Tổng quát",icon:House,permission:"dashboard",primary:true},
- {href:"/cashflow",label:"Tiền",icon:WalletCards,permission:"cashflow"},
+ {href:"/chat",label:"Chat",icon:MessagesSquare,permission:"chat"},
  {href:"/salary",label:"Lương",icon:Banknote,permission:"salary"},
- {href:"/reports",label:"Báo cáo",icon:BarChart3,permission:"reports"},
 ];
 
 export default function MobileBottomNav({user}:{user:AppUser}){

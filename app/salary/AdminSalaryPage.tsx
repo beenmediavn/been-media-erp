@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import MainLayout from "../components/layout/MainLayout";
 import { supabase } from "@/lib/supabase";
 import MoneyInput from "../components/MoneyInput";
+import { formatDateVN } from "@/lib/date-vn";
 
 type SalaryFilter = "all" | "paid" | "unpaid" | "debt" | "advance";
 
@@ -264,7 +265,7 @@ export default function AdminSalaryPage() {
                 <tbody>
                   {selectedEmployee.jobs.map((job: any) => (
                     <tr key={job.id} className="border-b">
-                      <td className="p-2">{job.job_days?.shooting_date}<br /><span className="text-gray-500">{job.job_days?.start_time} - {job.job_days?.end_time}</span></td>
+                      <td className="p-2">{formatDateVN(job.job_days?.shooting_date)}<br /><span className="text-gray-500">{job.job_days?.start_time} - {job.job_days?.end_time}</span></td>
                       <td className="p-2">{job.jobs?.event_name || job.jobs?.customer_name}<br /><span className="text-gray-500">{job.jobs?.service}</span></td>
                       <td className="p-2">{job.role}</td>
                       <td className="p-2">{job.work_location_name}<br /><span className="text-gray-500">{job.work_location_address}</span></td>

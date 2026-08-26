@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import MainLayout from "../components/layout/MainLayout";
 import { supabase } from "@/lib/supabase";
 import MoneyInput from "../components/MoneyInput";
+import { formatDateVN } from "@/lib/date-vn";
 
 const money = (value: number | string | null | undefined) =>
   Number(value || 0).toLocaleString("vi-VN") + " đ";
@@ -1116,7 +1117,7 @@ function JobForm(props: any) {
 function JobDetail({ job, onClose, onEdit, onDelete }: any) {
   const copyFullJob = async () => {
     const lines:string[]=[`BEEN MEDIA - THÔNG TIN JOB`,`Sự kiện: ${job.event_name||job.customer_name||""}`,`Khách: ${job.customers?.full_name||job.customer_name||""}`,`SĐT khách: ${job.customers?.phone||job.customer_phone||""}`,`SĐT phụ: ${job.customers?.secondary_phone||job.secondary_phone||""}`,`Dịch vụ: ${job.service||""}`,`Ghi chú Job: ${job.note||""}`];
-    (job.job_days||[]).forEach((d:any,i:number)=>{lines.push(``,`Ngày ${i+1}: ${d.shooting_date||""} • ${d.start_time||"--:--"}-${d.end_time||"--:--"}`,`Địa điểm chung: ${d.location||""}`,`Ghi chú ngày: ${d.note||""}`);(d.job_assignments||[]).forEach((a:any)=>lines.push(`- ${a.role||""}: ${a.employees?.full_name||"Chưa chọn"} | ${a.work_location_name||""} | ${a.work_location_address||""} | SĐT: ${a.work_location_phone||""} | Lương: ${money(a.salary_amount)} | ${a.note||""}`))});
+    (job.job_days||[]).forEach((d:any,i:number)=>{lines.push(``,`Ngày ${i+1}: ${formatDateVN(d.shooting_date)||""} • ${d.start_time||"--:--"}-${d.end_time||"--:--"}`,`Địa điểm chung: ${d.location||""}`,`Ghi chú ngày: ${d.note||""}`);(d.job_assignments||[]).forEach((a:any)=>lines.push(`- ${a.role||""}: ${a.employees?.full_name||"Chưa chọn"} | ${a.work_location_name||""} | ${a.work_location_address||""} | SĐT: ${a.work_location_phone||""} | Lương: ${money(a.salary_amount)} | ${a.note||""}`))});
     await navigator.clipboard.writeText(lines.join("\n")); alert("Đã sao chép đầy đủ Job");
   };
   const toggleContact = async (assignment:any) => { const next=!Boolean(assignment.contact_visible); const {error}=await supabase.from("job_assignments").update({contact_visible:next}).eq("id",assignment.id); if(error)return alert(error.message); alert(next?"Đã mở SĐT cho thợ xem ngay":"Đã tắt mở sớm. Hệ thống vẫn tự mở trước 48 giờ."); window.location.reload(); };
@@ -1185,7 +1186,7 @@ function JobDetail({ job, onClose, onEdit, onDelete }: any) {
         <div className="space-y-4">
           {days.map((day: any, index: number) => (
             <div key={day.id} className="border rounded-xl p-4">
-              <h3 className="font-bold mb-2">Ngày {index + 1}: {day.shooting_date} • {day.start_time} - {day.end_time}</h3>
+              <h3 className="font-bold mb-2">Ngày {index + 1}: {formatDateVN(day.shooting_date)} • {day.start_time} - {day.end_time}</h3>
               <p className="text-gray-600 mb-3">Địa điểm: {day.location}</p>
               <table className="w-full">
                 <thead className="bg-slate-50"><tr><th className="text-left p-2">Địa điểm</th><th className="text-left p-2">Địa chỉ / SĐT</th><th className="text-left p-2">Vai trò</th><th className="text-left p-2">Thợ</th><th className="text-left p-2">Lương</th><th className="text-left p-2">SĐT cho thợ</th><th className="text-left p-2">Ghi chú</th></tr></thead>

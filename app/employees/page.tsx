@@ -5,6 +5,7 @@ import MainLayout from "../components/layout/MainLayout";
 import { supabase } from "@/lib/supabase";
 import MoneyInput from "../components/MoneyInput";
 import { ROLE_OPTIONS, normalizeRole } from "@/lib/auth";
+import { formatDateVN } from "@/lib/date-vn";
 
 const money = (value: number | string | null | undefined) =>
   Number(value || 0).toLocaleString("vi-VN") + " đ";
@@ -343,7 +344,7 @@ function EmployeeDetail({ employee, assignments, advances, payments, onClose, on
             <tbody>
               {monthAssignments.map((a: any) => (
                 <tr key={a.id} className="border-t">
-                  <td className="p-3">{a.job_days?.shooting_date} {a.job_days?.start_time}</td>
+                  <td className="p-3">{formatDateVN(a.job_days?.shooting_date)} {a.job_days?.start_time}</td>
                   <td className="p-3">{a.jobs?.customers?.full_name || a.jobs?.service}</td>
                   <td className="p-3">{a.role}</td>
                   <td className="p-3">{money(a.salary_amount)}</td>
