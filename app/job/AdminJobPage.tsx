@@ -56,12 +56,7 @@ const makeDay = () => ({
 });
 
 
-const formatDateVN = (value: string | null | undefined) => {
-  if (!value) return "";
-  const [year, month, day] = String(value).split("-");
-  if (!year || !month || !day) return String(value);
-  return `${day}/${month}/${year}`;
-};
+
 
 const normalizePhone = (value: string | null | undefined) =>
   String(value || "").replace(/\D/g, "");
