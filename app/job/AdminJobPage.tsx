@@ -159,6 +159,8 @@ export default function AdminJobPage() {
   const [filterYear, setFilterYear] = useState(new Date().getFullYear());
   const [filterMonth, setFilterMonth] = useState<"all"|number>("all");
   const [filterEmployee, setFilterEmployee] = useState("");
+  const quickBaseMonth = `${filterYear}-${String(filterMonth === "all" ? new Date().getMonth()+1 : filterMonth).padStart(2,"0")}`;
+
   const [offlineDraftCount, setOfflineDraftCount] = useState(0);
 
   const requestPin = async (action = "thao tác này") => {
@@ -931,7 +933,63 @@ export default function AdminJobPage() {
         />
       )}
     
-{showQuickJob&&<div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/50 sm:items-center sm:p-4"><div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-white p-5 sm:rounded-3xl"><div className="mb-4 flex justify-between"><div><h2 className="text-xl font-bold">Nhập Job nhanh</h2><p className="text-sm text-slate-500">Dán tin nhắn khách; phân công thợ vẫn nhập thủ công.</p></div><button onClick={()=>setShowQuickJob(false)}>✕</button></div><textarea value={quickText} onChange={e=>setQuickText(e.target.value)} rows={7} className="w-full rounded-2xl border p-4" placeholder="19: 6h chụp ăn hỏi... Tên( Quân + Yến )..."/><button onClick={()=>setQuickPreview(parseQuickJob(quickText,month))} className="mt-3 w-full rounded-xl bg-blue-600 p-3 font-bold text-white">Phân tích thông tin</button>{quickPreview&&<div className="mt-4 rounded-2xl bg-slate-50 p-4"><div className="grid gap-2 text-sm sm:grid-cols-2"><p><b>Ngày:</b> {formatDateVN(quickPreview.shooting_date)}</p><p><b>Giờ 24h:</b> {quickPreview.start_time||"Chưa nhận"}</p><p><b>Loại:</b> {quickPreview.event_name||"Chưa nhận"}</p><p><b>Chú rể:</b> {quickPreview.groom_name||"Chưa nhận"}</p><p><b>Cô dâu:</b> {quickPreview.bride_name||"Chưa nhận"}</p><p><b>SĐT chú rể:</b> {quickPreview.groom_phone||"Chưa nhận"}</p><p><b>SĐT cô dâu:</b> {quickPreview.bride_phone||"Chưa nhận"}</p><p><b>Nhà cô dâu:</b> {quickPreview.bride_address||"Chưa nhận"}</p><p><b>Nhà chú rể:</b> {quickPreview.groom_address||"Chưa nhận"}</p></div><button onClick={()=>{const q=quickPreview;setForm((f:any)=>({...f,event_name:q.event_name||f.event_name,customer_name:[q.groom_name,q.bride_name].filter(Boolean).join(" + ")||f.customer_name,customer_phone:q.groom_phone||f.customer_phone,secondary_phone:q.bride_phone||f.secondary_phone,address:q.location||q.groom_address||q.bride_address||f.address,note:[f.note,q.bride_address?`Nhà cô dâu: ${q.bride_address}`:"",q.groom_address?`Nhà chú rể: ${q.groom_address}`:"",`Tin gốc: ${quickText}`].filter(Boolean).join("\n"),job_days:[{...(f.job_days?.[0]||{}),shooting_date:q.shooting_date||f.job_days?.[0]?.shooting_date,start_time:q.start_time||f.job_days?.[0]?.start_time}]}));setShowQuickJob(false);setShowModal(true)}} className="mt-4 w-full rounded-xl bg-emerald-600 p-3 font-bold text-white">Đưa vào form Job để kiểm tra</button></div>}<p className="mt-3 text-xs text-slate-500">6h → 06:00 • 14h30 → 14:30. Không tự phân công nhân sự.</p></div></div>}
+{showQuickJob&&<div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/50 sm:items-center sm:p-4">
+        <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:rounded-3xl">
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <div><h2 className="text-xl font-bold">Nhập Job nhanh</h2><p className="text-sm text-slate-500">Dán tin nhắn khách. Phân công thợ vẫn nhập thủ công.</p></div>
+            <button onClick={()=>setShowQuickJob(false)} className="rounded-lg border px-3 py-2">✕</button>
+          </div>
+          <textarea value={quickText} onChange={e=>setQuickText(e.target.value)} rows={7} className="w-full rounded-2xl border p-4" placeholder="Ví dụ: 19: 6h chụp ăn hỏi... Tên( Quân + Yến ) - số điện thoại..."/>
+          <button onClick={()=>setQuickPreview(parseQuickJob(quickText,quickBaseMonth))} disabled={!quickText.trim()} className="mt-3 w-full rounded-xl bg-blue-600 p-3 font-bold text-white disabled:opacity-40">Phân tích thông tin</button>
+          {quickPreview&&<div className="mt-4 rounded-2xl bg-slate-50 p-4">
+            <h3 className="mb-3 font-bold">Kiểm tra thông tin nhận được</h3>
+            <div className="grid gap-2 text-sm sm:grid-cols-2">
+              <p><b>Ngày:</b> {formatDateVN(quickPreview.shooting_date)||"Chưa nhận"}</p>
+              <p><b>Giờ 24h:</b> {quickPreview.start_time||"Chưa nhận"}</p>
+              <p><b>Loại:</b> {quickPreview.event_name||"Chưa nhận"}</p>
+              <p><b>Chú rể:</b> {quickPreview.groom_name||"Chưa nhận"}</p>
+              <p><b>Cô dâu:</b> {quickPreview.bride_name||"Chưa nhận"}</p>
+              <p><b>SĐT chú rể:</b> {quickPreview.groom_phone||"Chưa nhận"}</p>
+              <p><b>SĐT cô dâu:</b> {quickPreview.bride_phone||"Chưa nhận"}</p>
+              <p><b>Địa điểm:</b> {quickPreview.location||"Chưa nhận"}</p>
+              <p><b>Nhà cô dâu:</b> {quickPreview.bride_address||"Chưa nhận"}</p>
+              <p><b>Nhà chú rể:</b> {quickPreview.groom_address||"Chưa nhận"}</p>
+            </div>
+            <button onClick={()=>{
+              const q=quickPreview;
+              setEditingJob(null);
+              setCustomerForm((c:any)=>({
+                ...c,
+                full_name:[q.groom_name,q.bride_name].filter(Boolean).join(" + ")||c.full_name,
+                phone:q.groom_phone||c.phone,
+                secondary_phone:q.bride_phone||c.secondary_phone,
+                address:q.location||q.groom_address||q.bride_address||c.address,
+              }));
+              setJobForm((j:any)=>({
+                ...j,
+                event_name:q.event_name||[q.groom_name,q.bride_name].filter(Boolean).join(" + ")||j.event_name,
+                location:q.location||j.location,
+                note:[
+                  j.note,
+                  q.bride_address?`Nhà cô dâu: ${q.bride_address}`:"",
+                  q.groom_address?`Nhà chú rể: ${q.groom_address}`:"",
+                  `Tin gốc: ${quickText}`
+                ].filter(Boolean).join("\n")
+              }));
+              setDays((prev:any[])=>{
+                const first=prev?.[0]||makeDay();
+                const locs=[...(first.locations||[])];
+                if(locs[0]&&q.groom_address) locs[0]={...locs[0],location_name:"Nhà chú rể",address:q.groom_address,phone:q.groom_phone||locs[0].phone};
+                if(locs[1]&&q.bride_address) locs[1]={...locs[1],location_name:"Nhà cô dâu",address:q.bride_address,phone:q.bride_phone||locs[1].phone};
+                return [{...first,shooting_date:q.shooting_date||first.shooting_date,start_time:q.start_time||first.start_time,locations:locs}];
+              });
+              setShowQuickJob(false);
+              setOpenForm(true);
+            }} className="mt-4 w-full rounded-xl bg-emerald-600 p-3 font-bold text-white">Đưa vào form Job để kiểm tra</button>
+          </div>}
+          <p className="mt-3 text-xs text-slate-500">Chuẩn 24 tiếng: 6h → 06:00 • 14h30 → 14:30. Hệ thống không tự phân công nhân sự.</p>
+        </div>
+      </div>}
 </MainLayout>
   );
 }
