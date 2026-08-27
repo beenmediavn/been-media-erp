@@ -927,6 +927,7 @@ export default function AdminJobPage() {
           reserveWorkers={reserveWorkers}
           customerForm={customerForm}
           setCustomerForm={setCustomerForm}
+          swapBrideGroomPhones={swapBrideGroomPhones}
           jobForm={jobForm}
           setJobForm={setJobForm}
           days={days}
@@ -1032,6 +1033,7 @@ function JobForm(props: any) {
     reserveWorkers,
     customerForm,
     setCustomerForm,
+    swapBrideGroomPhones,
     jobForm,
     setJobForm,
     days,
