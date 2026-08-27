@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import MainLayout from "../components/layout/MainLayout";
 import CustomerForm from "../components/CustomerForm";
+import { requireEditPin } from "@/lib/admin-pin";
 
 const money = (value: number | null | undefined) =>
   Number(value || 0).toLocaleString("vi-VN");
@@ -37,7 +38,7 @@ export default function CustomersPage() {
   }, []);
 
   const deleteCustomer = async (id: string) => {
-    if (!confirm("Bạn chắc chắn muốn xóa khách hàng?")) return;
+    if(!(await requireEditPin("xóa khách hàng"))) return;\n    if (!confirm("Bạn chắc chắn muốn xóa khách hàng?")) return;
 
     const { error } = await supabase.from("customers").delete().eq("id", id);
 

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import MainLayout from "../components/layout/MainLayout";
 import { supabase } from "@/lib/supabase";
 import { CalendarDays, Plus, Trash2, Users } from "lucide-react";
+import { requireEditPin } from "@/lib/admin-pin";
 
 const formatDate=(v:string)=>{if(!v)return "";const [y,m,d]=v.split("-");return `${d}/${m}/${y}`};
 const eachDate=(from:string,to:string)=>{const out:string[]=[];if(!from)return out;const start=new Date(`${from}T00:00:00`);const end=new Date(`${(to||from)}T00:00:00`);for(let d=new Date(start);d<=end;d.setDate(d.getDate()+1))out.push(new Date(d).toISOString().slice(0,10));return out};
@@ -40,7 +41,7 @@ export default function ReserveWorkersPage(){
     if(error)return alert(error.message);
     setNote("");await load();
   }
-  async function remove(id:string){if(!confirm("Bỏ thợ này khỏi danh sách dự phòng?"))return;const {error}=await supabase.from("reserve_workers").delete().eq("id",id);if(error)return alert(error.message);load()}
+  async function remove(id:string){if(!(await requireEditPin("xóa thợ dự phòng")))return;if(!confirm("Bỏ thợ này khỏi danh sách dự phòng?"))return;const {error}=await supabase.from("reserve_workers").delete().eq("id",id);if(error)return alert(error.message);load()}
 
   const grouped=useMemo(()=>rows.reduce((m:Record<string,any[]>,r:any)=>{(m[r.reserve_date]??=[]).push(r);return m},{}),[rows]);
 

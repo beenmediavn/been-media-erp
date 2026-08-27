@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import MoneyInput from "../components/MoneyInput";
 import { ROLE_OPTIONS, normalizeRole } from "@/lib/auth";
 import { formatDateVN } from "@/lib/date-vn";
+import { requireEditPin } from "@/lib/admin-pin";
 
 const money = (value: number | string | null | undefined) =>
   Number(value || 0).toLocaleString("vi-VN") + " đ";
@@ -127,7 +128,7 @@ export default function EmployeesPage() {
   }
 
   async function deleteEmployee(id: string) {
-    if (!confirm("Bạn chắc chắn muốn xóa nhân sự này?")) return;
+    if(!(await requireEditPin("xóa nhân sự"))) return;\n    if (!confirm("Bạn chắc chắn muốn xóa nhân sự này?")) return;
     const { error } = await supabase.from("employees").delete().eq("id", id);
     if (error) alert(error.message);
     loadData();

@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import MoneyInput from "../components/MoneyInput";
 import { formatDateVN } from "@/lib/date-vn";
 import Time24Input from "@/app/components/Time24Input";
+import { requireEditPin } from "@/lib/admin-pin";
 
 const money = (value: number | string | null | undefined) =>
   Number(value || 0).toLocaleString("vi-VN") + " đ";
@@ -177,6 +178,21 @@ export default function AdminJobPage() {
     try { setOfflineDraftCount(JSON.parse(localStorage.getItem("been_offline_job_drafts") || "[]").length); } catch { setOfflineDraftCount(0); }
   };
 
+  const swapBrideGroomPhones=()=>{
+    const groom=customerForm.phone||"";
+    const bride=customerForm.secondary_phone||"";
+    setCustomerForm((prev:any)=>({...prev,phone:bride,secondary_phone:groom}));
+    setDays((prev:any[])=>prev.map((day:any)=>({
+      ...day,
+      locations:(day.locations||[]).map((loc:any)=>{
+        const n=String(loc.location_name||"").toLowerCase();
+        if(n.includes("nhà trai")||n.includes("chú rể"))return {...loc,phone:bride};
+        if(n.includes("nhà gái")||n.includes("cô dâu"))return {...loc,phone:groom};
+        return loc;
+      })
+    })));
+  };
+
   async function loadData() {
     setLoading(true);
     const [{ data: jobData, error: jobError }, { data: customerData }, { data: empData }, { data: reserveData }] = await Promise.all([
@@ -236,6 +252,19 @@ export default function AdminJobPage() {
       alert("AI đã điền trước Job. Hãy kiểm tra lại trước khi bấm Lưu Job.");
     } catch { /* bỏ qua draft lỗi */ }
   }, [employees, customers]);
+
+
+  useEffect(() => {
+    setDays((prev:any[]) => prev.map((day:any) => ({
+      ...day,
+      locations:(day.locations||[]).map((loc:any) => {
+        const n=String(loc.location_name||"").toLowerCase();
+        if(n.includes("nhà trai") || n.includes("chú rể")) return {...loc, phone:customerForm.phone || loc.phone};
+        if(n.includes("nhà gái") || n.includes("cô dâu")) return {...loc, phone:customerForm.secondary_phone || loc.phone};
+        return loc;
+      })
+    })));
+  }, [customerForm.phone, customerForm.secondary_phone]);
 
   useEffect(()=>{
     if(!jobs.length || typeof window === "undefined") return;
@@ -962,6 +991,7 @@ export default function AdminJobPage() {
               setCustomerForm((c:any)=>({
                 ...c,
                 full_name:[q.groom_name,q.bride_name].filter(Boolean).join(" + ")||c.full_name,
+                facebook:[q.groom_name,q.bride_name].filter(Boolean).join(" + ")||c.facebook,
                 phone:q.groom_phone||c.phone,
                 secondary_phone:q.bride_phone||c.secondary_phone,
                 address:q.location||q.groom_address||q.bride_address||c.address,
@@ -1049,7 +1079,7 @@ function JobForm(props: any) {
                   secondary_phone: customer?.secondary_phone || "",
                   email: customer?.email || "",
                   address: customer?.address || "",
-                  facebook: customer?.facebook || "",
+                  facebook: customer?.facebook || customer?.full_name || "",
                 });
               }}
             >
@@ -1058,16 +1088,16 @@ function JobForm(props: any) {
                 <option key={customer.id} value={customer.id}>{customer.full_name} - {customer.phone}</option>
               ))}
             </select></label>
-            <label className="block text-sm font-medium text-slate-700">Tên khách đại diện / người book<input className="mt-1 border p-3 rounded-lg w-full" placeholder="Ví dụ: Nguyễn Văn A" value={customerForm.full_name} onChange={(e) => setCustomerForm({ ...customerForm, full_name: e.target.value })} /></label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <label className="text-sm font-medium text-slate-700">SĐT chính<input className="mt-1 border p-3 rounded-lg w-full" placeholder="058..." value={customerForm.phone} onChange={(e) => setCustomerForm({ ...customerForm, phone: e.target.value })} /></label>
-              <label className="text-sm font-medium text-slate-700">SĐT phụ / SĐT cô dâu<input className="mt-1 border p-3 rounded-lg w-full" placeholder="SĐT phụ" value={customerForm.secondary_phone} onChange={(e) => setCustomerForm({ ...customerForm, secondary_phone: e.target.value })} /></label>
+            <label className="block text-sm font-medium text-slate-700">Tên khách đại diện / người book<input className="mt-1 border p-3 rounded-lg w-full" placeholder="Ví dụ: Nguyễn Văn A" value={customerForm.full_name} onChange={(e) => { const name=e.target.value; setCustomerForm({ ...customerForm, full_name:name, facebook:name }); }} /></label>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_1fr] sm:items-end">
+              <label className="text-sm font-medium text-slate-700">SĐT chú rể / nhà trai<input className="mt-1 border p-3 rounded-lg w-full" placeholder="058..." value={customerForm.phone} onChange={(e) => setCustomerForm({ ...customerForm, phone: e.target.value })} /></label>
+              <button type="button" onClick={swapBrideGroomPhones} className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-3 text-sm font-bold text-blue-700" title="Đổi SĐT hai nhà">⇄ Đổi SĐT</button>
+              <label className="text-sm font-medium text-slate-700">SĐT cô dâu / nhà gái<input className="mt-1 border p-3 rounded-lg w-full" placeholder="SĐT phụ" value={customerForm.secondary_phone} onChange={(e) => setCustomerForm({ ...customerForm, secondary_phone: e.target.value })} /></label>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <input className="border p-3 rounded-lg" placeholder="Email" value={customerForm.email} onChange={(e) => setCustomerForm({ ...customerForm, email: e.target.value })} />
-              <input className="border p-3 rounded-lg" placeholder="Facebook/Zalo" value={customerForm.facebook} onChange={(e) => setCustomerForm({ ...customerForm, facebook: e.target.value })} />
+              <input className="border p-3 rounded-lg" placeholder="Tên hiển thị Facebook/Zalo" value={customerForm.facebook} onChange={(e) => setCustomerForm({ ...customerForm, facebook: e.target.value })} />
             </div>
-            <input className="border p-3 rounded-lg w-full" placeholder="Địa chỉ khách đại diện" value={customerForm.address} onChange={(e) => setCustomerForm({ ...customerForm, address: e.target.value })} />
           </div>
 
           <div className="border rounded-xl p-4 space-y-3">
@@ -1198,6 +1228,91 @@ function JobDetail({ job, onClose, onEdit, onDelete }: any) {
 
   const days = job.job_days || [];
   const [sendingZalo, setSendingZalo] = useState<string | null>(null);
+  const [adjustments,setAdjustments]=useState<any[]>([]);
+  const [showAdjustment,setShowAdjustment]=useState(false);
+  const [editingAdjustment,setEditingAdjustment]=useState<any>(null);
+  const [adjustmentForm,setAdjustmentForm]=useState<any>({
+    employee_id:"",
+    adjustment_type:"tip",
+    amount:0,
+    note:"",
+    received_by_studio:true,
+    adjustment_date:new Date().toISOString().slice(0,10),
+  });
+
+  const loadAdjustments=async()=>{
+    const {data}=await supabase
+      .from("salary_adjustments")
+      .select("*, employees(full_name)")
+      .eq("job_id",job.id)
+      .order("adjustment_date",{ascending:false});
+    setAdjustments(data||[]);
+  };
+  useEffect(()=>{loadAdjustments()},[job.id]);
+
+  const assignedWorkers=Array.from(new Map(
+    (job.job_days||[])
+      .flatMap((d:any)=>d.job_assignments||[])
+      .filter((a:any)=>a.employee_id)
+      .map((a:any)=>[a.employee_id,{id:a.employee_id,full_name:a.employees?.full_name||"Nhân sự"}])
+  ).values()) as any[];
+
+  const openNewAdjustment=()=>{
+    setEditingAdjustment(null);
+    setAdjustmentForm({
+      employee_id:assignedWorkers[0]?.id||"",
+      adjustment_type:"tip",
+      amount:0,
+      note:"",
+      received_by_studio:true,
+      adjustment_date:new Date().toISOString().slice(0,10),
+    });
+    setShowAdjustment(true);
+  };
+
+  const saveAdjustment=async()=>{
+    if(!adjustmentForm.employee_id) return alert("Vui lòng chọn nhân sự");
+    const raw=Math.abs(Number(adjustmentForm.amount||0));
+    if(!raw) return alert("Vui lòng nhập số tiền");
+    const amount=adjustmentForm.adjustment_type==="penalty"?-raw:raw;
+    const payload={
+      employee_id:adjustmentForm.employee_id,
+      job_id:job.id,
+      adjustment_date:adjustmentForm.adjustment_date,
+      adjustment_type:adjustmentForm.adjustment_type,
+      amount,
+      note:adjustmentForm.note||"",
+      received_by_studio:Boolean(adjustmentForm.received_by_studio),
+    };
+    const q=editingAdjustment
+      ? supabase.from("salary_adjustments").update(payload).eq("id",editingAdjustment.id)
+      : supabase.from("salary_adjustments").insert([payload]);
+    const {error}=await q;
+    if(error) return alert(error.message);
+    setShowAdjustment(false);setEditingAdjustment(null);await loadAdjustments();
+  };
+
+  const editAdjustment=(x:any)=>{
+    setEditingAdjustment(x);
+    setAdjustmentForm({
+      employee_id:x.employee_id,
+      adjustment_type:x.adjustment_type,
+      amount:Math.abs(Number(x.amount||0)),
+      note:x.note||"",
+      received_by_studio:Boolean(x.received_by_studio),
+      adjustment_date:x.adjustment_date,
+    });
+    setShowAdjustment(true);
+  };
+
+  const deleteAdjustment=async(x:any)=>{
+    if(!(await requireEditPin("xóa phát sinh lương"))) return;
+    if(!confirm(`Xóa phát sinh ${money(x.amount)}?`)) return;
+    const {error}=await supabase.from("salary_adjustments").delete().eq("id",x.id);
+    if(error) return alert(error.message);
+    await loadAdjustments();
+  };
+
 
   const sendZaloTemplate = async (type: "confirm" | "review") => {
     const payload = type === "confirm" ? buildZaloConfirmPayload(job) : buildZaloReviewPayload(job);
@@ -1281,6 +1396,48 @@ function JobDetail({ job, onClose, onEdit, onDelete }: any) {
             </div>
           ))}
         </div>
+
+
+        <div className="mt-5 rounded-2xl border bg-slate-50 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div><h3 className="font-bold text-lg">Phát sinh lương theo Job</h3><p className="text-sm text-slate-500">Tip/bonus cộng vào lương. Vi phạm/khấu trừ sẽ trừ khỏi lương thợ.</p></div>
+            <button onClick={openNewAdjustment} className="rounded-xl bg-indigo-600 px-4 py-2 font-semibold text-white">+ Thêm phát sinh</button>
+          </div>
+          <div className="mt-3 space-y-2">
+            {adjustments.map((x:any)=><div key={x.id} className="flex flex-col gap-2 rounded-xl bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-semibold">{x.employees?.full_name||"Nhân sự"} • <span className={Number(x.amount)<0?"text-red-600":"text-emerald-700"}>{Number(x.amount)<0?"Trừ ":"Cộng "}{money(Math.abs(Number(x.amount||0)))}</span></p>
+                <p className="text-sm text-slate-500">{formatDateVN(x.adjustment_date)} • {x.adjustment_type==="tip"?"Tip khách":x.adjustment_type==="bonus"?"Thưởng":x.adjustment_type==="penalty"?"Vi phạm / khấu trừ":"Khác"}{x.received_by_studio?" • Tiền qua TK studio":""}</p>
+                {x.note&&<p className="text-sm">{x.note}</p>}
+              </div>
+              <div className="flex gap-2"><button onClick={()=>editAdjustment(x)} className="rounded-lg bg-amber-500 px-3 py-2 text-white">Sửa</button><button onClick={()=>deleteAdjustment(x)} className="rounded-lg bg-red-600 px-3 py-2 text-white">Xóa</button></div>
+            </div>)}
+            {!adjustments.length&&<p className="text-sm text-slate-500">Chưa có phát sinh lương cho Job này.</p>}
+          </div>
+        </div>
+
+        {showAdjustment&&<div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-5">
+            <h3 className="text-xl font-bold">{editingAdjustment?"Sửa phát sinh":"Thêm phát sinh lương"}</h3>
+            <div className="mt-4 space-y-3">
+              <label className="block text-sm font-medium">Nhân sự
+                <select className="mt-1 w-full rounded-xl border p-3" value={adjustmentForm.employee_id} onChange={e=>setAdjustmentForm({...adjustmentForm,employee_id:e.target.value})}>
+                  <option value="">Chọn nhân sự</option>{assignedWorkers.map((e:any)=><option key={e.id} value={e.id}>{e.full_name}</option>)}
+                </select>
+              </label>
+              <label className="block text-sm font-medium">Loại phát sinh
+                <select className="mt-1 w-full rounded-xl border p-3" value={adjustmentForm.adjustment_type} onChange={e=>setAdjustmentForm({...adjustmentForm,adjustment_type:e.target.value})}>
+                  <option value="tip">Tip khách → cộng lương</option><option value="bonus">Thưởng → cộng lương</option><option value="penalty">Vi phạm / khấu trừ → trừ lương</option><option value="other">Khác</option>
+                </select>
+              </label>
+              <label className="block text-sm font-medium">Số tiền<MoneyInput className="mt-1 w-full rounded-xl border p-3" value={adjustmentForm.amount||0} onChange={v=>setAdjustmentForm({...adjustmentForm,amount:v})}/></label>
+              <label className="block text-sm font-medium">Ngày<input type="date" className="mt-1 w-full rounded-xl border p-3" value={adjustmentForm.adjustment_date} onChange={e=>setAdjustmentForm({...adjustmentForm,adjustment_date:e.target.value})}/></label>
+              <label className="block text-sm font-medium">Nội dung / lý do<textarea className="mt-1 w-full rounded-xl border p-3" rows={3} value={adjustmentForm.note} onChange={e=>setAdjustmentForm({...adjustmentForm,note:e.target.value})} placeholder="VD: Khách tip thợ 500k / Đi muộn 30 phút..."/></label>
+              {adjustmentForm.adjustment_type==="tip"&&<label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={Boolean(adjustmentForm.received_by_studio)} onChange={e=>setAdjustmentForm({...adjustmentForm,received_by_studio:e.target.checked})}/> Khách chuyển tiền tip vào tài khoản studio</label>}
+            </div>
+            <div className="mt-5 flex justify-end gap-2"><button onClick={()=>setShowAdjustment(false)} className="rounded-xl border px-4 py-2">Hủy</button><button onClick={saveAdjustment} className="rounded-xl bg-blue-600 px-4 py-2 text-white">Lưu phát sinh</button></div>
+          </div>
+        </div>}
 
         <div className="flex flex-wrap justify-end gap-3 mt-6">
           <button

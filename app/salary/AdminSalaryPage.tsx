@@ -5,6 +5,7 @@ import MainLayout from "../components/layout/MainLayout";
 import { supabase } from "@/lib/supabase";
 import MoneyInput from "../components/MoneyInput";
 import { formatDateVN } from "@/lib/date-vn";
+import { requireEditPin } from "@/lib/admin-pin";
 
 type SalaryFilter = "all" | "paid" | "unpaid" | "debt" | "advance";
 
@@ -21,6 +22,9 @@ export default function AdminSalaryPage() {
   const [assignments, setAssignments] = useState<any[]>([]);
   const [advances, setAdvances] = useState<any[]>([]);
   const [payments, setPayments] = useState<any[]>([]);
+  const [adjustments,setAdjustments]=useState<any[]>([]);
+  const [showPenalty,setShowPenalty]=useState(false);
+  const [penaltyForm,setPenaltyForm]=useState<any>({employee_id:"",amount:0,note:"",adjustment_date:new Date().toISOString().slice(0,10)});
   const [selectedEmployee, setSelectedEmployee] = useState<any>(null);
   const [filter, setFilter] = useState<SalaryFilter>("all");
   const [search, setSearch] = useState("");
@@ -38,11 +42,13 @@ export default function AdminSalaryPage() {
       .select("*, jobs(customer_name, event_name, service), job_days(shooting_date,start_time,end_time)");
     const { data: adv } = await supabase.from("salary_advances").select("*").order("advance_date", { ascending: false });
     const { data: pay } = await supabase.from("salary_payments").select("*").order("payment_date", { ascending: false });
+    const { data: adj } = await supabase.from("salary_adjustments").select("*, jobs(event_name,customer_name)").order("adjustment_date",{ascending:false});
 
     setEmployees(emp || []);
     setAssignments(ass || []);
     setAdvances(adv || []);
     setPayments(pay || []);
+    setAdjustments(adj || []);
   };
 
   useEffect(() => {
@@ -52,20 +58,24 @@ export default function AdminSalaryPage() {
   const monthAssignments = assignments.filter((a) => a.job_days?.shooting_date?.startsWith(month));
   const monthAdvances = advances.filter((a) => a.advance_date?.startsWith(month));
   const monthPayments = payments.filter((p) => p.payment_date?.startsWith(month));
+  const monthAdjustments = adjustments.filter((a)=>a.adjustment_date?.startsWith(month));
 
   const rows = useMemo(() => {
     return employees.map((emp) => {
       const empAssignments = monthAssignments.filter((a) => a.employee_id === emp.id);
-      const totalSalary = empAssignments.reduce((sum, a) => sum + Number(a.salary_amount || 0), 0);
+      const baseSalary = empAssignments.reduce((sum, a) => sum + Number(a.salary_amount || 0), 0);
+      const employeeAdjustments = monthAdjustments.filter((a)=>a.employee_id===emp.id);
+      const adjustmentTotal = employeeAdjustments.reduce((sum,a)=>sum+Number(a.amount||0),0);
+      const totalSalary = baseSalary + adjustmentTotal;
       const totalAdvance = monthAdvances.filter((a) => a.employee_id === emp.id).reduce((sum, a) => sum + Number(a.amount || 0), 0);
       const totalPaid = monthPayments.filter((p) => p.employee_id === emp.id).reduce((sum, p) => sum + Number(p.amount || 0), 0);
       const remainRaw = totalSalary - totalAdvance - totalPaid;
       const remain = Math.max(remainRaw, 0);
       const overpaid = Math.max(-remainRaw, 0);
 
-      return { ...emp, totalSalary, totalAdvance, totalPaid, remain, remainRaw, overpaid, jobs: empAssignments };
+      return { ...emp, baseSalary, adjustmentTotal, employeeAdjustments, totalSalary, totalAdvance, totalPaid, remain, remainRaw, overpaid, jobs: empAssignments };
     });
-  }, [employees, monthAssignments, monthAdvances, monthPayments]);
+  }, [employees, monthAssignments, monthAdvances, monthPayments, monthAdjustments]);
 
   const filteredRows = useMemo(() => {
     const keyword = search.trim().toLowerCase();
@@ -124,10 +134,32 @@ export default function AdminSalaryPage() {
     setEditingTxn(null);loadData();
   };
   const deleteTxn=async(type:"advance"|"payment",row:any)=>{
-    if(!confirm(`Xóa giao dịch ${formatMoney(row.amount)}?`)) return;
+    if(!(await requireEditPin("xóa giao dịch lương"))) return;\n    if(!confirm(`Xóa giao dịch ${formatMoney(row.amount)}?`)) return;
     const table=type==="advance"?"salary_advances":"salary_payments";
     const {error}=await supabase.from(table).delete().eq("id",row.id); if(error) return alert(error.message);
     await supabase.from("finance_transactions").delete().eq("source_type",type==="advance"?"salary_advance":"salary_payment").eq("source_id",row.id);loadData();
+  };
+
+
+  const openPenalty=(employeeId:string)=>{
+    setPenaltyForm({employee_id:employeeId,amount:0,note:"",adjustment_date:new Date().toISOString().slice(0,10)});
+    setShowPenalty(true);
+  };
+  const savePenalty=async()=>{
+    if(!penaltyForm.employee_id) return alert("Chưa chọn nhân sự");
+    const amount=Math.abs(Number(penaltyForm.amount||0));
+    if(!amount) return alert("Nhập số tiền khấu trừ");
+    if(!String(penaltyForm.note||"").trim()) return alert("Nhập nội dung vi phạm");
+    const {error}=await supabase.from("salary_adjustments").insert([{
+      employee_id:penaltyForm.employee_id,
+      adjustment_date:penaltyForm.adjustment_date,
+      adjustment_type:"penalty",
+      amount:-amount,
+      note:penaltyForm.note,
+      received_by_studio:false
+    }]);
+    if(error) return alert(error.message);
+    setShowPenalty(false);loadData();
   };
 
   return (
@@ -184,7 +216,9 @@ export default function AdminSalaryPage() {
                 <th className="text-left p-3">Nhân sự</th>
                 <th className="text-left p-3">Vai trò</th>
                 <th className="text-left p-3">Job tháng</th>
-                <th className="text-left p-3">Lương phát sinh</th>
+                <th className="text-left p-3">Lương Job</th>
+                <th className="text-left p-3">Phát sinh +/-</th>
+                <th className="text-left p-3">Lương sau phát sinh</th>
                 <th className="text-left p-3">Đã ứng</th>
                 <th className="text-left p-3">Đã thanh toán</th>
                 <th className="text-left p-3">Còn phải trả</th>
@@ -198,7 +232,9 @@ export default function AdminSalaryPage() {
                   <td className="p-3 font-bold">{emp.full_name}</td>
                   <td className="p-3">{emp.role}</td>
                   <td className="p-3">{emp.jobs.length}</td>
-                  <td className="p-3">{formatMoney(emp.totalSalary)}</td>
+                  <td className="p-3">{formatMoney(emp.baseSalary)}</td>
+                  <td className={`p-3 font-semibold ${emp.adjustmentTotal<0?"text-red-600":"text-emerald-700"}`}>{emp.adjustmentTotal>=0?"+":""}{formatMoney(emp.adjustmentTotal)}</td>
+                  <td className="p-3 font-bold">{formatMoney(emp.totalSalary)}</td>
                   <td className="p-3 text-orange-600">{formatMoney(emp.totalAdvance)}</td>
                   <td className="p-3 text-green-600">{formatMoney(emp.totalPaid)}</td>
                   <td className="p-3 font-bold">{emp.overpaid>0?<span className="text-amber-600">Đã trả dư {formatMoney(emp.overpaid)}</span>:emp.remain>0?<span className="text-red-600">{formatMoney(emp.remain)}</span>:<span className="text-green-600">Đã thanh toán đủ</span>}</td>
@@ -206,6 +242,7 @@ export default function AdminSalaryPage() {
                     <button onClick={() => setSelectedEmployee(emp)} className="bg-blue-600 text-white px-3 py-1 rounded">Xem</button>
                     <button onClick={() => addAdvance(emp.id)} className="bg-yellow-500 text-white px-3 py-1 rounded">Ứng lương</button>
                     <button onClick={() => addPayment(emp.id, emp.remain)} className="bg-green-600 text-white px-3 py-1 rounded">Thanh toán lương</button>
+                    <button onClick={()=>openPenalty(emp.id)} className="bg-red-600 text-white px-3 py-1 rounded">Trừ vi phạm</button>
                   </td>
                 </tr>
               ))}
@@ -225,7 +262,9 @@ export default function AdminSalaryPage() {
                 <p className={`font-bold ${emp.overpaid>0?"text-amber-600":emp.remain>0?"text-red-600":"text-green-600"}`}>{emp.overpaid>0?`Trả dư ${formatMoney(emp.overpaid)}`:emp.remain>0?formatMoney(emp.remain):"Đã đủ"}</p>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                <p>Lương: <b>{formatMoney(emp.totalSalary)}</b></p>
+                <p>Lương Job: <b>{formatMoney(emp.baseSalary)}</b></p>
+                <p>Phát sinh: <b className={emp.adjustmentTotal<0?"text-red-600":"text-emerald-700"}>{emp.adjustmentTotal>=0?"+":""}{formatMoney(emp.adjustmentTotal)}</b></p>
+                <p>Lương sau phát sinh: <b>{formatMoney(emp.totalSalary)}</b></p>
                 <p>Ứng: <b className="text-orange-600">{formatMoney(emp.totalAdvance)}</b></p>
                 <p>Đã trả: <b className="text-green-600">{formatMoney(emp.totalPaid)}</b></p>
                 <p>BEEN MEDIA còn trả: <b className="text-red-600">{formatMoney(emp.remain)}</b></p>
@@ -234,6 +273,7 @@ export default function AdminSalaryPage() {
                 <button onClick={() => setSelectedEmployee(emp)} className="flex-1 rounded-lg bg-blue-600 p-2 text-white">Xem</button>
                 <button onClick={() => addAdvance(emp.id)} className="flex-1 rounded-lg bg-yellow-500 p-2 text-white">Ứng lương</button>
                 <button onClick={() => addPayment(emp.id, emp.remain)} className="flex-1 rounded-lg bg-green-600 p-2 text-white">Thanh toán</button>
+                <button onClick={()=>openPenalty(emp.id)} className="flex-1 rounded-lg bg-red-600 p-2 text-white">Trừ vi phạm</button>
               </div>
             </div>
           ))}
@@ -243,20 +283,50 @@ export default function AdminSalaryPage() {
 
       {editingTxn&&<div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4"><div className="w-full max-w-md rounded-2xl bg-white p-6"><h2 className="text-xl font-bold">Sửa {editingTxn.type==="advance"?"khoản ứng":"thanh toán lương"}</h2><div className="mt-4 space-y-3"><label className="block text-sm font-medium">Số tiền<MoneyInput className="mt-1 w-full rounded-xl border p-3" value={editingTxn.amount||0} onChange={v=>setEditingTxn({...editingTxn,amount:v})}/></label><label className="block text-sm font-medium">Ngày<input type="date" className="mt-1 w-full rounded-xl border p-3" value={editingTxn.type==="advance"?editingTxn.advance_date:editingTxn.payment_date} onChange={e=>setEditingTxn({...editingTxn,[editingTxn.type==="advance"?"advance_date":"payment_date"]:e.target.value})}/></label><label className="block text-sm font-medium">Ghi chú<input className="mt-1 w-full rounded-xl border p-3" value={editingTxn.note||""} onChange={e=>setEditingTxn({...editingTxn,note:e.target.value})}/></label></div><div className="mt-5 flex justify-end gap-2"><button onClick={()=>setEditingTxn(null)} className="rounded-xl border px-4 py-2">Hủy</button><button onClick={saveTxnEdit} className="rounded-xl bg-blue-600 px-4 py-2 text-white">Cập nhật</button></div></div></div>}
 
+
+      {showPenalty&&<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+        <div className="w-full max-w-md rounded-2xl bg-white p-5">
+          <h2 className="text-xl font-bold">Trừ lương do vi phạm</h2>
+          <p className="mt-1 text-sm text-slate-500">Khoản này sẽ trừ trực tiếp vào lương phải trả của nhân sự.</p>
+          <div className="mt-4 space-y-3">
+            <label className="block text-sm font-medium">Nhân sự<select className="mt-1 w-full rounded-xl border p-3" value={penaltyForm.employee_id} onChange={e=>setPenaltyForm({...penaltyForm,employee_id:e.target.value})}><option value="">Chọn nhân sự</option>{employees.map((e:any)=><option key={e.id} value={e.id}>{e.full_name}</option>)}</select></label>
+            <label className="block text-sm font-medium">Số tiền trừ<MoneyInput className="mt-1 w-full rounded-xl border p-3" value={penaltyForm.amount||0} onChange={v=>setPenaltyForm({...penaltyForm,amount:v})}/></label>
+            <label className="block text-sm font-medium">Ngày<input type="date" className="mt-1 w-full rounded-xl border p-3" value={penaltyForm.adjustment_date} onChange={e=>setPenaltyForm({...penaltyForm,adjustment_date:e.target.value})}/></label>
+            <label className="block text-sm font-medium">Nội dung vi phạm<textarea rows={3} className="mt-1 w-full rounded-xl border p-3" value={penaltyForm.note} onChange={e=>setPenaltyForm({...penaltyForm,note:e.target.value})} placeholder="VD: Đi muộn 30 phút, thiếu file, không đúng dresscode..."/></label>
+          </div>
+          <div className="mt-5 flex justify-end gap-2"><button onClick={()=>setShowPenalty(false)} className="rounded-xl border px-4 py-2">Hủy</button><button onClick={savePenalty} className="rounded-xl bg-red-600 px-4 py-2 text-white">Lưu khấu trừ</button></div>
+        </div>
+      </div>}
+
       {selectedEmployee && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl p-5 sm:p-6 w-full max-w-4xl max-h-[85vh] overflow-auto">
             <h2 className="text-2xl font-bold mb-2">Chi tiết lương: {selectedEmployee.full_name}</h2>
             <p className="mb-4 text-gray-500">Tháng {month}</p>
 
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
-              <div className="border rounded p-3"><p>Lương phát sinh</p><b>{formatMoney(selectedEmployee.totalSalary)}</b></div>
+            <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 mb-5">
+              <div className="border rounded p-3"><p>Lương Job</p><b>{formatMoney(selectedEmployee.baseSalary)}</b></div>
+              <div className="border rounded p-3"><p>Phát sinh +/-</p><b className={selectedEmployee.adjustmentTotal<0?"text-red-600":"text-emerald-700"}>{selectedEmployee.adjustmentTotal>=0?"+":""}{formatMoney(selectedEmployee.adjustmentTotal)}</b></div>
+              <div className="border rounded p-3"><p>Lương sau phát sinh</p><b>{formatMoney(selectedEmployee.totalSalary)}</b></div>
               <div className="border rounded p-3"><p>Đã ứng</p><b>{formatMoney(selectedEmployee.totalAdvance)}</b></div>
               <div className="border rounded p-3"><p>Đã thanh toán</p><b>{formatMoney(selectedEmployee.totalPaid)}</b></div>
               <div className="border rounded p-3"><p>BEEN MEDIA còn phải trả</p>{selectedEmployee.overpaid>0?<b className="text-amber-600">Đã trả dư {formatMoney(selectedEmployee.overpaid)}</b>:<b className="text-red-600">{formatMoney(selectedEmployee.remain)}</b>}</div>
             </div>
 
             <div className="mb-5 grid gap-4 md:grid-cols-2"><div className="rounded-xl border p-3"><h3 className="font-bold">Lịch sử ứng lương</h3><div className="mt-2 space-y-2">{monthAdvances.filter((x:any)=>x.employee_id===selectedEmployee.id).map((x:any)=><div key={x.id} className="rounded-lg bg-amber-50 p-2 text-sm"><div className="flex justify-between"><b>{formatMoney(x.amount)}</b><span>{x.advance_date}</span></div><p className="text-slate-500">{x.note}</p><div className="mt-2 flex gap-2"><button onClick={()=>openTxnEdit("advance",x)} className="rounded bg-amber-500 px-2 py-1 text-white">Sửa</button><button onClick={()=>deleteTxn("advance",x)} className="rounded bg-red-600 px-2 py-1 text-white">Xóa</button></div></div>)}{monthAdvances.filter((x:any)=>x.employee_id===selectedEmployee.id).length===0&&<p className="text-sm text-slate-500">Chưa có khoản ứng.</p>}</div></div><div className="rounded-xl border p-3"><h3 className="font-bold">Lịch sử thanh toán lương</h3><div className="mt-2 space-y-2">{monthPayments.filter((x:any)=>x.employee_id===selectedEmployee.id).map((x:any)=><div key={x.id} className="rounded-lg bg-emerald-50 p-2 text-sm"><div className="flex justify-between"><b>{formatMoney(x.amount)}</b><span>{x.payment_date}</span></div><p className="text-slate-500">{x.note}</p><div className="mt-2 flex gap-2"><button onClick={()=>openTxnEdit("payment",x)} className="rounded bg-amber-500 px-2 py-1 text-white">Sửa</button><button onClick={()=>deleteTxn("payment",x)} className="rounded bg-red-600 px-2 py-1 text-white">Xóa</button></div></div>)}{monthPayments.filter((x:any)=>x.employee_id===selectedEmployee.id).length===0&&<p className="text-sm text-slate-500">Chưa có thanh toán.</p>}</div></div></div>
+
+
+            <div className="mb-5 rounded-xl border p-3">
+              <div className="flex items-center justify-between gap-3"><h3 className="font-bold">Phát sinh / khấu trừ trong tháng</h3><button onClick={()=>openPenalty(selectedEmployee.id)} className="rounded-lg bg-red-600 px-3 py-2 text-sm text-white">+ Ghi vi phạm</button></div>
+              <div className="mt-3 space-y-2">
+                {(selectedEmployee.employeeAdjustments||[]).map((x:any)=><div key={x.id} className="rounded-lg bg-slate-50 p-3 text-sm">
+                  <div className="flex justify-between gap-3"><b className={Number(x.amount)<0?"text-red-600":"text-emerald-700"}>{Number(x.amount)<0?"Trừ ":"Cộng "}{formatMoney(Math.abs(Number(x.amount||0)))}</b><span>{formatDateVN(x.adjustment_date)}</span></div>
+                  <p>{x.adjustment_type==="penalty"?"Vi phạm / khấu trừ":x.adjustment_type==="tip"?"Tip khách":x.adjustment_type==="bonus"?"Thưởng":"Khác"}{x.jobs?.event_name?` • ${x.jobs.event_name}`:""}</p>
+                  <p className="text-slate-500">{x.note}</p>
+                </div>)}
+                {!(selectedEmployee.employeeAdjustments||[]).length&&<p className="text-sm text-slate-500">Chưa có phát sinh.</p>}
+              </div>
+            </div>
 
             <h3 className="font-bold mb-3">Danh sách job đã làm</h3>
             <div className="overflow-x-auto">
