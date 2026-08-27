@@ -5,6 +5,7 @@ import MainLayout from "../components/layout/MainLayout";
 import { supabase } from "@/lib/supabase";
 import MoneyInput from "../components/MoneyInput";
 import { formatDateVN } from "@/lib/date-vn";
+import Time24Input from "@/app/components/Time24Input";
 
 const money = (value: number | string | null | undefined) =>
   Number(value || 0).toLocaleString("vi-VN") + " đ";
@@ -824,7 +825,7 @@ export default function AdminJobPage() {
     <MainLayout>
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div><h1 className="text-3xl font-bold">Job / Booking</h1><p className="text-gray-500 mt-1">Tìm, lọc theo năm/tháng, xem ekip và trạng thái hoàn thành.</p></div>
-        <div className="flex flex-wrap gap-2"><button onClick={openCreate} className="bg-blue-600 text-white px-5 py-3 rounded-xl">+ Tạo job mới</button>{offlineDraftCount>0&&<button onClick={restoreOfflineDraft} className="rounded-xl bg-amber-500 px-4 py-3 font-semibold text-white">Mở bản nháp offline ({offlineDraftCount})</button>}</div>
+        <div className="flex flex-wrap gap-2"><button onClick={()=>{setQuickText("");setQuickPreview(null);setShowQuickJob(true)}} className="rounded-xl border border-blue-200 bg-blue-50 px-5 py-3 font-semibold text-blue-700">✦ Nhập Job nhanh</button><button onClick={openCreate} className="bg-blue-600 text-white px-5 py-3 rounded-xl">+ Tạo job mới</button>{offlineDraftCount>0&&<button onClick={restoreOfflineDraft} className="rounded-xl bg-amber-500 px-4 py-3 font-semibold text-white">Mở bản nháp offline ({offlineDraftCount})</button>}</div>
       </div>
 
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-6">
@@ -1116,8 +1117,8 @@ function JobForm(props: any) {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
                 <label className="text-sm text-gray-600">Ngày thực hiện<input type="date" className="border p-3 rounded-lg w-full mt-1" value={day.shooting_date} onChange={(e) => updateDay(dayIndex, "shooting_date", e.target.value)} /></label>
-                <label className="text-sm text-gray-600">Từ giờ<input type="time" lang="vi-VN" className="border p-3 rounded-lg w-full mt-1" value={day.start_time} onChange={(e) => updateDay(dayIndex, "start_time", e.target.value)} /></label>
-                <label className="text-sm text-gray-600">Đến giờ<input type="time" lang="vi-VN" className="border p-3 rounded-lg w-full mt-1" value={day.end_time} onChange={(e) => updateDay(dayIndex, "end_time", e.target.value)} /></label>
+                <label className="text-sm text-gray-600">Từ giờ<Time24Input className="border p-3 rounded-lg w-full mt-1" value={day.start_time} onChange={(value) => updateDay(dayIndex, "start_time", value)} /></label>
+                <label className="text-sm text-gray-600">Đến giờ<Time24Input className="border p-3 rounded-lg w-full mt-1" value={day.end_time} onChange={(value) => updateDay(dayIndex, "end_time", value)} /></label>
                 <label className="text-sm text-gray-600">Ghi chú ngày<input className="border p-3 rounded-lg w-full mt-1" value={day.note} onChange={(e) => updateDay(dayIndex, "note", e.target.value)} placeholder="Ăn hỏi / tiệc / lưu ý timeline..." /></label>
               </div>
 
