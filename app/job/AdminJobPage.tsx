@@ -57,7 +57,6 @@ const makeDay = () => ({
 
 
 
-
 const normalizePhone = (value: string | null | undefined) =>
   String(value || "").replace(/\D/g, "");
 
@@ -123,7 +122,26 @@ const buildZaloReviewPayload = (job: any) => {
   };
 };
 
+
+type QuickJobPreview={shooting_date?:string;start_time?:string;event_name?:string;groom_name?:string;bride_name?:string;groom_phone?:string;bride_phone?:string;groom_address?:string;bride_address?:string;location?:string;note?:string};
+const qTime=(h?:string,m?:string)=>h?`${String(Math.min(23,Number(h))).padStart(2,"0")}:${String(Math.min(59,Number(m||0))).padStart(2,"0")}`:"";
+const qPhone=(s:string)=>s.replace(/\D/g,"");
+function parseQuickJob(raw:string,baseMonth:string):QuickJobPreview{
+ const text=raw.replace(/\s+/g," ").trim(),lower=text.toLowerCase(),o:QuickJobPreview={note:text};
+ const df=lower.match(/\b([0-3]?\d)[\/-]([01]?\d)(?:[\/-](20\d{2}|\d{2}))?\b/),dd=lower.match(/^\s*([0-3]?\d)\s*[:\-]/);
+ if(df){let y=df[3]?Number(df[3]):Number(baseMonth.slice(0,4));if(y<100)y+=2000;o.shooting_date=`${y}-${String(Number(df[2])).padStart(2,"0")}-${String(Number(df[1])).padStart(2,"0")}`}
+ else if(dd)o.shooting_date=`${baseMonth}-${String(Number(dd[1])).padStart(2,"0")}`;
+ const tm=lower.match(/\b([01]?\d|2[0-3])\s*(?:h|:)\s*([0-5]?\d)?\b/);if(tm)o.start_time=qTime(tm[1],tm[2]);
+ if(/ăn hỏi|an hoi/.test(lower))o.event_name=/quay/.test(lower)?"Quay ăn hỏi":"Chụp ăn hỏi";else if(/rước dâu|ruoc dau/.test(lower))o.event_name=/quay/.test(lower)?"Quay rước dâu":"Chụp rước dâu";
+ const nm=text.match(/tên\s*\(\s*([^+()]+)\s*\+\s*([^()]+)\)/i);if(nm){o.groom_name=nm[1].trim();o.bride_name=nm[2].trim()}
+ const ph=[...text.matchAll(/(?:\+?84|0)[\d.\s-]{8,14}\d/g)].map(x=>qPhone(x[0])).filter(x=>x.length>=9&&x.length<=11);o.groom_phone=ph[0];o.bride_phone=ph[1];
+ const ba=text.match(/nhà\s*(?:cô\s*dâu|gái)\s*[:\-]?\s*([^()]+)/i),ga=text.match(/nhà\s*(?:chú\s*rể|trai)\s*[:\-]?\s*([^()]+)/i),ad=text.match(/địa\s*chỉ[.:]?\s*([^()]+)/i);
+ if(ba)o.bride_address=ba[1].trim();if(ga)o.groom_address=ga[1].trim();if(ad)o.location=ad[1].trim();return o;
+}
+
 export default function AdminJobPage() {
+  const [showQuickJob,setShowQuickJob]=useState(false); const [quickText,setQuickText]=useState(""); const [quickPreview,setQuickPreview]=useState<QuickJobPreview|null>(null);
+
   const [jobs, setJobs] = useState<any[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
@@ -912,7 +930,9 @@ export default function AdminJobPage() {
           onDelete={() => deleteJob(selectedJob.id)}
         />
       )}
-    </MainLayout>
+    
+{showQuickJob&&<div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/50 sm:items-center sm:p-4"><div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-white p-5 sm:rounded-3xl"><div className="mb-4 flex justify-between"><div><h2 className="text-xl font-bold">Nhập Job nhanh</h2><p className="text-sm text-slate-500">Dán tin nhắn khách; phân công thợ vẫn nhập thủ công.</p></div><button onClick={()=>setShowQuickJob(false)}>✕</button></div><textarea value={quickText} onChange={e=>setQuickText(e.target.value)} rows={7} className="w-full rounded-2xl border p-4" placeholder="19: 6h chụp ăn hỏi... Tên( Quân + Yến )..."/><button onClick={()=>setQuickPreview(parseQuickJob(quickText,month))} className="mt-3 w-full rounded-xl bg-blue-600 p-3 font-bold text-white">Phân tích thông tin</button>{quickPreview&&<div className="mt-4 rounded-2xl bg-slate-50 p-4"><div className="grid gap-2 text-sm sm:grid-cols-2"><p><b>Ngày:</b> {formatDateVN(quickPreview.shooting_date)}</p><p><b>Giờ 24h:</b> {quickPreview.start_time||"Chưa nhận"}</p><p><b>Loại:</b> {quickPreview.event_name||"Chưa nhận"}</p><p><b>Chú rể:</b> {quickPreview.groom_name||"Chưa nhận"}</p><p><b>Cô dâu:</b> {quickPreview.bride_name||"Chưa nhận"}</p><p><b>SĐT chú rể:</b> {quickPreview.groom_phone||"Chưa nhận"}</p><p><b>SĐT cô dâu:</b> {quickPreview.bride_phone||"Chưa nhận"}</p><p><b>Nhà cô dâu:</b> {quickPreview.bride_address||"Chưa nhận"}</p><p><b>Nhà chú rể:</b> {quickPreview.groom_address||"Chưa nhận"}</p></div><button onClick={()=>{const q=quickPreview;setForm((f:any)=>({...f,event_name:q.event_name||f.event_name,customer_name:[q.groom_name,q.bride_name].filter(Boolean).join(" + ")||f.customer_name,customer_phone:q.groom_phone||f.customer_phone,secondary_phone:q.bride_phone||f.secondary_phone,address:q.location||q.groom_address||q.bride_address||f.address,note:[f.note,q.bride_address?`Nhà cô dâu: ${q.bride_address}`:"",q.groom_address?`Nhà chú rể: ${q.groom_address}`:"",`Tin gốc: ${quickText}`].filter(Boolean).join("\n"),job_days:[{...(f.job_days?.[0]||{}),shooting_date:q.shooting_date||f.job_days?.[0]?.shooting_date,start_time:q.start_time||f.job_days?.[0]?.start_time}]}));setShowQuickJob(false);setShowModal(true)}} className="mt-4 w-full rounded-xl bg-emerald-600 p-3 font-bold text-white">Đưa vào form Job để kiểm tra</button></div>}<p className="mt-3 text-xs text-slate-500">6h → 06:00 • 14h30 → 14:30. Không tự phân công nhân sự.</p></div></div>}
+</MainLayout>
   );
 }
 
@@ -1038,8 +1058,8 @@ function JobForm(props: any) {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
                 <label className="text-sm text-gray-600">Ngày thực hiện<input type="date" className="border p-3 rounded-lg w-full mt-1" value={day.shooting_date} onChange={(e) => updateDay(dayIndex, "shooting_date", e.target.value)} /></label>
-                <label className="text-sm text-gray-600">Từ giờ<input type="time" className="border p-3 rounded-lg w-full mt-1" value={day.start_time} onChange={(e) => updateDay(dayIndex, "start_time", e.target.value)} /></label>
-                <label className="text-sm text-gray-600">Đến giờ<input type="time" className="border p-3 rounded-lg w-full mt-1" value={day.end_time} onChange={(e) => updateDay(dayIndex, "end_time", e.target.value)} /></label>
+                <label className="text-sm text-gray-600">Từ giờ<input type="time" lang="vi-VN" className="border p-3 rounded-lg w-full mt-1" value={day.start_time} onChange={(e) => updateDay(dayIndex, "start_time", e.target.value)} /></label>
+                <label className="text-sm text-gray-600">Đến giờ<input type="time" lang="vi-VN" className="border p-3 rounded-lg w-full mt-1" value={day.end_time} onChange={(e) => updateDay(dayIndex, "end_time", e.target.value)} /></label>
                 <label className="text-sm text-gray-600">Ghi chú ngày<input className="border p-3 rounded-lg w-full mt-1" value={day.note} onChange={(e) => updateDay(dayIndex, "note", e.target.value)} placeholder="Ăn hỏi / tiệc / lưu ý timeline..." /></label>
               </div>
 
