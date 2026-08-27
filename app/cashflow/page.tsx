@@ -45,7 +45,8 @@ export default function CashflowPage() {
   }
 
   async function remove(id: string) {
-    if(!(await requireEditPin("xóa giao dịch Thu/Chi"))) return;\n    if (!confirm("Xóa giao dịch này?")) return;
+    if(!(await requireEditPin("xóa giao dịch Thu/Chi"))) return;
+    if (!confirm("Xóa giao dịch này?")) return;
     const { error } = await supabase.from("finance_transactions").delete().eq("id", id);
     if (error) return alert(error.message);
     load();

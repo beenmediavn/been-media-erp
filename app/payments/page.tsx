@@ -81,7 +81,8 @@ export default function PaymentsPage() {
   }
 
   async function deletePayment(payment:any){
-    if(!(await requireEditPin("xóa khoản thu"))) return;\n    if(!confirm(`Xóa khoản thu ${money(payment.amount)}? Số công nợ sẽ được tính lại.`)) return;
+    if(!(await requireEditPin("xóa khoản thu"))) return;
+    if(!confirm(`Xóa khoản thu ${money(payment.amount)}? Số công nợ sẽ được tính lại.`)) return;
     const {error}=await supabase.from("customer_payments").delete().eq("id",payment.id); if(error) return alert(error.message);
     await supabase.from("finance_transactions").delete().eq("source_type","customer_payment").eq("source_id",payment.id);
     if(payment.job_id) await recalcJob(payment.job_id,payment.customer_id);

@@ -38,7 +38,8 @@ export default function CustomersPage() {
   }, []);
 
   const deleteCustomer = async (id: string) => {
-    if(!(await requireEditPin("xóa khách hàng"))) return;\n    if (!confirm("Bạn chắc chắn muốn xóa khách hàng?")) return;
+    if(!(await requireEditPin("xóa khách hàng"))) return;
+    if (!confirm("Bạn chắc chắn muốn xóa khách hàng?")) return;
 
     const { error } = await supabase.from("customers").delete().eq("id", id);
 

@@ -134,7 +134,8 @@ export default function AdminSalaryPage() {
     setEditingTxn(null);loadData();
   };
   const deleteTxn=async(type:"advance"|"payment",row:any)=>{
-    if(!(await requireEditPin("xóa giao dịch lương"))) return;\n    if(!confirm(`Xóa giao dịch ${formatMoney(row.amount)}?`)) return;
+    if(!(await requireEditPin("xóa giao dịch lương"))) return;
+    if(!confirm(`Xóa giao dịch ${formatMoney(row.amount)}?`)) return;
     const table=type==="advance"?"salary_advances":"salary_payments";
     const {error}=await supabase.from(table).delete().eq("id",row.id); if(error) return alert(error.message);
     await supabase.from("finance_transactions").delete().eq("source_type",type==="advance"?"salary_advance":"salary_payment").eq("source_id",row.id);loadData();
