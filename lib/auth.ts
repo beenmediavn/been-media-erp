@@ -37,13 +37,13 @@ export const ROLE_OPTIONS: { value: AppRole; label: string }[] = [
 ];
 
 export const ROLE_PERMISSIONS: Record<AppRole, string[]> = {
-  admin: ["dashboard", "customers", "schedule", "job", "employees", "reserve", "payments", "cashflow", "salary", "drive", "reports", "chat", "ai", "settings"],
-  coordinator: ["dashboard", "schedule", "job", "salary", "chat"],
-  photographer: ["dashboard", "schedule", "job", "salary", "chat"],
-  videographer: ["dashboard", "schedule", "job", "salary", "chat"],
-  editor: ["dashboard", "schedule", "job", "salary", "chat"],
-  accountant: ["dashboard", "schedule", "job", "salary", "chat"],
-  viewer: ["dashboard", "schedule", "job", "salary", "chat"],
+  admin: ["dashboard", "customers", "schedule", "job", "employees", "reserve", "payments", "cashflow", "salary", "drive", "reports", "chat", "profile", "ai", "settings"],
+  coordinator: ["dashboard", "schedule", "job", "salary", "chat", "profile"],
+  photographer: ["dashboard", "schedule", "job", "salary", "chat", "profile"],
+  videographer: ["dashboard", "schedule", "job", "salary", "chat", "profile"],
+  editor: ["dashboard", "schedule", "job", "salary", "chat", "profile"],
+  accountant: ["dashboard", "schedule", "job", "salary", "chat", "profile"],
+  viewer: ["dashboard", "schedule", "job", "salary", "chat", "profile"],
 };
 
 export function normalizeRole(role: string | null | undefined): AppRole {
@@ -75,6 +75,7 @@ export function permissionFromPath(pathname: string) {
   if (pathname.startsWith("/drive")) return "drive";
   if (pathname.startsWith("/reports")) return "reports";
   if (pathname.startsWith("/chat")) return "chat";
+  if (pathname.startsWith("/profile")) return "profile";
   if (pathname.startsWith("/ai")) return "ai";
   if (pathname.startsWith("/settings")) return "settings";
   return "dashboard";

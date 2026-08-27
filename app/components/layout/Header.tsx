@@ -18,8 +18,10 @@ export default function Header({user,onMenuClick}:{user:AppUser;onMenuClick?:()=
  const router=useRouter(); const brand=useBranding();
  const [q,setQ]=useState(""); const [results,setResults]=useState<SearchResult[]>([]); const [searching,setSearching]=useState(false); const [showSearch,setShowSearch]=useState(false);
  const [notifications,setNotifications]=useState<AppNotification[]>([]); const [showNotifications,setShowNotifications]=useState(false);
+ const [employeeAvatar,setEmployeeAvatar]=useState("");
  const timer=useRef<ReturnType<typeof setTimeout>|null>(null);
  const readKey=`been_media_notification_read_${user.id}`;
+ useEffect(()=>{if(user.role!=="admin")supabase.from("employees").select("avatar_url").eq("id",user.id).maybeSingle().then(({data})=>setEmployeeAvatar(data?.avatar_url||""))},[user.id,user.role]);
  function logout(){clearSession();router.replace("/login")}
 
  function getReadIds(){
@@ -139,7 +141,7 @@ export default function Header({user,onMenuClick}:{user:AppUser;onMenuClick?:()=
          </div>
        </>}
      </div>
-     <div className="flex items-center gap-2">{brand.avatar?<img src={brand.avatar} alt="Ảnh đại diện" className="h-8 w-8 rounded-full object-cover ring-1 ring-slate-200"/>:<UserCircle2 size={32}/>}<div className="hidden sm:block"><p className="font-semibold leading-tight">{user.full_name}</p><p className="text-xs text-gray-500">{user.role_label}</p></div></div>
+     <button onClick={()=>router.push("/profile")} className="flex items-center gap-2 text-left" title="Hồ sơ cá nhân">{(user.role==="admin"?brand.avatar:employeeAvatar)?<img src={user.role==="admin"?brand.avatar:employeeAvatar} alt="Ảnh đại diện" className="h-8 w-8 rounded-full object-cover ring-1 ring-slate-200"/>:<UserCircle2 size={32}/>}<div className="hidden sm:block"><p className="font-semibold leading-tight">{user.full_name}</p><p className="text-xs text-gray-500">{user.role_label}</p></div></button>
      <button onClick={logout} className="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50" title="Đăng xuất"><LogOut size={16} className="sm:hidden"/><span className="hidden sm:inline">Đăng xuất</span></button>
    </div>
  </header>

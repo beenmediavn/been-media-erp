@@ -1,7 +1,8 @@
 import type { AppUser } from "./auth";
 
 export const isAdminUser = (user: AppUser | null | undefined) => user?.role === "admin";
-export function contactIsVisible(assignment: any, shootingDate?: string, startTime?: string) {
+export function contactIsVisible(assignment: any, shootingDate?: string, startTime?: string, jobStatus?: string) {
+  if (String(jobStatus || "").toLowerCase().includes("hoàn thành")) return false;
   if (assignment?.contact_visible === true) return true;
   if (!shootingDate) return false;
   const start = new Date(`${shootingDate}T${startTime || "00:00"}:00`);

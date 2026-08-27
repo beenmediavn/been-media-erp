@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import MoneyInput from "../components/MoneyInput";
 import { formatDateVN } from "@/lib/date-vn";
 import Time24Input from "@/app/components/Time24Input";
+import EmployeePicker from "@/app/components/EmployeePicker";
 import { requireEditPin } from "@/lib/admin-pin";
 
 const money = (value: number | string | null | undefined) =>
@@ -204,7 +205,7 @@ export default function AdminJobPage() {
     const [{ data: jobData, error: jobError }, { data: customerData }, { data: empData }, { data: reserveData }] = await Promise.all([
       supabase
         .from("jobs")
-        .select("*, customers(*), job_days(*, job_assignments(*, employees(*)))")
+        .select("*, customers(*), job_days(*, job_locations(*), job_assignments(*, employees(*)))")
         .order("created_at", { ascending: false }),
       supabase.from("customers").select("*").order("created_at", { ascending: false }),
       supabase.from("employees").select("*").eq("active", true).order("full_name", { ascending: true }),
@@ -288,48 +289,36 @@ export default function AdminJobPage() {
 
   const buildDaysFromJob = (job: any) => {
     const jobDays = job.job_days || [];
-
     if (jobDays.length === 0) return [makeDay()];
-
     return jobDays.map((day: any) => {
-      const groups: any = {};
-
-      (day.job_assignments || []).forEach((assignment: any) => {
-        const key = [
-          assignment.work_location_name || day.location || "Địa điểm",
-          assignment.work_location_address || "",
-          assignment.work_location_phone || "",
-        ].join("__");
-
-        if (!groups[key]) {
-          groups[key] = {
-            location_name: assignment.work_location_name || day.location || "Địa điểm",
-            address: assignment.work_location_address || "",
-            phone: assignment.work_location_phone || "",
-            note: "",
-            assignments: [],
-          };
-        }
-
-        groups[key].assignments.push({
-          employee_id: assignment.employee_id || "",
-          role: assignment.role || "Thợ chụp",
-          salary_amount: Number(assignment.salary_amount || 0),
-          note: assignment.note || "",
-          client_requested: Boolean(assignment.client_requested),
-          contact_visible: Boolean(assignment.contact_visible),
+      const savedLocations=(day.job_locations||[]).slice().sort((a:any,b:any)=>Number(a.sort_order||0)-Number(b.sort_order||0));
+      const locations=savedLocations.map((loc:any)=>({
+        location_name:loc.location_name||"Địa điểm",
+        address:loc.address||"",
+        phone:loc.phone||"",
+        note:"",
+        assignments:(day.job_assignments||[]).filter((a:any)=>
+          String(a.work_location_name||"")===String(loc.location_name||"") &&
+          String(a.work_location_address||"")===String(loc.address||"")
+        ).map((assignment:any)=>({
+          employee_id:assignment.employee_id||"",
+          role:assignment.role||"Thợ chụp",
+          salary_amount:Number(assignment.salary_amount||0),
+          note:assignment.note||"",
+          client_requested:Boolean(assignment.client_requested),
+          contact_visible:Boolean(assignment.contact_visible),
+        }))
+      }));
+      if(!locations.length){
+        const groups:any={};
+        (day.job_assignments||[]).forEach((assignment:any)=>{
+          const key=[assignment.work_location_name||day.location||"Địa điểm",assignment.work_location_address||"",assignment.work_location_phone||""].join("__");
+          if(!groups[key])groups[key]={location_name:assignment.work_location_name||day.location||"Địa điểm",address:assignment.work_location_address||"",phone:assignment.work_location_phone||"",note:"",assignments:[]};
+          groups[key].assignments.push({employee_id:assignment.employee_id||"",role:assignment.role||"Thợ chụp",salary_amount:Number(assignment.salary_amount||0),note:assignment.note||"",client_requested:Boolean(assignment.client_requested),contact_visible:Boolean(assignment.contact_visible)});
         });
-      });
-
-      const locations = Object.values(groups);
-
-      return {
-        shooting_date: day.shooting_date || "",
-        start_time: day.start_time || "07:00",
-        end_time: day.end_time || "11:00",
-        note: day.note || "",
-        locations: locations.length ? locations : [makeLocation(day.location || "Địa điểm")],
-      };
+        locations.push(...Object.values(groups));
+      }
+      return {shooting_date:day.shooting_date||"",start_time:day.start_time||"07:00",end_time:day.end_time||"11:00",note:day.note||"",locations:locations.length?locations:[makeLocation("Nhà trai"),makeLocation("Nhà gái")]};
     });
   };
 
@@ -696,6 +685,13 @@ export default function AdminJobPage() {
 
           if (dayError) throw dayError;
 
+          if (day.locations?.length) {
+            const { error: locationError } = await supabase.from("job_locations").insert(
+              day.locations.map((location:any,sortIndex:number)=>({job_day_id:createdDay.id,location_name:location.location_name,address:location.address,phone:location.phone,sort_order:sortIndex}))
+            );
+            if (locationError) throw locationError;
+          }
+
           const assignmentRows = day.locations.flatMap((location: any) =>
             location.assignments
               .filter((assignment: any) => assignment.employee_id)
@@ -748,6 +744,8 @@ export default function AdminJobPage() {
             debt,
             status: jobForm.status,
             location: jobForm.location,
+            required_photo_count: Number(jobForm.required_photo_count || 0),
+            required_video_count: Number(jobForm.required_video_count || 0),
             note: jobForm.note,
           },
         ])
@@ -792,6 +790,13 @@ export default function AdminJobPage() {
           .single();
 
         if (dayError) throw dayError;
+
+        if (day.locations?.length) {
+          const { error: locationError } = await supabase.from("job_locations").insert(
+            day.locations.map((location:any,sortIndex:number)=>({job_day_id:createdDay.id,location_name:location.location_name,address:location.address,phone:location.phone,sort_order:sortIndex}))
+          );
+          if (locationError) throw locationError;
+        }
 
         const assignmentRows = day.locations.flatMap((location: any) =>
           location.assignments
@@ -1245,7 +1250,7 @@ function JobForm(props: any) {
                       <div key={assignmentIndex} className={`rounded-xl border p-3 ${assignment.client_requested?'border-red-300 bg-red-50':'bg-slate-50'}`}>
                         <div className="grid grid-cols-1 gap-3 md:grid-cols-12 md:items-end">
                           <label className="text-xs font-medium text-slate-600 md:col-span-2">Vai trò<select className="mt-1 w-full rounded border p-2" value={assignment.role} onChange={(e) => updateAssignment(dayIndex, locationIndex, assignmentIndex, "role", e.target.value)}><option>Thợ chụp</option><option>Thợ quay</option><option>Flycam</option><option>Editor</option><option>Livestream</option><option>Makeup</option><option>Lái xe</option></select></label>
-                          <label className="text-xs font-medium text-slate-600 md:col-span-4">Nhân sự được phân công<select className="mt-1 w-full rounded border p-2" value={assignment.employee_id} onChange={(e) => { const id=e.target.value; const conflict=id?getEmployeeConflict(id,dayIndex,locationIndex,assignmentIndex):null; if(conflict){alert(`Thợ này đã có Job trùng ${conflict.start}-${conflict.end}: ${conflict.job}`);return;} const employee = employees.find((emp: any) => emp.id === id); updateAssignment(dayIndex, locationIndex, assignmentIndex, "employee_id", id); if (employee?.base_fee) updateAssignment(dayIndex, locationIndex, assignmentIndex, "salary_amount", Number(employee.base_fee)); }}><option value="">Chọn tên thợ</option>{employees.map((employee: any) => {const conflict=getEmployeeConflict(employee.id,dayIndex,locationIndex,assignmentIndex);return <option key={employee.id} value={employee.id} disabled={Boolean(conflict)}>{employee.full_name} - {employee.role}{conflict?` • BẬN ${conflict.start}-${conflict.end}`:""}</option>})}</select>{assignment.employee_id&&getEmployeeConflict(assignment.employee_id,dayIndex,locationIndex,assignmentIndex)&&<span className="mt-1 block text-[11px] font-semibold text-red-600">⚠ Thợ này đang trùng lịch, cần đổi thợ hoặc đổi giờ.</span>}</label>
+                          <label className="text-xs font-medium text-slate-600 md:col-span-4">Nhân sự được phân công<EmployeePicker employees={employees} value={assignment.employee_id} getConflict={(id)=>getEmployeeConflict(id,dayIndex,locationIndex,assignmentIndex)} onChange={(id)=>{const conflict=id?getEmployeeConflict(id,dayIndex,locationIndex,assignmentIndex):null;if(conflict){alert(`Thợ này đã có Job trùng ${conflict.start}-${conflict.end}: ${conflict.job}`);return;}const employee=employees.find((emp:any)=>emp.id===id);updateAssignment(dayIndex,locationIndex,assignmentIndex,"employee_id",id);if(employee?.base_fee)updateAssignment(dayIndex,locationIndex,assignmentIndex,"salary_amount",Number(employee.base_fee));}}/>{assignment.employee_id&&getEmployeeConflict(assignment.employee_id,dayIndex,locationIndex,assignmentIndex)&&<span className="mt-1 block text-[11px] font-semibold text-red-600">⚠ Thợ này đang trùng lịch, cần đổi thợ hoặc đổi giờ.</span>}</label>
                           <label className="text-xs font-medium text-slate-600 md:col-span-2">Tiền công thợ<MoneyInput className="mt-1 w-full rounded border p-2" value={assignment.salary_amount} onChange={(v) => updateAssignment(dayIndex, locationIndex, assignmentIndex, "salary_amount", v)} placeholder="700.000" /></label>
                           <label className="text-xs font-medium text-slate-600 md:col-span-3">Ghi chú riêng cho thợ<input className="mt-1 w-full rounded border p-2" value={assignment.note} onChange={(e) => updateAssignment(dayIndex, locationIndex, assignmentIndex, "note", e.target.value)} placeholder="Lưu ý riêng..." /></label>
                           <button onClick={() => removeAssignment(dayIndex, locationIndex, assignmentIndex)} className="rounded-lg border p-2 text-red-600 md:col-span-1">Xóa</button>
