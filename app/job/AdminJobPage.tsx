@@ -30,6 +30,8 @@ const emptyJob = {
   status: "Đã đặt cọc",
   location: "",
   note: "",
+  required_photo_count: 0,
+  required_video_count: 0,
 };
 
 const makeAssignment = (role = "Thợ chụp") => ({
@@ -128,6 +130,10 @@ const buildZaloReviewPayload = (job: any) => {
 type QuickJobPreview={shooting_date?:string;start_time?:string;event_name?:string;groom_name?:string;bride_name?:string;groom_phone?:string;bride_phone?:string;groom_address?:string;bride_address?:string;location?:string;note?:string};
 const qTime=(h?:string,m?:string)=>h?`${String(Math.min(23,Number(h))).padStart(2,"0")}:${String(Math.min(59,Number(m||0))).padStart(2,"0")}`:"";
 const qPhone=(s:string)=>s.replace(/\D/g,"");
+
+const timeToMinutes=(value:any)=>{const m=String(value||"00:00").match(/^(\d{1,2}):(\d{2})/);return m?Number(m[1])*60+Number(m[2]):0};
+const timeOverlaps=(aStart:any,aEnd:any,bStart:any,bEnd:any)=>timeToMinutes(aStart)<timeToMinutes(bEnd)&&timeToMinutes(aEnd)>timeToMinutes(bStart);
+const roleKind=(role:any)=>{const r=String(role||"").toLowerCase();if(r.includes("chụp"))return "photo";if(r.includes("quay")&&!r.includes("fly"))return "video";return "other"};
 function parseQuickJob(raw:string,baseMonth:string):QuickJobPreview{
  const text=raw.replace(/\s+/g," ").trim(),lower=text.toLowerCase(),o:QuickJobPreview={note:text};
  const df=lower.match(/\b([0-3]?\d)[\/-]([01]?\d)(?:[\/-](20\d{2}|\d{2}))?\b/),dd=lower.match(/^\s*([0-3]?\d)\s*[:\-]/);
@@ -350,6 +356,8 @@ export default function AdminJobPage() {
       status: job.status || "Đã đặt cọc",
       location: job.location || "",
       note: job.note || "",
+      required_photo_count: Number(job.required_photo_count || 0),
+      required_video_count: Number(job.required_video_count || 0),
     });
 
     setDays(buildDaysFromJob(job));
@@ -369,6 +377,29 @@ export default function AdminJobPage() {
 
   const removeDay = (dayIndex: number) => {
     setDays((prev) => prev.length <= 1 ? prev : prev.filter((_, i) => i !== dayIndex));
+  };
+
+  const getEmployeeConflict=(employeeId:string,dayIndex:number,locationIndex:number,assignmentIndex:number)=>{
+    if(!employeeId)return null;
+    const currentDay=days[dayIndex];
+    if(!currentDay?.shooting_date)return null;
+    for(const job of jobs){
+      if(editingJob?.id && job.id===editingJob.id)continue;
+      for(const jd of (job.job_days||[])){
+        if(jd.shooting_date!==currentDay.shooting_date)continue;
+        if(!timeOverlaps(currentDay.start_time,currentDay.end_time,jd.start_time,jd.end_time))continue;
+        const hit=(jd.job_assignments||[]).find((a:any)=>a.employee_id===employeeId);
+        if(hit)return {job:job.event_name||job.customer_name||"Job khác",start:jd.start_time,end:jd.end_time};
+      }
+    }
+    for(let di=0;di<days.length;di++){
+      const d=days[di]; if(d.shooting_date!==currentDay.shooting_date||!timeOverlaps(currentDay.start_time,currentDay.end_time,d.start_time,d.end_time))continue;
+      for(let li=0;li<(d.locations||[]).length;li++)for(let ai=0;ai<(d.locations[li].assignments||[]).length;ai++){
+        if(di===dayIndex&&li===locationIndex&&ai===assignmentIndex)continue;
+        if(d.locations[li].assignments[ai].employee_id===employeeId)return {job:"Phân công khác trong Job đang nhập",start:d.start_time,end:d.end_time};
+      }
+    }
+    return null;
   };
 
   const addReservedWorker = (dayIndex: number, locationIndex: number, reserve: any) => {
@@ -514,6 +545,16 @@ export default function AdminJobPage() {
       alert("Vui lòng nhập đầy đủ ngày chụp");
       return;
     }
+    for(let di=0;di<days.length;di++){
+      for(let li=0;li<(days[di].locations||[]).length;li++){
+        for(let ai=0;ai<(days[di].locations[li].assignments||[]).length;ai++){
+          const a=days[di].locations[li].assignments[ai];
+          if(!a.employee_id)continue;
+          const conflict=getEmployeeConflict(a.employee_id,di,li,ai);
+          if(conflict){const emp=employees.find((e:any)=>e.id===a.employee_id);alert(`${emp?.full_name||"Nhân sự"} đã có lịch trùng giờ ${conflict.start}-${conflict.end} (${conflict.job}). Hãy chọn thợ khác hoặc đổi khung giờ.`);return;}
+        }
+      }
+    }
 
     if (typeof navigator !== "undefined" && !navigator.onLine) { saveOfflineDraft(); return; }
 
@@ -618,6 +659,8 @@ export default function AdminJobPage() {
             debt,
             status: jobForm.status,
             location: jobForm.location,
+            required_photo_count: Number(jobForm.required_photo_count || 0),
+            required_video_count: Number(jobForm.required_video_count || 0),
             note: jobForm.note,
           })
           .eq("id", editingJob.id);
@@ -942,6 +985,7 @@ export default function AdminJobPage() {
           updateAssignment={updateAssignment}
           addAssignment={addAssignment}
           removeAssignment={removeAssignment}
+          getEmployeeConflict={getEmployeeConflict}
           editingJob={editingJob}
           saving={saving}
           onClose={() => {
@@ -1048,6 +1092,7 @@ function JobForm(props: any) {
     updateAssignment,
     addAssignment,
     removeAssignment,
+    getEmployeeConflict,
     editingJob,
     saving,
     onClose,
@@ -1110,6 +1155,11 @@ function JobForm(props: any) {
               <label className="text-sm text-gray-600">Trạng thái<select className="border p-3 rounded-lg w-full mt-1" value={jobForm.status} onChange={(e) => setJobForm({ ...jobForm, status: e.target.value })}><option>Chưa chốt</option><option>Đã đặt cọc</option><option>Đang chụp</option><option>Đang hậu kỳ</option><option>Đã bàn giao</option><option>Hoàn thành</option><option>Hủy</option></select></label>
             </div>
             <input className="border p-3 rounded-lg w-full" placeholder="Gói dịch vụ. Ví dụ: Combo VIP - 3 chụp 2 quay" value={jobForm.service} onChange={(e) => setJobForm({ ...jobForm, service: e.target.value })} />
+            <div className="grid grid-cols-2 gap-3 rounded-xl border border-blue-100 bg-blue-50 p-3">
+              <label className="text-sm font-semibold text-blue-900">Tổng thợ CHỤP cần<input type="number" min="0" className="mt-1 w-full rounded-lg border bg-white p-3" value={jobForm.required_photo_count||0} onChange={e=>setJobForm({...jobForm,required_photo_count:Math.max(0,Number(e.target.value||0))})}/></label>
+              <label className="text-sm font-semibold text-blue-900">Tổng thợ QUAY cần<input type="number" min="0" className="mt-1 w-full rounded-lg border bg-white p-3" value={jobForm.required_video_count||0} onChange={e=>setJobForm({...jobForm,required_video_count:Math.max(0,Number(e.target.value||0))})}/></label>
+              <p className="col-span-2 text-xs text-blue-700">Dùng để cảnh báo Job còn thiếu thợ trên Tổng quát. Ví dụ: cần 3 chụp + 2 quay.</p>
+            </div>
             <input className="border p-3 rounded-lg w-full" placeholder="Địa điểm chung / ghi chú địa bàn" value={jobForm.location} onChange={(e) => setJobForm({ ...jobForm, location: e.target.value })} />
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <label className="text-sm font-medium text-gray-700">
@@ -1195,7 +1245,7 @@ function JobForm(props: any) {
                       <div key={assignmentIndex} className={`rounded-xl border p-3 ${assignment.client_requested?'border-red-300 bg-red-50':'bg-slate-50'}`}>
                         <div className="grid grid-cols-1 gap-3 md:grid-cols-12 md:items-end">
                           <label className="text-xs font-medium text-slate-600 md:col-span-2">Vai trò<select className="mt-1 w-full rounded border p-2" value={assignment.role} onChange={(e) => updateAssignment(dayIndex, locationIndex, assignmentIndex, "role", e.target.value)}><option>Thợ chụp</option><option>Thợ quay</option><option>Flycam</option><option>Editor</option><option>Livestream</option><option>Makeup</option><option>Lái xe</option></select></label>
-                          <label className="text-xs font-medium text-slate-600 md:col-span-4">Nhân sự được phân công<select className="mt-1 w-full rounded border p-2" value={assignment.employee_id} onChange={(e) => { const employee = employees.find((emp: any) => emp.id === e.target.value); updateAssignment(dayIndex, locationIndex, assignmentIndex, "employee_id", e.target.value); if (employee?.base_fee) updateAssignment(dayIndex, locationIndex, assignmentIndex, "salary_amount", Number(employee.base_fee)); }}><option value="">Chọn tên thợ</option>{employees.map((employee: any) => <option key={employee.id} value={employee.id}>{employee.full_name} - {employee.role}</option>)}</select></label>
+                          <label className="text-xs font-medium text-slate-600 md:col-span-4">Nhân sự được phân công<select className="mt-1 w-full rounded border p-2" value={assignment.employee_id} onChange={(e) => { const id=e.target.value; const conflict=id?getEmployeeConflict(id,dayIndex,locationIndex,assignmentIndex):null; if(conflict){alert(`Thợ này đã có Job trùng ${conflict.start}-${conflict.end}: ${conflict.job}`);return;} const employee = employees.find((emp: any) => emp.id === id); updateAssignment(dayIndex, locationIndex, assignmentIndex, "employee_id", id); if (employee?.base_fee) updateAssignment(dayIndex, locationIndex, assignmentIndex, "salary_amount", Number(employee.base_fee)); }}><option value="">Chọn tên thợ</option>{employees.map((employee: any) => {const conflict=getEmployeeConflict(employee.id,dayIndex,locationIndex,assignmentIndex);return <option key={employee.id} value={employee.id} disabled={Boolean(conflict)}>{employee.full_name} - {employee.role}{conflict?` • BẬN ${conflict.start}-${conflict.end}`:""}</option>})}</select>{assignment.employee_id&&getEmployeeConflict(assignment.employee_id,dayIndex,locationIndex,assignmentIndex)&&<span className="mt-1 block text-[11px] font-semibold text-red-600">⚠ Thợ này đang trùng lịch, cần đổi thợ hoặc đổi giờ.</span>}</label>
                           <label className="text-xs font-medium text-slate-600 md:col-span-2">Tiền công thợ<MoneyInput className="mt-1 w-full rounded border p-2" value={assignment.salary_amount} onChange={(v) => updateAssignment(dayIndex, locationIndex, assignmentIndex, "salary_amount", v)} placeholder="700.000" /></label>
                           <label className="text-xs font-medium text-slate-600 md:col-span-3">Ghi chú riêng cho thợ<input className="mt-1 w-full rounded border p-2" value={assignment.note} onChange={(e) => updateAssignment(dayIndex, locationIndex, assignmentIndex, "note", e.target.value)} placeholder="Lưu ý riêng..." /></label>
                           <button onClick={() => removeAssignment(dayIndex, locationIndex, assignmentIndex)} className="rounded-lg border p-2 text-red-600 md:col-span-1">Xóa</button>
@@ -1372,6 +1422,11 @@ function JobDetail({ job, onClose, onEdit, onDelete }: any) {
           <div className="border rounded-xl p-4"><p className="text-gray-500">Đặt cọc</p><p className="text-xl font-bold text-green-700">{money(job.deposit)}</p></div>
           <div className="border rounded-xl p-4"><p className="text-gray-500">Còn nợ</p><p className="text-xl font-bold text-red-600">{money(job.debt)}</p></div>
           <div className="border rounded-xl p-4"><p className="text-gray-500">Số ngày</p><p className="text-xl font-bold">{days.length}</p></div>
+        </div>
+
+        <div className="mb-4 rounded-2xl border border-blue-100 bg-blue-50 p-4">
+          <h3 className="font-bold text-blue-900">Nhu cầu nhân sự</h3>
+          <div className="mt-2 flex flex-wrap gap-3 text-sm"><span className="rounded-full bg-white px-3 py-1 font-semibold">Cần chụp: {Number(job.required_photo_count||0)}</span><span className="rounded-full bg-white px-3 py-1 font-semibold">Cần quay: {Number(job.required_video_count||0)}</span></div>
         </div>
 
         <div className="space-y-4">

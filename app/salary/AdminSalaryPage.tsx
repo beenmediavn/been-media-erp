@@ -24,7 +24,7 @@ export default function AdminSalaryPage() {
   const [payments, setPayments] = useState<any[]>([]);
   const [adjustments,setAdjustments]=useState<any[]>([]);
   const [showPenalty,setShowPenalty]=useState(false);
-  const [penaltyForm,setPenaltyForm]=useState<any>({employee_id:"",amount:0,note:"",adjustment_date:new Date().toISOString().slice(0,10)});
+  const [penaltyForm,setPenaltyForm]=useState<any>({employee_id:"",amount:0,note:"",adjustment_date:new Date().toISOString().slice(0,10),adjustment_type:"penalty"});
   const [selectedEmployee, setSelectedEmployee] = useState<any>(null);
   const [filter, setFilter] = useState<SalaryFilter>("all");
   const [search, setSearch] = useState("");
@@ -143,7 +143,11 @@ export default function AdminSalaryPage() {
 
 
   const openPenalty=(employeeId:string)=>{
-    setPenaltyForm({employee_id:employeeId,amount:0,note:"",adjustment_date:new Date().toISOString().slice(0,10)});
+    setPenaltyForm({employee_id:employeeId,amount:0,note:"",adjustment_date:new Date().toISOString().slice(0,10),adjustment_type:"penalty"});
+    setShowPenalty(true);
+  };
+  const openBonus=(employeeId:string)=>{
+    setPenaltyForm({employee_id:employeeId,amount:0,note:"",adjustment_date:new Date().toISOString().slice(0,10),adjustment_type:"bonus"});
     setShowPenalty(true);
   };
   const savePenalty=async()=>{
@@ -154,8 +158,8 @@ export default function AdminSalaryPage() {
     const {error}=await supabase.from("salary_adjustments").insert([{
       employee_id:penaltyForm.employee_id,
       adjustment_date:penaltyForm.adjustment_date,
-      adjustment_type:"penalty",
-      amount:-amount,
+      adjustment_type:penaltyForm.adjustment_type||"penalty",
+      amount:penaltyForm.adjustment_type==="bonus"?amount:-amount,
       note:penaltyForm.note,
       received_by_studio:false
     }]);
@@ -243,6 +247,7 @@ export default function AdminSalaryPage() {
                     <button onClick={() => setSelectedEmployee(emp)} className="bg-blue-600 text-white px-3 py-1 rounded">Xem</button>
                     <button onClick={() => addAdvance(emp.id)} className="bg-yellow-500 text-white px-3 py-1 rounded">Ứng lương</button>
                     <button onClick={() => addPayment(emp.id, emp.remain)} className="bg-green-600 text-white px-3 py-1 rounded">Thanh toán lương</button>
+                    <button onClick={()=>openBonus(emp.id)} className="bg-emerald-600 text-white px-3 py-1 rounded">Thưởng</button>
                     <button onClick={()=>openPenalty(emp.id)} className="bg-red-600 text-white px-3 py-1 rounded">Trừ vi phạm</button>
                   </td>
                 </tr>
@@ -274,6 +279,7 @@ export default function AdminSalaryPage() {
                 <button onClick={() => setSelectedEmployee(emp)} className="flex-1 rounded-lg bg-blue-600 p-2 text-white">Xem</button>
                 <button onClick={() => addAdvance(emp.id)} className="flex-1 rounded-lg bg-yellow-500 p-2 text-white">Ứng lương</button>
                 <button onClick={() => addPayment(emp.id, emp.remain)} className="flex-1 rounded-lg bg-green-600 p-2 text-white">Thanh toán</button>
+                <button onClick={()=>openBonus(emp.id)} className="flex-1 rounded-lg bg-emerald-600 p-2 text-white">Thưởng</button>
                 <button onClick={()=>openPenalty(emp.id)} className="flex-1 rounded-lg bg-red-600 p-2 text-white">Trừ vi phạm</button>
               </div>
             </div>
@@ -287,15 +293,15 @@ export default function AdminSalaryPage() {
 
       {showPenalty&&<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
         <div className="w-full max-w-md rounded-2xl bg-white p-5">
-          <h2 className="text-xl font-bold">Trừ lương do vi phạm</h2>
-          <p className="mt-1 text-sm text-slate-500">Khoản này sẽ trừ trực tiếp vào lương phải trả của nhân sự.</p>
+          <h2 className="text-xl font-bold">{penaltyForm.adjustment_type==="bonus"?"Thưởng nhân sự":"Trừ lương do vi phạm"}</h2>
+          <p className="mt-1 text-sm text-slate-500">{penaltyForm.adjustment_type==="bonus"?"Khoản thưởng sẽ cộng trực tiếp vào lương phải trả.":"Khoản này sẽ trừ trực tiếp vào lương phải trả của nhân sự."}</p>
           <div className="mt-4 space-y-3">
             <label className="block text-sm font-medium">Nhân sự<select className="mt-1 w-full rounded-xl border p-3" value={penaltyForm.employee_id} onChange={e=>setPenaltyForm({...penaltyForm,employee_id:e.target.value})}><option value="">Chọn nhân sự</option>{employees.map((e:any)=><option key={e.id} value={e.id}>{e.full_name}</option>)}</select></label>
             <label className="block text-sm font-medium">Số tiền trừ<MoneyInput className="mt-1 w-full rounded-xl border p-3" value={penaltyForm.amount||0} onChange={v=>setPenaltyForm({...penaltyForm,amount:v})}/></label>
             <label className="block text-sm font-medium">Ngày<input type="date" className="mt-1 w-full rounded-xl border p-3" value={penaltyForm.adjustment_date} onChange={e=>setPenaltyForm({...penaltyForm,adjustment_date:e.target.value})}/></label>
-            <label className="block text-sm font-medium">Nội dung vi phạm<textarea rows={3} className="mt-1 w-full rounded-xl border p-3" value={penaltyForm.note} onChange={e=>setPenaltyForm({...penaltyForm,note:e.target.value})} placeholder="VD: Đi muộn 30 phút, thiếu file, không đúng dresscode..."/></label>
+            <label className="block text-sm font-medium">{penaltyForm.adjustment_type==="bonus"?"Nội dung thưởng":"Nội dung vi phạm"}<textarea rows={3} className="mt-1 w-full rounded-xl border p-3" value={penaltyForm.note} onChange={e=>setPenaltyForm({...penaltyForm,note:e.target.value})} placeholder={penaltyForm.adjustment_type==="bonus"?"VD: Làm tốt, khách khen, hỗ trợ thêm...":"VD: Đi muộn 30 phút, thiếu file, không đúng dresscode..."}/></label>
           </div>
-          <div className="mt-5 flex justify-end gap-2"><button onClick={()=>setShowPenalty(false)} className="rounded-xl border px-4 py-2">Hủy</button><button onClick={savePenalty} className="rounded-xl bg-red-600 px-4 py-2 text-white">Lưu khấu trừ</button></div>
+          <div className="mt-5 flex justify-end gap-2"><button onClick={()=>setShowPenalty(false)} className="rounded-xl border px-4 py-2">Hủy</button><button onClick={savePenalty} className={`rounded-xl px-4 py-2 text-white ${penaltyForm.adjustment_type==="bonus"?"bg-emerald-600":"bg-red-600"}`}>{penaltyForm.adjustment_type==="bonus"?"Lưu thưởng":"Lưu khấu trừ"}</button></div>
         </div>
       </div>}
 
@@ -318,7 +324,7 @@ export default function AdminSalaryPage() {
 
 
             <div className="mb-5 rounded-xl border p-3">
-              <div className="flex items-center justify-between gap-3"><h3 className="font-bold">Phát sinh / khấu trừ trong tháng</h3><button onClick={()=>openPenalty(selectedEmployee.id)} className="rounded-lg bg-red-600 px-3 py-2 text-sm text-white">+ Ghi vi phạm</button></div>
+              <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-bold">Thưởng / phát sinh / khấu trừ trong tháng</h3><div className="flex gap-2"><button onClick={()=>openBonus(selectedEmployee.id)} className="rounded-lg bg-emerald-600 px-3 py-2 text-sm text-white">+ Thưởng</button><button onClick={()=>openPenalty(selectedEmployee.id)} className="rounded-lg bg-red-600 px-3 py-2 text-sm text-white">+ Ghi vi phạm</button></div></div>
               <div className="mt-3 space-y-2">
                 {(selectedEmployee.employeeAdjustments||[]).map((x:any)=><div key={x.id} className="rounded-lg bg-slate-50 p-3 text-sm">
                   <div className="flex justify-between gap-3"><b className={Number(x.amount)<0?"text-red-600":"text-emerald-700"}>{Number(x.amount)<0?"Trừ ":"Cộng "}{formatMoney(Math.abs(Number(x.amount||0)))}</b><span>{formatDateVN(x.adjustment_date)}</span></div>
