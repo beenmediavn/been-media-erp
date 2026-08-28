@@ -18,9 +18,28 @@ export default function LoginPage() {
     const user = username.trim().toLowerCase();
     const pass = password.trim();
 
-    if (user === "admin" && pass === "123456") {
-      saveSession({ id: "admin", full_name: "Nguyễn Anh Tuấn", username: "admin", role: "admin", role_label: "Admin" });
-      router.push("/");
+    if (user === "admin") {
+      const { data: adminPasswordRow, error: adminPasswordError } = await supabase
+        .from("app_settings")
+        .select("value")
+        .eq("id", "admin_password")
+        .maybeSingle();
+
+      if (adminPasswordError) {
+        setLoading(false);
+        alert(adminPasswordError.message);
+        return;
+      }
+
+      const adminPassword = adminPasswordRow?.value || "181096";
+      if (pass === adminPassword) {
+        saveSession({ id: "admin", full_name: "Nguyễn Anh Tuấn", username: "admin", role: "admin", role_label: "Admin" });
+        router.push("/");
+        return;
+      }
+
+      setLoading(false);
+      alert("Sai tài khoản hoặc mật khẩu.");
       return;
     }
 

@@ -17,7 +17,7 @@ const emptyForm = {
   role: "Photographer",
   app_role: "photographer",
   username: "",
-  password: "123456",
+  password: "",
   base_fee: 0,
   active: true,
   can_login: true,
@@ -70,7 +70,7 @@ export default function EmployeesPage() {
       role: employee.role || "Photographer",
       app_role: employee.app_role || normalizeRole(employee.role),
       username: employee.username || "",
-      password: employee.password || "123456",
+      password: employee.password || "",
       base_fee: Number(employee.base_fee || 0),
       active: employee.active ?? true,
       can_login: employee.can_login ?? true,
@@ -93,6 +93,12 @@ export default function EmployeesPage() {
     }
 
     const normalizedUsername = form.username.trim().toLowerCase();
+
+    if (normalizedUsername === "admin") {
+      alert('Tài khoản "admin" dành riêng cho Admin chính. Vui lòng chọn tên đăng nhập khác.');
+      return;
+    }
+
     const duplicate = employees.find(
       (e) =>
         String(e.username || "").trim().toLowerCase() === normalizedUsername &&
@@ -117,7 +123,16 @@ export default function EmployeesPage() {
 
     const { error } = await request;
     if (error) {
-      alert(error.message);
+      const msg = String(error.message || "");
+      if (
+        msg.toLowerCase().includes("employees_username_unique_idx") ||
+        msg.toLowerCase().includes("duplicate key") ||
+        msg.toLowerCase().includes("unique")
+      ) {
+        alert("Tên đăng nhập đã tồn tại. Mỗi tài khoản phải có một tên đăng nhập riêng.");
+      } else {
+        alert(msg);
+      }
       return;
     }
 
