@@ -20,7 +20,7 @@ export const ROLE_LABELS: Record<AppRole, string> = {
   admin: "Admin",
   coordinator: "Điều phối / Sale",
   photographer: "Photographer",
-  videographer: "Videographer",
+  videographer: "CAMERAMEN",
   editor: "Editor",
   accountant: "Kế toán",
   viewer: "Chỉ xem",
@@ -30,20 +30,51 @@ export const ROLE_OPTIONS: { value: AppRole; label: string }[] = [
   { value: "admin", label: "Admin" },
   { value: "coordinator", label: "Điều phối / Sale" },
   { value: "photographer", label: "Photographer" },
-  { value: "videographer", label: "Videographer" },
+  { value: "videographer", label: "CAMERAMEN" },
   { value: "editor", label: "Editor" },
   { value: "accountant", label: "Kế toán" },
   { value: "viewer", label: "Chỉ xem" },
 ];
 
 export const ROLE_PERMISSIONS: Record<AppRole, string[]> = {
-  admin: ["dashboard", "customers", "schedule", "job", "employees", "reserve", "payments", "cashflow", "salary", "drive", "reports", "chat", "profile", "ai", "settings"],
-  coordinator: ["dashboard", "schedule", "job", "salary", "chat", "profile"],
-  photographer: ["dashboard", "schedule", "job", "salary", "chat", "profile"],
-  videographer: ["dashboard", "schedule", "job", "salary", "chat", "profile"],
-  editor: ["dashboard", "schedule", "job", "salary", "chat", "profile"],
-  accountant: ["dashboard", "schedule", "job", "salary", "chat", "profile"],
-  viewer: ["dashboard", "schedule", "job", "salary", "chat", "profile"],
+  // Admin phụ có quyền đầy đủ giống Admin chính.
+  admin: [
+    "dashboard", "customers", "schedule", "job", "employees", "reserve",
+    "payments", "cashflow", "salary", "drive", "reports", "chat",
+    "profile", "ai", "settings"
+  ],
+
+  // Điều phối / Sale: quản lý khách, lịch, job, thợ dự phòng; chỉ xem lương cá nhân.
+  coordinator: [
+    "dashboard", "customers", "schedule", "job", "reserve",
+    "salary", "chat", "profile"
+  ],
+
+  // Thợ chụp: chỉ công việc được phân công + lương cá nhân + chat/hồ sơ.
+  photographer: [
+    "dashboard", "schedule", "job", "salary", "chat", "profile"
+  ],
+
+  // CAMERAMEN: chỉ công việc được phân công + lương cá nhân + chat/hồ sơ.
+  videographer: [
+    "dashboard", "schedule", "job", "salary", "chat", "profile"
+  ],
+
+  // Editor: job liên quan, Drive giao nhận, lương cá nhân, chat/hồ sơ.
+  editor: [
+    "dashboard", "schedule", "job", "drive", "salary", "chat", "profile"
+  ],
+
+  // Kế toán: các phần tài chính + báo cáo + dữ liệu khách/job cần đối soát.
+  accountant: [
+    "dashboard", "customers", "job", "payments", "cashflow",
+    "salary", "reports", "chat", "profile"
+  ],
+
+  // Chỉ xem: xem tổng quan, lịch và job; không có quyền quản trị.
+  viewer: [
+    "dashboard", "schedule", "job", "chat", "profile"
+  ],
 };
 
 export function normalizeRole(role: string | null | undefined): AppRole {
@@ -51,7 +82,7 @@ export function normalizeRole(role: string | null | undefined): AppRole {
   if (["admin", "quản trị", "quan tri", "quản trị viên", "quan tri vien"].includes(value)) return "admin";
   if (["coordinator", "sale", "điều phối", "dieu phoi", "sale / điều phối", "sale / dieu phoi"].includes(value)) return "coordinator";
   if (["photographer", "thợ chụp", "tho chup", "chụp", "chup"].includes(value)) return "photographer";
-  if (["videographer", "thợ quay", "tho quay", "quay", "quay phim", "flycam"].includes(value)) return "videographer";
+  if (["videographer", "cameramen", "cameraman", "camera man", "thợ quay", "tho quay", "quay", "quay phim", "flycam"].includes(value)) return "videographer";
   if (["editor", "dựng", "dung", "hậu kỳ", "hau ky", "thiết kế", "thiet ke"].includes(value)) return "editor";
   if (["accountant", "kế toán", "ke toan", "ketoan"].includes(value)) return "accountant";
   return "viewer";
