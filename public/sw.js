@@ -1,64 +1,58 @@
-const CACHE = "been-erp-v7-14-pwa";
-const STATIC = ["/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png"];
+const CACHE = "been-erp-v8-3-6-offline";
+const STATIC = ["/manifest.webmanifest", "/offline.html", "/icons/icon-192.png", "/icons/icon-512.png"];
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
-  event.waitUntil(
-    caches.open(CACHE).then((cache) => cache.addAll(STATIC).catch(() => {}))
-  );
+  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(STATIC).catch(() => {})));
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    Promise.all([
-      self.clients.claim(),
-      caches.keys().then((keys) =>
-        Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key)))
-      ),
-    ])
-  );
+  event.waitUntil(Promise.all([
+    self.clients.claim(),
+    caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))))
+  ]));
 });
 
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
-
   const url = new URL(req.url);
   if (url.origin !== self.location.origin || url.pathname.startsWith("/api/")) return;
 
-  // HTML navigation: always use the current deployment first.
+  // Navigation luôn ưu tiên mạng; chỉ dùng cache khi thật sự offline.
   if (req.mode === "navigate") {
-    event.respondWith(
-      fetch(req, { cache: "no-store" }).catch(async () => {
-        const fallback = await caches.match("/");
-        if (fallback) return fallback;
-        return new Response(
-          '<!doctype html><html lang="vi"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><body style="font-family:system-ui;padding:24px"><h3>BEEN MEDIA ERP</h3><p>Không có kết nối mạng. Hãy kết nối Internet rồi mở lại ứng dụng.</p></body></html>',
-          { headers: { "Content-Type": "text/html; charset=utf-8" } }
-        );
-      })
-    );
+    event.respondWith((async () => {
+      try {
+        const fresh = await fetch(req, { cache: "no-store" });
+        if (fresh.ok) caches.open(CACHE).then((cache) => cache.put(req, fresh.clone())).catch(() => {});
+        return fresh;
+      } catch {
+        return (await caches.match(req)) || (await caches.match("/offline.html"));
+      }
+    })());
     return;
   }
 
-  // Next.js hashed JS/CSS: network first to prevent an installed icon from booting an obsolete build.
-  if (url.pathname.startsWith("/_next/")) {
-    event.respondWith(fetch(req, { cache: "no-store" }));
+  // Next static: NETWORK FIRST để deploy phiên bản mới không bị dính bundle cũ.
+  if (url.pathname.startsWith("/_next/static/")) {
+    event.respondWith((async () => {
+      try {
+        const fresh = await fetch(req, { cache: "no-store" });
+        if (fresh.ok) caches.open(CACHE).then((cache) => cache.put(req, fresh.clone())).catch(() => {});
+        return fresh;
+      } catch {
+        const cached = await caches.match(req);
+        if (cached) return cached;
+        throw new Error("offline-static-miss");
+      }
+    })());
     return;
   }
 
-  // Only cache stable PWA assets.
-  if (url.pathname.startsWith("/icons/") || url.pathname === "/manifest.webmanifest") {
-    event.respondWith(
-      fetch(req)
-        .then((res) => {
-          if (res.ok) {
-            const copy = res.clone();
-            caches.open(CACHE).then((cache) => cache.put(req, copy)).catch(() => {});
-          }
-          return res;
-        })
-        .catch(() => caches.match(req))
-    );
+  if (url.pathname.startsWith("/icons/") || url.pathname === "/manifest.webmanifest" || url.pathname === "/offline.html") {
+    event.respondWith(caches.match(req).then((cached) => cached || fetch(req).then((res) => {
+      if (res.ok) caches.open(CACHE).then((cache) => cache.put(req, res.clone())).catch(() => {});
+      return res;
+    })));
   }
 });

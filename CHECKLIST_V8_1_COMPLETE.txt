@@ -1,0 +1,50 @@
+BEEN MEDIA ERP V8.1 - MASTER CHECKLIST
+
+[ĐÃ LÀM TRONG SOURCE]
+- Job tương lai không tự tính là hoàn thành trên Tổng quát.
+- Số thợ CHỤP/QUAY lưu trong Job + cảnh báo thiếu thợ (đã có từ V7.22/V7.23).
+- Form số lượng thợ mobile chuyển 1 cột, không đè nhau.
+- Giờ 24h / nhập Job nhanh (kế thừa V7.19.2).
+- Nhà trai/nhà gái + SĐT + đổi SĐT (kế thừa V7.20/V7.21/V7.23).
+- Avatar nhân sự + xem Job tháng (kế thừa V7.23).
+- Lương: thưởng/vi phạm/phát sinh; V8.1 sửa thêm nhãn và validation thưởng.
+- Sửa nền tảng lỗi salary_adjustments bằng SQL V8.1 hợp nhất.
+- Google Drive đổi thành SẢN PHẨM; nhãn Ảnh gốc, Video gốc, Ảnh hoàn thiện, Video hoàn thiện, Backup.
+- Chat: chặn nhân sự mở chat riêng với nhân sự khác; nhân sự chat riêng Admin; Admin tạo nhóm.
+- Chat: Thu hồi + Xóa phía tôi.
+- Offline IndexedDB cho Job, khách hàng, ghi chú và phân công nằm trong Job.
+- Tạo Job nhanh trên Lịch khi offline cũng vào queue.
+- Tự sync khi online trở lại + retry định kỳ 30 giây.
+- UUID cố định trước khi sync để tránh tạo trùng Job khi retry.
+- Conflict detection cho Job/Khách đã sửa offline dựa trên updated_at.
+- Có lựa chọn Giữ bản server / Giữ bản của tôi khi conflict.
+- Cache dữ liệu Job/Lịch/Khách và lịch của thợ để vẫn xem dữ liệu gần nhất khi mất mạng.
+- Widget mạng: Online/Offline, ping, loại mạng, Mbps ước tính nếu trình duyệt hỗ trợ, số mục chờ sync.
+- Nút Đồng bộ ngay + hiển thị lỗi sync.
+- PWA Service Worker mới cache navigation đã mở + static chunks + offline fallback.
+- Audit log: bảng + trigger DB + trang NHẬT KÝ HỆ THỐNG cho Admin.
+- Chuẩn bị studio_id + bảng studios cho quá trình multi-tenant.
+
+[BẮT BUỘC CHẠY TRÊN SUPABASE]
+1. UPDATE_V8_1_OFFLINE_CHAT_COMPLETE.sql
+2. Đảm bảo các migration V7 cũ đã chạy nếu database của bản đang online chưa có các bảng/column tương ứng.
+3. Sau SQL, deploy source V8.1 và mở lại PWA.
+
+[CHƯA BẬT CỐ Ý - KHÔNG PHẢI LỖI]
+- Chưa cô lập RLS theo studio_id vì hệ thống hiện đăng nhập nội bộ bằng bảng employees và anon key, không phải Supabase Auth.
+- Nếu bật RLS multi-tenant ngay, app hiện tại có thể mất quyền đọc/ghi.
+- Bước nâng cấp an toàn tiếp theo là chuyển Auth sang Supabase Auth/server session, tạo studio_members, sau đó mới bật RLS studio thật sự.
+- Lương/xóa dữ liệu/quyền tài khoản không cho ghi offline để tránh giao dịch tài chính hoặc thao tác nguy hiểm bị replay sai.
+
+[KIỂM THỬ CẦN LÀM SAU DEPLOY]
+- Desktop Chrome.
+- Android Chrome/PWA.
+- iPhone Safari/Add to Home Screen.
+- Tạo Job online.
+- Tạo Job offline -> bật mạng -> tự sync.
+- Sửa Job offline trong khi máy khác sửa cùng Job -> phải hiện conflict.
+- Tạo khách offline -> bật mạng -> tự sync.
+- Mạng chập chờn -> retry không tạo Job trùng.
+- Chat thu hồi/xóa phía tôi.
+- Thưởng/vi phạm/phát sinh lương.
+- Mobile 360/375/390/430px.

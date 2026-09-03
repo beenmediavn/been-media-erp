@@ -2,6 +2,7 @@
 import { useEffect,useMemo,useState } from "react";
 import MainLayout from "../components/layout/MainLayout";
 import { supabase } from "@/lib/supabase";
+import { getOfflineCache, setOfflineCache } from "@/lib/offline-db";
 import type { AppUser } from "@/lib/auth";
 import { contactIsVisible,formatVNDate,workerStatus } from "@/lib/workerAccess";
 import { Copy,Clock3,MapPin,Phone,Wallet,Camera,Home } from "lucide-react";
@@ -10,7 +11,7 @@ const isCompleted=(status:any)=>String(status||"").toLowerCase().includes("hoàn
 
 export default function WorkerJobPage({user}:{user:AppUser}){
  const [rows,setRows]=useState<any[]>([]),[loading,setLoading]=useState(true),[year,setYear]=useState(new Date().getFullYear()),[month,setMonth]=useState<"all"|number>("all"),[status,setStatus]=useState<"all"|"done"|"upcoming">("all");
- async function load(){setLoading(true);const {data,error}=await supabase.from("job_assignments").select("*, jobs(id,event_name,customer_name,customer_phone,secondary_phone,service,status,note), job_days(id,shooting_date,start_time,end_time,location,note,job_locations(id,location_name,address,phone,sort_order))").eq("employee_id",user.id).order("created_at",{ascending:false});setLoading(false);if(error)return alert(error.message);setRows(data||[])}
+ async function load(){setLoading(true);const {data,error}=await supabase.from("job_assignments").select("*, jobs(id,event_name,customer_name,customer_phone,secondary_phone,service,status,note), job_days(id,shooting_date,start_time,end_time,location,note,job_locations(id,location_name,address,phone,sort_order))").eq("employee_id",user.id).order("created_at",{ascending:false});setLoading(false);if(error){try{const cached=await getOfflineCache<any[]>(`worker-job-${user.id}`);if(cached?.data){setRows(cached.data);return}}catch{}if(navigator.onLine)alert(error.message);return;}setRows(data||[]);setOfflineCache(`worker-job-${user.id}`,data||[]).catch(()=>{})}
  useEffect(()=>{load()},[user.id]);
  const filtered=useMemo(()=>rows.filter(a=>{const d=a.job_days?.shooting_date||"";if(!d.startsWith(String(year)))return false;if(month!=="all"&&!d.startsWith(`${year}-${String(month).padStart(2,"0")}`))return false;const s=workerStatus(d,a.jobs?.status);if(status==="done"&&!s.startsWith("Đã"))return false;if(status==="upcoming"&&s!=="Sắp tới")return false;return true}),[rows,year,month,status]);
  const earned=filtered.reduce((s,a)=>s+Number(a.salary_amount||0),0);

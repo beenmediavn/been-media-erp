@@ -1,0 +1,21 @@
+BEEN MEDIA ERP V7.9 - AI TÙY CHỌN
+================================
+
+Ở bản vận hành V7.9, AI được TẠM ẨN để app chạy ổn định và không phát sinh phí.
+ERP vẫn hoạt động đầy đủ khi AI tắt.
+
+KHI MUỐN BẬT AI SAU NÀY (VERCEL):
+1. Thêm/cập nhật các biến Production:
+   NEXT_PUBLIC_ENABLE_AI=true
+   ENABLE_AI=true
+   OPENAI_API_KEY=<API key mới, không chia sẻ>
+   OPENAI_AI_MODEL=gpt-5.6-luna
+2. Redeploy Vercel.
+3. Menu "AI Trợ lý" sẽ hiện lại.
+
+Muốn tắt lại:
+- đặt NEXT_PUBLIC_ENABLE_AI=false và ENABLE_AI=false rồi Redeploy.
+
+LƯU Ý:
+- OpenAI API tính phí riêng với ChatGPT Plus.
+- Không commit API key vào GitHub hoặc file .env trong source.

@@ -8,6 +8,7 @@ import { formatDateVN } from "@/lib/date-vn";
 import { requireEditPin } from "@/lib/admin-pin";
 
 type SalaryFilter = "all" | "paid" | "unpaid" | "debt" | "advance";
+const jobCompleted=(status:any)=>String(status||"").toLowerCase().includes("hoàn thành")||String(status||"").toLowerCase().includes("đã bàn giao");
 
 const FILTERS: { key: SalaryFilter; label: string }[] = [
   { key: "all", label: "Tất cả" },
@@ -39,7 +40,7 @@ export default function AdminSalaryPage() {
     const { data: emp } = await supabase.from("employees").select("*").order("created_at", { ascending: false });
     const { data: ass } = await supabase
       .from("job_assignments")
-      .select("*, jobs(customer_name, event_name, service), job_days(shooting_date,start_time,end_time)");
+      .select("*, jobs(customer_name, event_name, service, status), job_days(shooting_date,start_time,end_time)");
     const { data: adv } = await supabase.from("salary_advances").select("*").order("advance_date", { ascending: false });
     const { data: pay } = await supabase.from("salary_payments").select("*").order("payment_date", { ascending: false });
     const { data: adj } = await supabase.from("salary_adjustments").select("*, jobs(event_name,customer_name)").order("adjustment_date",{ascending:false});
@@ -62,9 +63,13 @@ export default function AdminSalaryPage() {
 
   const rows = useMemo(() => {
     return employees.map((emp) => {
-      const empAssignments = monthAssignments.filter((a) => a.employee_id === emp.id);
+      const empAssignmentsAll = monthAssignments.filter((a) => a.employee_id === emp.id);
+      // Chỉ Job đã hoàn thành mới phát sinh nghĩa vụ trả lương. Job tương lai/đang làm vẫn hiển thị để đối chiếu nhưng KHÔNG cộng nợ.
+      const empAssignments = empAssignmentsAll.filter((a)=>jobCompleted(a.jobs?.status));
       const baseSalary = empAssignments.reduce((sum, a) => sum + Number(a.salary_amount || 0), 0);
-      const employeeAdjustments = monthAdjustments.filter((a)=>a.employee_id===emp.id);
+      const allEmployeeAdjustments = monthAdjustments.filter((a)=>a.employee_id===emp.id);
+      const completedJobIds = new Set(empAssignments.map((a:any)=>a.job_id));
+      const employeeAdjustments = allEmployeeAdjustments.filter((a:any)=>!a.job_id || completedJobIds.has(a.job_id));
       const adjustmentTotal = employeeAdjustments.reduce((sum,a)=>sum+Number(a.amount||0),0);
       const totalSalary = baseSalary + adjustmentTotal;
       const totalAdvance = monthAdvances.filter((a) => a.employee_id === emp.id).reduce((sum, a) => sum + Number(a.amount || 0), 0);
@@ -73,7 +78,18 @@ export default function AdminSalaryPage() {
       const remain = Math.max(remainRaw, 0);
       const overpaid = Math.max(-remainRaw, 0);
 
-      return { ...emp, baseSalary, adjustmentTotal, employeeAdjustments, totalSalary, totalAdvance, totalPaid, remain, remainRaw, overpaid, jobs: empAssignments };
+      // Phân bổ số đã ứng/đã trả theo Job hoàn thành cũ nhất trước để Admin biết CHÍNH XÁC Job nào còn nợ.
+      // Các thanh toán lịch sử trước V8.2 không gắn Job nên dùng quy tắc FIFO nhất quán này.
+      let paidPool = totalAdvance + totalPaid;
+      const salaryJobs = [...empAssignments].sort((a:any,b:any)=>String(a.job_days?.shooting_date||"").localeCompare(String(b.job_days?.shooting_date||""))).map((a:any)=>{
+        const linkedAdj=employeeAdjustments.filter((x:any)=>x.job_id===a.job_id).reduce((sum:number,x:any)=>sum+Number(x.amount||0),0);
+        const due=Math.max(Number(a.salary_amount||0)+linkedAdj,0);
+        const allocated=Math.min(Math.max(paidPool,0),due);
+        paidPool=Math.max(paidPool-allocated,0);
+        return {...a,jobDue:due,jobPaid:allocated,jobRemain:Math.max(due-allocated,0)};
+      });
+
+      return { ...emp, baseSalary, adjustmentTotal, employeeAdjustments, totalSalary, totalAdvance, totalPaid, remain, remainRaw, overpaid, jobs: empAssignmentsAll, completedJobs: empAssignments, salaryJobs };
     });
   }, [employees, monthAssignments, monthAdvances, monthPayments, monthAdjustments]);
 
@@ -153,8 +169,8 @@ export default function AdminSalaryPage() {
   const savePenalty=async()=>{
     if(!penaltyForm.employee_id) return alert("Chưa chọn nhân sự");
     const amount=Math.abs(Number(penaltyForm.amount||0));
-    if(!amount) return alert("Nhập số tiền khấu trừ");
-    if(!String(penaltyForm.note||"").trim()) return alert("Nhập nội dung vi phạm");
+    if(!amount) return alert(penaltyForm.adjustment_type==="bonus"?"Nhập số tiền thưởng":"Nhập số tiền khấu trừ");
+    if(!String(penaltyForm.note||"").trim()) return alert(penaltyForm.adjustment_type==="bonus"?"Nhập nội dung thưởng":"Nhập nội dung vi phạm");
     const {error}=await supabase.from("salary_adjustments").insert([{
       employee_id:penaltyForm.employee_id,
       adjustment_date:penaltyForm.adjustment_date,
@@ -206,7 +222,7 @@ export default function AdminSalaryPage() {
                 <p className="font-semibold">{emp.full_name}</p>
                 <p className="text-sm text-slate-500">{emp.role}</p>
                 <p className="mt-2 text-red-600 font-bold">Còn nợ: {formatMoney(emp.remain)}</p>
-                <button onClick={() => addPayment(emp.id, emp.remain)} className="mt-2 rounded-lg bg-green-600 px-3 py-1 text-sm text-white">Trả lương</button>
+                <div className="mt-2 flex gap-2"><button onClick={() => setSelectedEmployee(emp)} className="rounded-lg bg-blue-600 px-3 py-1 text-sm text-white">Xem Job nợ</button><button onClick={() => addPayment(emp.id, emp.remain)} className="rounded-lg bg-green-600 px-3 py-1 text-sm text-white">Trả lương</button></div>
               </div>
             ))}
           </div>
@@ -297,7 +313,7 @@ export default function AdminSalaryPage() {
           <p className="mt-1 text-sm text-slate-500">{penaltyForm.adjustment_type==="bonus"?"Khoản thưởng sẽ cộng trực tiếp vào lương phải trả.":"Khoản này sẽ trừ trực tiếp vào lương phải trả của nhân sự."}</p>
           <div className="mt-4 space-y-3">
             <label className="block text-sm font-medium">Nhân sự<select className="mt-1 w-full rounded-xl border p-3" value={penaltyForm.employee_id} onChange={e=>setPenaltyForm({...penaltyForm,employee_id:e.target.value})}><option value="">Chọn nhân sự</option>{employees.map((e:any)=><option key={e.id} value={e.id}>{e.full_name}</option>)}</select></label>
-            <label className="block text-sm font-medium">Số tiền trừ<MoneyInput className="mt-1 w-full rounded-xl border p-3" value={penaltyForm.amount||0} onChange={v=>setPenaltyForm({...penaltyForm,amount:v})}/></label>
+            <label className="block text-sm font-medium">{penaltyForm.adjustment_type==="bonus"?"Số tiền thưởng":"Số tiền trừ"}<MoneyInput className="mt-1 w-full rounded-xl border p-3" value={penaltyForm.amount||0} onChange={v=>setPenaltyForm({...penaltyForm,amount:v})}/></label>
             <label className="block text-sm font-medium">Ngày<input type="date" className="mt-1 w-full rounded-xl border p-3" value={penaltyForm.adjustment_date} onChange={e=>setPenaltyForm({...penaltyForm,adjustment_date:e.target.value})}/></label>
             <label className="block text-sm font-medium">{penaltyForm.adjustment_type==="bonus"?"Nội dung thưởng":"Nội dung vi phạm"}<textarea rows={3} className="mt-1 w-full rounded-xl border p-3" value={penaltyForm.note} onChange={e=>setPenaltyForm({...penaltyForm,note:e.target.value})} placeholder={penaltyForm.adjustment_type==="bonus"?"VD: Làm tốt, khách khen, hỗ trợ thêm...":"VD: Đi muộn 30 phút, thiếu file, không đúng dresscode..."}/></label>
           </div>
@@ -335,22 +351,25 @@ export default function AdminSalaryPage() {
               </div>
             </div>
 
-            <h3 className="font-bold mb-3">Danh sách job đã làm</h3>
+            <h3 className="font-bold mb-1">Job của thợ trong tháng</h3><p className="mb-3 text-sm text-slate-500">Chỉ Job có trạng thái <b>Đã hoàn thành</b> mới được cộng vào nợ lương. Job chưa hoàn thành chỉ hiển thị để theo dõi.</p>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[800px]">
-                <thead><tr className="border-b bg-gray-50"><th className="text-left p-2">Ngày</th><th className="text-left p-2">Khách / sự kiện</th><th className="text-left p-2">Vai trò</th><th className="text-left p-2">Địa điểm</th><th className="text-left p-2">Lương</th><th className="text-left p-2">Ghi chú</th></tr></thead>
+                <thead><tr className="border-b bg-gray-50"><th className="text-left p-2">Ngày</th><th className="text-left p-2">Khách / sự kiện</th><th className="text-left p-2">Vai trò</th><th className="text-left p-2">Trạng thái</th><th className="text-left p-2">Địa điểm</th><th className="text-left p-2">Lương</th><th className="text-left p-2">Đã trả phân bổ</th><th className="text-left p-2">Còn nợ Job</th><th className="text-left p-2">Ghi chú</th></tr></thead>
                 <tbody>
-                  {selectedEmployee.jobs.map((job: any) => (
+                  {[...(selectedEmployee.salaryJobs||[]),...selectedEmployee.jobs.filter((j:any)=>!jobCompleted(j.jobs?.status))].map((job: any) => (
                     <tr key={job.id} className="border-b">
                       <td className="p-2">{formatDateVN(job.job_days?.shooting_date)}<br /><span className="text-gray-500">{job.job_days?.start_time} - {job.job_days?.end_time}</span></td>
                       <td className="p-2">{job.jobs?.event_name || job.jobs?.customer_name}<br /><span className="text-gray-500">{job.jobs?.service}</span></td>
                       <td className="p-2">{job.role}</td>
+                      <td className="p-2"><span className={`rounded-full px-2 py-1 text-xs font-bold ${jobCompleted(job.jobs?.status)?"bg-emerald-100 text-emerald-700":"bg-slate-100 text-slate-600"}`}>{job.jobs?.status||"Chưa xác định"}</span></td>
                       <td className="p-2">{job.work_location_name}<br /><span className="text-gray-500">{job.work_location_address}</span></td>
                       <td className="p-2 font-bold">{formatMoney(job.salary_amount)}</td>
+                      <td className="p-2">{jobCompleted(job.jobs?.status)?formatMoney(job.jobPaid||0):"—"}</td>
+                      <td className="p-2">{jobCompleted(job.jobs?.status)?<b className={Number(job.jobRemain||0)>0?"text-red-600":"text-emerald-700"}>{Number(job.jobRemain||0)>0?formatMoney(job.jobRemain):"ĐÃ TRẢ ĐỦ"}</b>:<span className="text-slate-400">Chưa hoàn thành - chưa tính nợ</span>}</td>
                       <td className="p-2">{job.note}</td>
                     </tr>
                   ))}
-                  {selectedEmployee.jobs.length === 0 && <tr><td className="p-4 text-gray-500" colSpan={6}>Chưa có job trong tháng.</td></tr>}
+                  {selectedEmployee.jobs.length === 0 && <tr><td className="p-4 text-gray-500" colSpan={9}>Chưa có job trong tháng.</td></tr>}
                 </tbody>
               </table>
             </div>

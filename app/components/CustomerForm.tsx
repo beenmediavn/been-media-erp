@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import MoneyInput from "./MoneyInput";
+import { queueOfflineCustomer } from "@/lib/offline-job";
 
 interface Props {
   onClose: () => void;
@@ -13,6 +14,7 @@ interface Props {
 const emptyForm = {
   full_name: "",
   phone: "",
+  secondary_phone: "",
   email: "",
   address: "",
   facebook: "",
@@ -33,6 +35,7 @@ export default function CustomerForm({ onClose, onSaved, editingCustomer }: Prop
       setForm({
         full_name: editingCustomer.full_name || "",
         phone: editingCustomer.phone || "",
+        secondary_phone: editingCustomer.secondary_phone || "",
         email: editingCustomer.email || "",
         address: editingCustomer.address || "",
         facebook: editingCustomer.facebook || "",
@@ -67,6 +70,25 @@ export default function CustomerForm({ onClose, onSaved, editingCustomer }: Prop
       debt: Number(form.total_price || 0) - Number(form.deposit || 0),
       status: form.status || "Đang xử lý",
     };
+
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      const id = editingCustomer?.id || globalThis.crypto?.randomUUID?.() || `offline-customer-${Date.now()}`;
+      try {
+        await queueOfflineCustomer({
+          id,
+          customer_code: editingCustomer?.customer_code || `KH-${String(id).slice(0,8)}`,
+          ...payload,
+          baseUpdatedAt: editingCustomer?.updated_at || null,
+        });
+        setLoading(false);
+        alert("Đã lưu khách hàng OFFLINE. Khi có mạng, app sẽ tự đồng bộ lên hệ thống.");
+        onClose();
+      } catch (e:any) {
+        setLoading(false);
+        alert(e?.message || "Không lưu được khách hàng offline");
+      }
+      return;
+    }
 
     const request = editingCustomer
       ? supabase.from("customers").update(payload).eq("id", editingCustomer.id)
@@ -107,8 +129,11 @@ export default function CustomerForm({ onClose, onSaved, editingCustomer }: Prop
           <label className="sm:col-span-2 text-sm font-medium text-slate-700">Họ và tên khách hàng
             <input className="mt-1 border p-3 rounded-lg w-full" placeholder="Ví dụ: Nguyễn Văn A" value={form.full_name} onChange={(e) => updateField("full_name", e.target.value)} />
           </label>
-          <label className="text-sm font-medium text-slate-700">Số điện thoại chính
+          <label className="text-sm font-medium text-slate-700">SĐT chú rể / nhà trai
             <input className="mt-1 border p-3 rounded-lg w-full" placeholder="058..." value={form.phone} onChange={(e) => updateField("phone", e.target.value)} />
+          </label>
+          <label className="text-sm font-medium text-slate-700">SĐT cô dâu / nhà gái
+            <input className="mt-1 border p-3 rounded-lg w-full" placeholder="SĐT phụ" value={form.secondary_phone} onChange={(e) => updateField("secondary_phone", e.target.value)} />
           </label>
           <label className="text-sm font-medium text-slate-700">Email
             <input className="mt-1 border p-3 rounded-lg w-full" placeholder="email@example.com" value={form.email} onChange={(e) => updateField("email", e.target.value)} />

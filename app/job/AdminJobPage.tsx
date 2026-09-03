@@ -8,6 +8,8 @@ import { formatDateVN } from "@/lib/date-vn";
 import Time24Input from "@/app/components/Time24Input";
 import EmployeePicker from "@/app/components/EmployeePicker";
 import { requireEditPin } from "@/lib/admin-pin";
+import { getOfflineCache, getOfflineCount, setOfflineCache, subscribeOfflineQueue } from "@/lib/offline-db";
+import { makeOfflineJobBundle, queueOfflineJob } from "@/lib/offline-job";
 
 const money = (value: number | string | null | undefined) =>
   Number(value || 0).toLocaleString("vi-VN") + " đ";
@@ -128,24 +130,110 @@ const buildZaloReviewPayload = (job: any) => {
 };
 
 
-type QuickJobPreview={shooting_date?:string;start_time?:string;event_name?:string;groom_name?:string;bride_name?:string;groom_phone?:string;bride_phone?:string;groom_address?:string;bride_address?:string;location?:string;note?:string};
-const qTime=(h?:string,m?:string)=>h?`${String(Math.min(23,Number(h))).padStart(2,"0")}:${String(Math.min(59,Number(m||0))).padStart(2,"0")}`:"";
+type QuickJobDay={label:string;shooting_date:string;start_time:string;end_time?:string};
+type QuickJobPreview={
+  main_phone?:string;
+  groom_name?:string;
+  bride_name?:string;
+  groom_phone?:string;
+  bride_phone?:string;
+  groom_address?:string;
+  bride_address?:string;
+  package_price?:number;
+  photo_count?:number;
+  video_count?:number;
+  designated_worker?:string;
+  days:QuickJobDay[];
+  note?:string;
+};
 const qPhone=(s:string)=>s.replace(/\D/g,"");
-
+const qPad=(n:number)=>String(n).padStart(2,"0");
 const timeToMinutes=(value:any)=>{const m=String(value||"00:00").match(/^(\d{1,2}):(\d{2})/);return m?Number(m[1])*60+Number(m[2]):0};
 const timeOverlaps=(aStart:any,aEnd:any,bStart:any,bEnd:any)=>timeToMinutes(aStart)<timeToMinutes(bEnd)&&timeToMinutes(aEnd)>timeToMinutes(bStart);
 const roleKind=(role:any)=>{const r=String(role||"").toLowerCase();if(r.includes("chụp"))return "photo";if(r.includes("quay")&&!r.includes("fly"))return "video";return "other"};
+
+function qSection(raw:string,n:number){
+  const text=raw.replace(/\r/g,"");
+  const re=new RegExp(`(?:^|\\n)\\s*${n}\\s*[\\.:\\)]?\\s*([\\s\\S]*?)(?=\\n\\s*[1-8]\\s*[\\.:\\)]?\\s|$)`,`i`);
+  return (text.match(re)?.[1]||"").trim();
+}
+function qFirstPhone(text:string){
+  const vals=[...text.matchAll(/(?:\+?84|0)[\d.\s-]{8,14}\d/g)].map(x=>qPhone(x[0])).filter(x=>x.length>=9&&x.length<=11);
+  return vals[0]||"";
+}
+function qTimeFromText(text:string){
+  const all=[...text.matchAll(/\b(\d{1,2})(?:\s*h|:)(\d{1,2})?\s*(sáng|chiều|tối)?/gi)];
+  const cv=(m:RegExpMatchArray)=>{
+    let h=Number(m[1]),min=Number(m[2]||0); const part=(m[3]||"").toLowerCase();
+    if((part==="chiều"||part==="tối")&&h<12)h+=12;
+    if(part==="sáng"&&h===12)h=0;
+    return `${qPad(Math.min(23,h))}:${qPad(Math.min(59,min))}`;
+  };
+  return {start:all[0]?cv(all[0]):"",end:all[1]?cv(all[1]):""};
+}
+function qDateFromText(text:string,baseMonth:string){
+  const afterDay=text.match(/(?:ngày\s*)?([0-3]?\d)[\/-]([01]?\d)(?:[\/-](20\d{2}|\d{2}))?/i);
+  if(!afterDay)return "";
+  let y=afterDay[3]?Number(afterDay[3]):Number(baseMonth.slice(0,4)); if(y<100)y+=2000;
+  return `${y}-${qPad(Number(afterDay[2]))}-${qPad(Number(afterDay[1]))}`;
+}
+function qAddress(section:string,kind:"groom"|"bride"){
+  const phone=qFirstPhone(section);
+  let value=section
+    .replace(kind==="groom"?/^(?:địa\s*chỉ\s*)?(?:nhà\s*trai|nhà\s*chú\s*rể|địa\s*điểm\s*chính)\s*(?:\/\s*địa\s*điểm\s*chính)?\s*[:\-]?\s*/i:/^(?:địa\s*chỉ\s*)?(?:nhà\s*gái|nhà\s*cô\s*dâu|địa\s*điểm\s*thứ\s*2)\s*(?:\/\s*địa\s*điểm\s*thứ\s*2)?\s*[:\-]?\s*/i,"")
+    .split(/\n+/)
+    .filter(line=>!/(?:sđt|số\s*điện\s*thoại|điện\s*thoại)\s*(?:liên\s*hệ)?\s*:/i.test(line))
+    .join(", ")
+    .replace(/(?:sđt|số\s*điện\s*thoại|điện\s*thoại)\s*(?:liên\s*hệ)?\s*:\s*(?:\+?84|0)[\d.\s-]{8,14}\d/ig,"")
+    .replace(/\s+,/g,",").replace(/,\s*,/g,",").replace(/\s{2,}/g," ").trim().replace(/^[:\-\s]+|[,\s]+$/g,"");
+  return {address:value,phone};
+}
 function parseQuickJob(raw:string,baseMonth:string):QuickJobPreview{
- const text=raw.replace(/\s+/g," ").trim(),lower=text.toLowerCase(),o:QuickJobPreview={note:text};
- const df=lower.match(/\b([0-3]?\d)[\/-]([01]?\d)(?:[\/-](20\d{2}|\d{2}))?\b/),dd=lower.match(/^\s*([0-3]?\d)\s*[:\-]/);
- if(df){let y=df[3]?Number(df[3]):Number(baseMonth.slice(0,4));if(y<100)y+=2000;o.shooting_date=`${y}-${String(Number(df[2])).padStart(2,"0")}-${String(Number(df[1])).padStart(2,"0")}`}
- else if(dd)o.shooting_date=`${baseMonth}-${String(Number(dd[1])).padStart(2,"0")}`;
- const tm=lower.match(/\b([01]?\d|2[0-3])\s*(?:h|:)\s*([0-5]?\d)?\b/);if(tm)o.start_time=qTime(tm[1],tm[2]);
- if(/ăn hỏi|an hoi/.test(lower))o.event_name=/quay/.test(lower)?"Quay ăn hỏi":"Chụp ăn hỏi";else if(/rước dâu|ruoc dau/.test(lower))o.event_name=/quay/.test(lower)?"Quay rước dâu":"Chụp rước dâu";
- const nm=text.match(/tên\s*\(\s*([^+()]+)\s*\+\s*([^()]+)\)/i);if(nm){o.groom_name=nm[1].trim();o.bride_name=nm[2].trim()}
- const ph=[...text.matchAll(/(?:\+?84|0)[\d.\s-]{8,14}\d/g)].map(x=>qPhone(x[0])).filter(x=>x.length>=9&&x.length<=11);o.groom_phone=ph[0];o.bride_phone=ph[1];
- const ba=text.match(/nhà\s*(?:cô\s*dâu|gái)\s*[:\-]?\s*([^()]+)/i),ga=text.match(/nhà\s*(?:chú\s*rể|trai)\s*[:\-]?\s*([^()]+)/i),ad=text.match(/địa\s*chỉ[.:]?\s*([^()]+)/i);
- if(ba)o.bride_address=ba[1].trim();if(ga)o.groom_address=ga[1].trim();if(ad)o.location=ad[1].trim();return o;
+  const original=raw.trim();
+  const s1=qSection(original,1),s2=qSection(original,2),s3=qSection(original,3),s4=qSection(original,4),s5=qSection(original,5),s6=qSection(original,6),s7=qSection(original,7),s8=qSection(original,8);
+  const out:QuickJobPreview={days:[],note:original};
+  out.main_phone=qFirstPhone(s1||original);
+
+  if(s2){
+    let names=s2.replace(/^.*?(?:chú\s*rể|chu\s*re)\s*[:\-]?\s*/i,"").trim();
+    const parts=names.split(/\s+(?:và|va|&)\s+|\s*\+\s*/i).map(v=>v.trim()).filter(Boolean);
+    if(parts.length>=2){out.bride_name=parts[0];out.groom_name=parts[1];}
+  }
+
+  const groom=qAddress(s4,"groom"),bride=qAddress(s5,"bride");
+  out.groom_address=groom.address; out.groom_phone=groom.phone;
+  out.bride_address=bride.address; out.bride_phone=bride.phone;
+  if(!out.groom_phone&&out.main_phone)out.groom_phone=out.main_phone;
+  if(!out.bride_phone&&out.main_phone)out.bride_phone=out.main_phone;
+
+  const dateLines=(s3||original).split(/\n+/).map(v=>v.trim()).filter(Boolean);
+  for(const line of dateLines){
+    const date=qDateFromText(line,baseMonth); if(!date)continue;
+    const times=qTimeFromText(line);
+    let label=(line.split(":")[0]||"").trim();
+    label=label.replace(/^[-–•\s]+/,"");
+    if(!label||/^ngày/i.test(label))label="Ngày chụp";
+    out.days.push({label,shooting_date:date,start_time:times.start,end_time:times.end});
+  }
+  if(!out.days.length){
+    const date=qDateFromText(original,baseMonth); const times=qTimeFromText(original);
+    if(date)out.days=[{label:/ăn\s*hỏi/i.test(original)?"Lễ ăn hỏi":/cưới/i.test(original)?"Lễ cưới":"Ngày chụp",shooting_date:date,start_time:times.start,end_time:times.end}];
+  }
+  // Không lấy ngày âm lịch trong ngoặc làm ngày Job: chỉ các ngày đầu dòng/đi sau nội dung sự kiện mới được đưa vào days.
+  out.days=out.days.filter((d,i,a)=>a.findIndex(x=>x.shooting_date===d.shooting_date&&x.label.toLowerCase()===d.label.toLowerCase())===i);
+
+  const priceDigits=(s6.match(/[\d][\d.,\s]*/)?.[0]||"").replace(/\D/g,"");
+  if(priceDigits)out.package_price=Number(priceDigits);
+  const pm=s7.match(/chụp\s*[:\-]?\s*(\d+)/i),vm=s7.match(/quay\s*[:\-]?\s*(\d+)/i);
+  if(pm)out.photo_count=Number(pm[1]); if(vm)out.video_count=Number(vm[1]);
+  if(s8)out.designated_worker=s8.replace(/^.*?thợ\s*đích\s*danh(?:\s*\([^)]*\))?\s*[:\-]?\s*/i,"").trim()||s8.trim();
+
+  // Fallback cho tin nhắn ngắn không theo mẫu 1-8.
+  if(!out.bride_name&&!out.groom_name){
+    const nm=original.match(/(?:cô\s*dâu|cd)\s*[:\-]?\s*([^\n,+&]+).*?(?:chú\s*rể|cr)\s*[:\-]?\s*([^\n,+&]+)/i);
+    if(nm){out.bride_name=nm[1].trim();out.groom_name=nm[2].trim();}
+  }
+  return out;
 }
 
 export default function AdminJobPage() {
@@ -181,8 +269,13 @@ export default function AdminJobPage() {
     return true;
   };
 
-  const refreshOfflineCount = () => {
-    try { setOfflineDraftCount(JSON.parse(localStorage.getItem("been_offline_job_drafts") || "[]").length); } catch { setOfflineDraftCount(0); }
+  const refreshOfflineCount = async () => {
+    try {
+      const indexed = await getOfflineCount();
+      let legacy = 0;
+      try { legacy = JSON.parse(localStorage.getItem("been_offline_job_drafts") || "[]").length; } catch {}
+      setOfflineDraftCount(indexed + legacy);
+    } catch { setOfflineDraftCount(0); }
   };
 
   const swapBrideGroomPhones=()=>{
@@ -214,7 +307,11 @@ export default function AdminJobPage() {
     setLoading(false);
 
     if (jobError) {
-      alert(jobError.message);
+      try {
+        const cached=await getOfflineCache<any>("admin-job-data");
+        if(cached?.data){setJobs(cached.data.jobs||[]);setCustomers(cached.data.customers||[]);setEmployees(cached.data.employees||[]);setReserveWorkers(cached.data.reserveWorkers||[]);return;}
+      } catch {}
+      if(typeof navigator==="undefined"||navigator.onLine) alert(jobError.message);
       return;
     }
 
@@ -222,11 +319,16 @@ export default function AdminJobPage() {
     setCustomers(customerData || []);
     setEmployees(empData || []);
     setReserveWorkers(reserveData || []);
+    setOfflineCache("admin-job-data",{jobs:jobData||[],customers:customerData||[],employees:empData||[],reserveWorkers:reserveData||[]}).catch(()=>{});
   }
 
   useEffect(() => {
     loadData();
     refreshOfflineCount();
+    const unsubscribe = subscribeOfflineQueue(refreshOfflineCount);
+    const synced = () => { refreshOfflineCount(); loadData(); };
+    window.addEventListener("been:offline-sync-complete", synced);
+    return () => { unsubscribe(); window.removeEventListener("been:offline-sync-complete", synced); };
   }, []);
 
   useEffect(() => {
@@ -273,12 +375,6 @@ export default function AdminJobPage() {
     })));
   }, [customerForm.phone, customerForm.secondary_phone]);
 
-  useEffect(()=>{
-    if(!jobs.length || typeof window === "undefined") return;
-    const id=new URLSearchParams(window.location.search).get("open");
-    if(id){ const found=jobs.find((j:any)=>j.id===id); if(found) setSelectedJob(found); }
-  },[jobs]);
-
   const openCreate = () => {
     setEditingJob(null);
     setCustomerForm({ ...emptyCustomer });
@@ -322,8 +418,9 @@ export default function AdminJobPage() {
     });
   };
 
-  const openEdit = async (job: any) => {
-    if (!(await requestPin("sửa Job"))) return;
+  const openEdit = async (job: any, options?: { skipPin?: boolean; focusStaff?: boolean }) => {
+    if (!options?.skipPin && !(await requestPin("sửa Job"))) return;
+    if (options?.focusStaff && typeof window !== "undefined") sessionStorage.setItem("been-focus-staff","1");
     setEditingJob(job);
 
     setCustomerForm({
@@ -352,6 +449,27 @@ export default function AdminJobPage() {
     setDays(buildDaysFromJob(job));
     setOpenForm(true);
   };
+
+  useEffect(()=>{
+    if(!jobs.length || typeof window === "undefined") return;
+    const params=new URLSearchParams(window.location.search);
+    const storedId=sessionStorage.getItem("been-open-job-edit");
+    const id=storedId||params.get("open");
+    if(!id) return;
+    const found=jobs.find((j:any)=>String(j.id)===String(id));
+    if(!found) return;
+
+    if(storedId){
+      sessionStorage.removeItem("been-open-job-edit");
+      openEdit(found,{skipPin:true,focusStaff:true});
+    }else if(params.get("edit")==="1"){
+      openEdit(found,{skipPin:true,focusStaff:params.get("focus")==="staff"});
+    }else{
+      setSelectedJob(found);
+    }
+    window.history.replaceState({},"",window.location.pathname);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[jobs]);
 
   const addDay = () => setDays((prev) => [...prev, makeDay()]);
 
@@ -395,7 +513,15 @@ export default function AdminJobPage() {
     const emp = employees.find((x:any)=>x.id===reserve.employee_id) || reserve.employees;
     setDays((prev) => prev.map((day, i) => {
       if (i !== dayIndex) return day;
-      return {...day, locations: day.locations.map((loc:any,j:number)=>j===locationIndex?{...loc, assignments:[...loc.assignments, {employee_id: reserve.employee_id, role: reserve.role || emp?.role || "Thợ chụp", salary_amount: Number(emp?.base_fee || (String(reserve.role).includes("quay") ? 900000 : 700000)), note: "Thêm từ thợ dự phòng", client_requested: false, contact_visible: false}]}:loc)};
+      return {...day, locations: day.locations.map((loc:any,j:number)=>{
+        if(j!==locationIndex) return loc;
+        const alreadyAdded=(loc.assignments||[]).some((a:any)=>String(a.employee_id)===String(reserve.employee_id));
+        if(alreadyAdded){
+          setTimeout(()=>alert(`${emp?.full_name||"Thợ"} đã có trong phân công của địa điểm này.`),0);
+          return loc;
+        }
+        return {...loc, assignments:[...loc.assignments, {employee_id: reserve.employee_id, role: reserve.role || emp?.role || "Thợ chụp", salary_amount: Number(emp?.base_fee || (String(reserve.role).includes("quay") ? 900000 : 700000)), note: "Thêm từ thợ dự phòng", reserve_worker_id: reserve.id, client_requested: false, contact_visible: false}]};
+      })};
     }));
   };
 
@@ -495,25 +621,36 @@ export default function AdminJobPage() {
     );
   };
 
-  const saveOfflineDraft = () => {
-    const item = { id: `OFFLINE-${Date.now()}`, saved_at: new Date().toISOString(), customerForm, jobForm, days };
-    const list = JSON.parse(localStorage.getItem("been_offline_job_drafts") || "[]");
-    list.push(item);
-    localStorage.setItem("been_offline_job_drafts", JSON.stringify(list));
-    refreshOfflineCount();
-    setOpenForm(false);
-    alert("Đã lưu Job vào máy ở trạng thái CHƯA ĐỒNG BỘ. Khi có mạng, vào Job và bấm 'Mở bản nháp offline' để kiểm tra rồi Lưu Job.");
+  const saveOfflineDraft = async () => {
+    try {
+      const bundle = makeOfflineJobBundle(customerForm, jobForm, days, editingJob);
+      await queueOfflineJob(bundle);
+      await refreshOfflineCount();
+      setOpenForm(false);
+      alert("Đã lưu OFFLINE trên thiết bị. Khi có mạng, app sẽ tự đồng bộ lên hệ thống. Bạn có thể xem số mục chờ đồng bộ ở biểu tượng mạng.");
+    } catch (error:any) {
+      alert(error?.message || "Không lưu được dữ liệu offline trên thiết bị");
+    }
   };
 
+  // Giữ khả năng mở các bản nháp localStorage từ phiên bản cũ để không làm mất dữ liệu đã nhập trước đây.
   const restoreOfflineDraft = () => {
     try {
       const list = JSON.parse(localStorage.getItem("been_offline_job_drafts") || "[]");
       const item = list.pop();
-      if (!item) return alert("Không có bản nháp offline");
+      if (!item) return alert("Không còn bản nháp offline kiểu cũ. Các bản mới sẽ tự đồng bộ khi có mạng.");
       localStorage.setItem("been_offline_job_drafts", JSON.stringify(list));
       setEditingJob(null); setCustomerForm(item.customerForm); setJobForm(item.jobForm); setDays(item.days); setOpenForm(true); refreshOfflineCount();
     } catch { alert("Không đọc được bản nháp offline"); }
   };
+
+  async function markUsedReserveWorkers(jobId:string){
+    const ids:string[]=Array.from(new Set<string>(days.flatMap((day:any)=>day.locations?.flatMap((loc:any)=>loc.assignments?.map((a:any)=>a.reserve_worker_id).filter(Boolean)||[])||[]) as string[]));
+    if(!ids.length)return;
+    const {error}=await supabase.from("reserve_workers").update({status:"used",assigned_job_id:jobId,assigned_at:new Date().toISOString()}).in("id",ids);
+    if(error)throw error;
+    setReserveWorkers((prev:any[])=>prev.filter((r:any)=>!ids.includes(r.id)));
+  }
 
   async function saveJob() {
     if (saving) return;
@@ -545,7 +682,7 @@ export default function AdminJobPage() {
       }
     }
 
-    if (typeof navigator !== "undefined" && !navigator.onLine) { saveOfflineDraft(); return; }
+    if (typeof navigator !== "undefined" && !navigator.onLine) { await saveOfflineDraft(); return; }
 
     setSaving(true);
     let createdJobIdForRollback: string | null = null;
@@ -718,6 +855,7 @@ export default function AdminJobPage() {
           }
         }
 
+        await markUsedReserveWorkers(editingJob.id);
         setOpenForm(false);
         setEditingJob(null);
         setCustomerForm({ ...emptyCustomer });
@@ -822,6 +960,7 @@ export default function AdminJobPage() {
         }
       }
 
+      await markUsedReserveWorkers(createdJob.id);
       createdJobIdForRollback = null;
       setOpenForm(false);
       setCustomerForm({ ...emptyCustomer });
@@ -902,7 +1041,7 @@ export default function AdminJobPage() {
     <MainLayout>
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div><h1 className="text-3xl font-bold">Job / Booking</h1><p className="text-gray-500 mt-1">Tìm, lọc theo năm/tháng, xem ekip và trạng thái hoàn thành.</p></div>
-        <div className="flex flex-wrap gap-2"><button onClick={()=>{setQuickText("");setQuickPreview(null);setShowQuickJob(true)}} className="rounded-xl border border-blue-200 bg-blue-50 px-5 py-3 font-semibold text-blue-700">✦ Nhập Job nhanh</button><button onClick={openCreate} className="bg-blue-600 text-white px-5 py-3 rounded-xl">+ Tạo job mới</button>{offlineDraftCount>0&&<button onClick={restoreOfflineDraft} className="rounded-xl bg-amber-500 px-4 py-3 font-semibold text-white">Mở bản nháp offline ({offlineDraftCount})</button>}</div>
+        <div className="flex flex-wrap gap-2"><button onClick={()=>{setQuickText("");setQuickPreview(null);setShowQuickJob(true)}} className="rounded-xl border border-blue-200 bg-blue-50 px-5 py-3 font-semibold text-blue-700">✦ Nhập Job nhanh</button><button onClick={openCreate} className="bg-blue-600 text-white px-5 py-3 rounded-xl">+ Tạo job mới</button>{offlineDraftCount>0&&<button onClick={()=>{const legacy=JSON.parse(localStorage.getItem("been_offline_job_drafts")||"[]");if(legacy.length)restoreOfflineDraft();else alert(`${offlineDraftCount} thay đổi đang chờ tự đồng bộ. Bấm biểu tượng mạng ở góc màn hình để xem trạng thái.`)}} className="rounded-xl bg-amber-500 px-4 py-3 font-semibold text-white">Chờ đồng bộ ({offlineDraftCount})</button>}</div>
       </div>
 
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-6">
@@ -1014,61 +1153,80 @@ export default function AdminJobPage() {
       )}
     
 {showQuickJob&&<div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/50 sm:items-center sm:p-4">
-        <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:rounded-3xl">
+        <div className="max-h-[94vh] w-full max-w-4xl overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:rounded-3xl">
           <div className="mb-4 flex items-start justify-between gap-3">
-            <div><h2 className="text-xl font-bold">Nhập Job nhanh</h2><p className="text-sm text-slate-500">Dán tin nhắn khách. Phân công thợ vẫn nhập thủ công.</p></div>
-            <button onClick={()=>setShowQuickJob(false)} className="rounded-lg border px-3 py-2">✕</button>
+            <div><h2 className="text-xl font-black">Nhập Job nhanh</h2><p className="text-sm text-slate-500">Dán nguyên tin nhắn khách. Hệ thống ưu tiên đọc đúng mẫu 1→8 của BEEN MEDIA và hỗ trợ Job 2 ngày.</p></div>
+            <button onClick={()=>setShowQuickJob(false)} className="rounded-xl border px-3 py-2">✕</button>
           </div>
-          <textarea value={quickText} onChange={e=>setQuickText(e.target.value)} rows={7} className="w-full rounded-2xl border p-4" placeholder="Ví dụ: 19: 6h chụp ăn hỏi... Tên( Quân + Yến ) - số điện thoại..."/>
+          <textarea value={quickText} onChange={e=>setQuickText(e.target.value)} rows={10} className="w-full rounded-2xl border p-4 leading-6" placeholder={'1. Số điện thoại: ...\n2. Tên Cô Dâu + Chú Rể: ...\n3. Ngày tổ chức...\n4. Địa chỉ Nhà Trai...\n5. Địa chỉ Nhà Gái...\n6. Gói Chốt...\n7. Số lượng nhân sự...\n8. Thợ đích danh...'}/>
           <button onClick={()=>setQuickPreview(parseQuickJob(quickText,quickBaseMonth))} disabled={!quickText.trim()} className="mt-3 w-full rounded-xl bg-blue-600 p-3 font-bold text-white disabled:opacity-40">Phân tích thông tin</button>
           {quickPreview&&<div className="mt-4 rounded-2xl bg-slate-50 p-4">
-            <h3 className="mb-3 font-bold">Kiểm tra thông tin nhận được</h3>
-            <div className="grid gap-2 text-sm sm:grid-cols-2">
-              <p><b>Ngày:</b> {formatDateVN(quickPreview.shooting_date)||"Chưa nhận"}</p>
-              <p><b>Giờ 24h:</b> {quickPreview.start_time||"Chưa nhận"}</p>
-              <p><b>Loại:</b> {quickPreview.event_name||"Chưa nhận"}</p>
-              <p><b>Chú rể:</b> {quickPreview.groom_name||"Chưa nhận"}</p>
-              <p><b>Cô dâu:</b> {quickPreview.bride_name||"Chưa nhận"}</p>
-              <p><b>SĐT chú rể:</b> {quickPreview.groom_phone||"Chưa nhận"}</p>
-              <p><b>SĐT cô dâu:</b> {quickPreview.bride_phone||"Chưa nhận"}</p>
-              <p><b>Địa điểm:</b> {quickPreview.location||"Chưa nhận"}</p>
-              <p><b>Nhà cô dâu:</b> {quickPreview.bride_address||"Chưa nhận"}</p>
-              <p><b>Nhà chú rể:</b> {quickPreview.groom_address||"Chưa nhận"}</p>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><div><h3 className="font-black">Kiểm tra & sửa trước khi đưa vào Job</h3><p className="text-xs text-slate-500">Tất cả ô dưới đây đều sửa được. Không tự lưu vào hệ thống.</p></div><span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700">Nhận {quickPreview.days.length} ngày</span></div>
+
+            <div className="rounded-2xl border bg-white p-4">
+              <h4 className="mb-3 font-black text-blue-800">KHÁCH HÀNG</h4>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <label className="text-xs font-bold text-slate-600">Cô dâu<input value={quickPreview.bride_name||""} onChange={e=>setQuickPreview({...quickPreview,bride_name:e.target.value})} className="mt-1 w-full rounded-xl border p-3 text-sm font-medium"/></label>
+                <label className="text-xs font-bold text-slate-600">Chú rể<input value={quickPreview.groom_name||""} onChange={e=>setQuickPreview({...quickPreview,groom_name:e.target.value})} className="mt-1 w-full rounded-xl border p-3 text-sm font-medium"/></label>
+                <label className="text-xs font-bold text-slate-600">SĐT khách gửi chính<input value={quickPreview.main_phone||""} onChange={e=>setQuickPreview({...quickPreview,main_phone:e.target.value})} className="mt-1 w-full rounded-xl border p-3 text-sm font-medium"/></label>
+              </div>
             </div>
+
+            <div className="mt-3 rounded-2xl border bg-white p-4">
+              <h4 className="mb-3 font-black text-blue-800">NGÀY TỔ CHỨC</h4>
+              <div className="space-y-3">{quickPreview.days.map((d,idx)=><div key={idx} className="grid gap-2 rounded-xl bg-slate-50 p-3 sm:grid-cols-[1.2fr_1fr_.8fr_.8fr_auto] sm:items-end">
+                <label className="text-xs font-bold text-slate-600">Nội dung<input value={d.label} onChange={e=>setQuickPreview({...quickPreview,days:quickPreview.days.map((x,i)=>i===idx?{...x,label:e.target.value}:x)})} className="mt-1 w-full rounded-lg border bg-white p-2.5 text-sm"/></label>
+                <label className="text-xs font-bold text-slate-600">Ngày DL<input type="date" value={d.shooting_date} onChange={e=>setQuickPreview({...quickPreview,days:quickPreview.days.map((x,i)=>i===idx?{...x,shooting_date:e.target.value}:x)})} className="mt-1 w-full rounded-lg border bg-white p-2.5 text-sm"/></label>
+                <label className="text-xs font-bold text-slate-600">Bắt đầu<input value={d.start_time||""} onChange={e=>setQuickPreview({...quickPreview,days:quickPreview.days.map((x,i)=>i===idx?{...x,start_time:e.target.value}:x)})} className="mt-1 w-full rounded-lg border bg-white p-2.5 text-sm" placeholder="08:00"/></label>
+                <label className="text-xs font-bold text-slate-600">Kết thúc<input value={d.end_time||""} onChange={e=>setQuickPreview({...quickPreview,days:quickPreview.days.map((x,i)=>i===idx?{...x,end_time:e.target.value}:x)})} className="mt-1 w-full rounded-lg border bg-white p-2.5 text-sm" placeholder="Không bắt buộc"/></label>
+                <button type="button" onClick={()=>setQuickPreview({...quickPreview,days:quickPreview.days.filter((_,i)=>i!==idx)})} className="rounded-lg border border-red-200 px-3 py-2.5 text-xs font-bold text-red-600">Xóa</button>
+              </div>)}</div>
+              <button type="button" onClick={()=>setQuickPreview({...quickPreview,days:[...quickPreview.days,{label:`Ngày ${quickPreview.days.length+1}`,shooting_date:"",start_time:"",end_time:""}]})} className="mt-3 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700">+ Thêm ngày</button>
+              <p className="mt-2 text-xs text-slate-500">Ngày Âm lịch trong ngoặc chỉ để tham khảo, không được dùng làm ngày Job.</p>
+            </div>
+
+            <div className="mt-3 grid gap-3 lg:grid-cols-2">
+              <div className="rounded-2xl border bg-white p-4"><h4 className="mb-3 font-black text-blue-800">NHÀ TRAI</h4><label className="text-xs font-bold text-slate-600">Địa chỉ<textarea value={quickPreview.groom_address||""} onChange={e=>setQuickPreview({...quickPreview,groom_address:e.target.value})} rows={3} className="mt-1 w-full rounded-xl border p-3 text-sm"/></label><label className="mt-2 block text-xs font-bold text-slate-600">SĐT nhà trai<input value={quickPreview.groom_phone||""} onChange={e=>setQuickPreview({...quickPreview,groom_phone:e.target.value})} className="mt-1 w-full rounded-xl border p-3 text-sm"/></label></div>
+              <div className="rounded-2xl border bg-white p-4"><h4 className="mb-3 font-black text-blue-800">NHÀ GÁI</h4><label className="text-xs font-bold text-slate-600">Địa chỉ<textarea value={quickPreview.bride_address||""} onChange={e=>setQuickPreview({...quickPreview,bride_address:e.target.value})} rows={3} className="mt-1 w-full rounded-xl border p-3 text-sm"/></label><label className="mt-2 block text-xs font-bold text-slate-600">SĐT nhà gái<input value={quickPreview.bride_phone||""} onChange={e=>setQuickPreview({...quickPreview,bride_phone:e.target.value})} className="mt-1 w-full rounded-xl border p-3 text-sm"/></label></div>
+            </div>
+
+            <div className="mt-3 rounded-2xl border bg-white p-4">
+              <h4 className="mb-3 font-black text-blue-800">GÓI & NHÂN SỰ</h4>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <label className="text-xs font-bold text-slate-600">Gói chốt / Tổng tiền<input type="number" value={quickPreview.package_price||0} onChange={e=>setQuickPreview({...quickPreview,package_price:Number(e.target.value||0)})} className="mt-1 w-full rounded-xl border p-3 text-sm"/></label>
+                <label className="text-xs font-bold text-slate-600">Photographer<input type="number" min="0" value={quickPreview.photo_count??0} onChange={e=>setQuickPreview({...quickPreview,photo_count:Number(e.target.value||0)})} className="mt-1 w-full rounded-xl border p-3 text-sm"/></label>
+                <label className="text-xs font-bold text-slate-600">CAMERAMEN<input type="number" min="0" value={quickPreview.video_count??0} onChange={e=>setQuickPreview({...quickPreview,video_count:Number(e.target.value||0)})} className="mt-1 w-full rounded-xl border p-3 text-sm"/></label>
+                <label className="text-xs font-bold text-slate-600">Thợ đích danh<input value={quickPreview.designated_worker||""} onChange={e=>setQuickPreview({...quickPreview,designated_worker:e.target.value})} className="mt-1 w-full rounded-xl border p-3 text-sm"/></label>
+              </div>
+            </div>
+
             <button onClick={()=>{
               const q=quickPreview;
+              if(!q.days.length){alert("Chưa nhận được ngày tổ chức. Hãy thêm ít nhất 1 ngày trước khi đưa vào form Job.");return;}
               setEditingJob(null);
-              setCustomerForm((c:any)=>({
-                ...c,
-                full_name:[q.groom_name,q.bride_name].filter(Boolean).join(" + ")||c.full_name,
-                facebook:[q.groom_name,q.bride_name].filter(Boolean).join(" + ")||c.facebook,
-                phone:q.groom_phone||c.phone,
-                secondary_phone:q.bride_phone||c.secondary_phone,
-                address:q.location||q.groom_address||q.bride_address||c.address,
+              const displayName=[q.bride_name,q.groom_name].filter(Boolean).join(" & ");
+              setCustomerForm((c:any)=>({...c,full_name:displayName||c.full_name,facebook:displayName||c.facebook,phone:q.groom_phone||q.main_phone||c.phone,secondary_phone:q.bride_phone||q.main_phone||c.secondary_phone,address:q.groom_address||q.bride_address||c.address}));
+              setJobForm((j:any)=>({...j,event_name:displayName||j.event_name,total_price:Number(q.package_price||j.total_price||0),required_photo_count:Number(q.photo_count||0),required_video_count:Number(q.video_count||0),location:q.groom_address||q.bride_address||j.location,note:[j.note,q.designated_worker?`Thợ đích danh khách yêu cầu: ${q.designated_worker}`:"",q.main_phone?`SĐT khách gửi chính: ${q.main_phone}`:"",`Tin gốc:\n${quickText}`].filter(Boolean).join("\n")}));
+              const normalizedDesignated=String(q.designated_worker||"").trim().toLowerCase();
+              const matched=normalizedDesignated?employees.filter((e:any)=>String(e.full_name||"").toLowerCase()===normalizedDesignated):[];
+              setDays(q.days.map((qd:any)=>{
+                const d=makeDay();
+                d.shooting_date=qd.shooting_date||""; d.start_time=qd.start_time||""; d.end_time=qd.end_time||""; d.note=qd.label||"";
+                d.locations=[makeLocation("Nhà trai"),makeLocation("Nhà gái")];
+                d.locations[0].address=q.groom_address||""; d.locations[0].phone=q.groom_phone||q.main_phone||"";
+                d.locations[1].address=q.bride_address||""; d.locations[1].phone=q.bride_phone||q.main_phone||"";
+                if(matched.length===1){
+                  const emp=matched[0]; const isVideo=/(quay|video|camera)/i.test(String(emp.role||""));
+                  const role=isVideo?"Thợ quay":"Thợ chụp";
+                  const target=d.locations[0].assignments.find((a:any)=>a.role===role)||d.locations[0].assignments[0];
+                  target.employee_id=emp.id; target.client_requested=true; target.note="Khách yêu cầu đích danh từ Nhập Job nhanh";
+                }
+                return d;
               }));
-              setJobForm((j:any)=>({
-                ...j,
-                event_name:q.event_name||[q.groom_name,q.bride_name].filter(Boolean).join(" + ")||j.event_name,
-                location:q.location||j.location,
-                note:[
-                  j.note,
-                  q.bride_address?`Nhà cô dâu: ${q.bride_address}`:"",
-                  q.groom_address?`Nhà chú rể: ${q.groom_address}`:"",
-                  `Tin gốc: ${quickText}`
-                ].filter(Boolean).join("\n")
-              }));
-              setDays((prev:any[])=>{
-                const first=prev?.[0]||makeDay();
-                const locs=[...(first.locations||[])];
-                if(locs[0]&&q.groom_address) locs[0]={...locs[0],location_name:"Nhà chú rể",address:q.groom_address,phone:q.groom_phone||locs[0].phone};
-                if(locs[1]&&q.bride_address) locs[1]={...locs[1],location_name:"Nhà cô dâu",address:q.bride_address,phone:q.bride_phone||locs[1].phone};
-                return [{...first,shooting_date:q.shooting_date||first.shooting_date,start_time:q.start_time||first.start_time,locations:locs}];
-              });
-              setShowQuickJob(false);
-              setOpenForm(true);
-            }} className="mt-4 w-full rounded-xl bg-emerald-600 p-3 font-bold text-white">Đưa vào form Job để kiểm tra</button>
+              setShowQuickJob(false);setOpenForm(true);
+            }} className="mt-4 w-full rounded-xl bg-emerald-600 p-3 font-black text-white">ĐƯA VÀO FORM JOB ĐỂ KIỂM TRA</button>
           </div>}
-          <p className="mt-3 text-xs text-slate-500">Chuẩn 24 tiếng: 6h → 06:00 • 14h30 → 14:30. Hệ thống không tự phân công nhân sự.</p>
+          <p className="mt-3 text-xs text-slate-500">Bản V8.3: ưu tiên mẫu 1→8 • nhận 2 ngày trở lên • tách Nhà trai/Nhà gái/SĐT • gói tiền • số thợ • thợ đích danh • cho sửa tay trước khi đưa vào Job.</p>
         </div>
       </div>}
 </MainLayout>
@@ -1103,6 +1261,15 @@ function JobForm(props: any) {
     onClose,
     onSave,
   } = props;
+
+  useEffect(()=>{
+    if(typeof window === "undefined") return;
+    const shouldFocus=sessionStorage.getItem("been-focus-staff")==="1";
+    if(!shouldFocus) return;
+    sessionStorage.removeItem("been-focus-staff");
+    const timer=window.setTimeout(()=>document.getElementById("staffing-section")?.scrollIntoView({behavior:"smooth",block:"start"}),300);
+    return ()=>window.clearTimeout(timer);
+  },[]);
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
@@ -1160,10 +1327,10 @@ function JobForm(props: any) {
               <label className="text-sm text-gray-600">Trạng thái<select className="border p-3 rounded-lg w-full mt-1" value={jobForm.status} onChange={(e) => setJobForm({ ...jobForm, status: e.target.value })}><option>Chưa chốt</option><option>Đã đặt cọc</option><option>Đang chụp</option><option>Đang hậu kỳ</option><option>Đã bàn giao</option><option>Hoàn thành</option><option>Hủy</option></select></label>
             </div>
             <input className="border p-3 rounded-lg w-full" placeholder="Gói dịch vụ. Ví dụ: Combo VIP - 3 chụp 2 quay" value={jobForm.service} onChange={(e) => setJobForm({ ...jobForm, service: e.target.value })} />
-            <div className="grid grid-cols-2 gap-3 rounded-xl border border-blue-100 bg-blue-50 p-3">
+            <div className="grid grid-cols-1 gap-3 rounded-xl border border-blue-100 bg-blue-50 p-3 sm:grid-cols-2">
               <label className="text-sm font-semibold text-blue-900">Tổng thợ CHỤP cần<input type="number" min="0" className="mt-1 w-full rounded-lg border bg-white p-3" value={jobForm.required_photo_count||0} onChange={e=>setJobForm({...jobForm,required_photo_count:Math.max(0,Number(e.target.value||0))})}/></label>
               <label className="text-sm font-semibold text-blue-900">Tổng thợ QUAY cần<input type="number" min="0" className="mt-1 w-full rounded-lg border bg-white p-3" value={jobForm.required_video_count||0} onChange={e=>setJobForm({...jobForm,required_video_count:Math.max(0,Number(e.target.value||0))})}/></label>
-              <p className="col-span-2 text-xs text-blue-700">Dùng để cảnh báo Job còn thiếu thợ trên Tổng quát. Ví dụ: cần 3 chụp + 2 quay.</p>
+              <p className="text-xs text-blue-700 sm:col-span-2">Dùng để cảnh báo Job còn thiếu thợ trên Tổng quát. Ví dụ: cần 3 chụp + 2 quay.</p>
             </div>
             <input className="border p-3 rounded-lg w-full" placeholder="Địa điểm chung / ghi chú địa bàn" value={jobForm.location} onChange={(e) => setJobForm({ ...jobForm, location: e.target.value })} />
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -1187,7 +1354,7 @@ function JobForm(props: any) {
           </div>
         </div>
 
-        <div className="mt-6 space-y-4">
+        <div id="staffing-section" className="mt-6 scroll-mt-6 space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="font-bold text-lg">3. Ngày chụp → Địa điểm → Phân công thợ</h3>
             <button onClick={addDay} className="bg-slate-800 text-white px-4 py-2 rounded-lg">+ Thêm ngày chụp</button>
@@ -1216,7 +1383,7 @@ function JobForm(props: any) {
 
               {day.shooting_date && reserveWorkers.filter((r:any)=>r.reserve_date===day.shooting_date).length>0 && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
-                  <p className="mb-2 text-sm font-bold text-amber-900">Thợ dự phòng ngày {formatDateVN(day.shooting_date)} — bấm tên để thêm nhanh vào địa điểm bên dưới</p>
+                  <p className="mb-2 text-sm font-bold text-amber-900">Thợ dự phòng ngày {formatDateVN(day.shooting_date)} — chọn để xếp vào Job</p>
                   <div className="flex flex-wrap gap-2">{reserveWorkers.filter((r:any)=>r.reserve_date===day.shooting_date).map((r:any)=><span key={r.id} className="rounded-full bg-white px-3 py-1 text-sm ring-1 ring-amber-200">{r.employees?.full_name||"Nhân sự"} • {r.role}</span>)}</div>
                 </div>
               )}

@@ -1,0 +1,25 @@
+PHÂN QUYỀN V8.0.1
+
+ADMIN
+- Toàn quyền giống Admin chính.
+- Tổng quát, khách hàng, lịch, job, nhân sự, thợ dự phòng, công nợ,
+  thu/chi, lương, Drive, báo cáo, chat, hồ sơ, AI, cài đặt.
+
+ĐIỀU PHỐI / SALE
+- Tổng quát, khách hàng, lịch, job, thợ dự phòng, lương cá nhân, chat, hồ sơ.
+
+PHOTOGRAPHER
+- Tổng quát cá nhân, lịch được phân công, job được phân công,
+  lương cá nhân, chat, hồ sơ.
+
+CAMERAMEN
+- Tương tự Photographer nhưng vai trò quay phim.
+
+EDITOR
+- Tổng quát cá nhân, lịch/job liên quan, Drive, lương cá nhân, chat, hồ sơ.
+
+KẾ TOÁN
+- Tổng quát, khách hàng, job, công nợ, thu/chi, lương, báo cáo, chat, hồ sơ.
+
+CHỈ XEM
+- Tổng quát, lịch, job, chat, hồ sơ. Không có quyền quản trị.

@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import MainLayout from "../components/layout/MainLayout";
 import CustomerForm from "../components/CustomerForm";
 import { requireEditPin } from "@/lib/admin-pin";
+import { getOfflineCache, setOfflineCache } from "@/lib/offline-db";
 
 const money = (value: number | null | undefined) =>
   Number(value || 0).toLocaleString("vi-VN");
@@ -26,15 +27,20 @@ export default function CustomersPage() {
     setLoading(false);
 
     if (error) {
-      alert(error.message);
+      try { const cached=await getOfflineCache<any[]>("customers-data"); if(cached?.data){setCustomers(cached.data);return;} } catch {}
+      if(typeof navigator==="undefined"||navigator.onLine) alert(error.message);
       return;
     }
 
     setCustomers(data || []);
+    setOfflineCache("customers-data",data||[]).catch(()=>{});
   };
 
   useEffect(() => {
     loadCustomers();
+    const synced=()=>loadCustomers();
+    window.addEventListener("been:offline-sync-complete",synced);
+    return()=>window.removeEventListener("been:offline-sync-complete",synced);
   }, []);
 
   const deleteCustomer = async (id: string) => {
@@ -80,7 +86,7 @@ export default function CustomersPage() {
 
   return (
     <MainLayout>
-      <div className="flex items-center justify-between mb-8">
+      <div className="mb-8 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold">Quản lý khách hàng</h1>
           <p className="text-gray-500 mt-1">BEEN MEDIA CRM</p>
@@ -97,7 +103,7 @@ export default function CustomersPage() {
         </button>
       </div>
 
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
         <div className="bg-white rounded-xl p-5 shadow">
           <p className="text-gray-500">Tổng khách</p>
           <p className="text-3xl font-bold mt-2">{customers.length}</p>

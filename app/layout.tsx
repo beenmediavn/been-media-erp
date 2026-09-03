@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import PwaRegister from "./components/PwaRegister";
 import OnlineStatus from "./components/OnlineStatus";
+import OfflineSyncManager from "./components/OfflineSyncManager";
 
 export const metadata: Metadata = {
   title: "BEEN MEDIA ERP",
@@ -22,7 +23,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="vi" className="h-full antialiased">
-      <body className="min-h-full flex flex-col"><PwaRegister /><OnlineStatus />{children}</body>
+      <body className="min-h-full flex flex-col"><PwaRegister /><OfflineSyncManager /><OnlineStatus />{children}</body>
     </html>
   );
 }

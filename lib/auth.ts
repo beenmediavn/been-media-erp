@@ -39,9 +39,9 @@ export const ROLE_OPTIONS: { value: AppRole; label: string }[] = [
 export const ROLE_PERMISSIONS: Record<AppRole, string[]> = {
   // Admin phụ có quyền đầy đủ giống Admin chính.
   admin: [
-    "dashboard", "customers", "schedule", "job", "employees", "reserve",
+    "dashboard", "customers", "schedule", "job", "employees", "attendance", "reserve",
     "payments", "cashflow", "salary", "drive", "reports", "chat",
-    "profile", "ai", "settings"
+    "profile", "ai", "settings", "audit"
   ],
 
   // Điều phối / Sale: quản lý khách, lịch, job, thợ dự phòng; chỉ xem lương cá nhân.
@@ -52,12 +52,12 @@ export const ROLE_PERMISSIONS: Record<AppRole, string[]> = {
 
   // Thợ chụp: chỉ công việc được phân công + lương cá nhân + chat/hồ sơ.
   photographer: [
-    "dashboard", "schedule", "job", "salary", "chat", "profile"
+    "dashboard", "schedule", "job", "attendance", "salary", "chat", "profile"
   ],
 
   // CAMERAMEN: chỉ công việc được phân công + lương cá nhân + chat/hồ sơ.
   videographer: [
-    "dashboard", "schedule", "job", "salary", "chat", "profile"
+    "dashboard", "schedule", "job", "attendance", "salary", "chat", "profile"
   ],
 
   // Editor: job liên quan, Drive giao nhận, lương cá nhân, chat/hồ sơ.
@@ -99,6 +99,7 @@ export function permissionFromPath(pathname: string) {
   if (pathname.startsWith("/schedule")) return "schedule";
   if (pathname.startsWith("/job")) return "job";
   if (pathname.startsWith("/employees")) return "employees";
+  if (pathname.startsWith("/attendance")) return "attendance";
   if (pathname.startsWith("/reserve")) return "reserve";
   if (pathname.startsWith("/payments")) return "payments";
   if (pathname.startsWith("/cashflow")) return "cashflow";
@@ -109,6 +110,7 @@ export function permissionFromPath(pathname: string) {
   if (pathname.startsWith("/profile")) return "profile";
   if (pathname.startsWith("/ai")) return "ai";
   if (pathname.startsWith("/settings")) return "settings";
+  if (pathname.startsWith("/audit")) return "audit";
   return "dashboard";
 }
 

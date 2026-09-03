@@ -1,0 +1,10 @@
+BEEN MEDIA ERP V8.3.2 - FIX THỢ DỰ PHÒNG
+
+Đã sửa:
+1. Chọn thợ dự phòng có ô gõ tìm tên.
+2. Chốt dự phòng lưu ổn định kể cả DB cũ chưa có unique constraint đúng.
+3. Sửa lỗi ngày 28-29/11 bị thành 27-28/11 do toISOString/UTC.
+4. Ngày date-only được xử lý riêng, không đổi múi giờ.
+5. Sau khi lưu có thông báo xác nhận rõ tên thợ và khoảng ngày đã lưu.
+
+Không cần chạy SQL mới nếu bảng reserve_workers đã tồn tại.

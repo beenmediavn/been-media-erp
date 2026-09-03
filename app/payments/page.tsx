@@ -66,9 +66,9 @@ export default function PaymentsPage() {
     if(!job) return;
     const paid=(rows||[]).reduce((s:any,r:any)=>s+Number(r.amount||0),0);
     const debt=Math.max(Number(job.total_price||0)-paid,0);
-    const status=debt<=0?"Hoàn thành":job.status;
-    await supabase.from("jobs").update({deposit:paid,debt,status}).eq("id",jobId);
-    if(customerId||job.customer_id) await supabase.from("customers").update({deposit:paid,debt,status}).eq("id",customerId||job.customer_id);
+    // Thanh toán đủ KHÔNG đồng nghĩa Job đã hoàn thành. Trạng thái công việc phải do quy trình Job quyết định.
+    await supabase.from("jobs").update({deposit:paid,debt}).eq("id",jobId);
+    if(customerId||job.customer_id) await supabase.from("customers").update({deposit:paid,debt}).eq("id",customerId||job.customer_id);
   }
 
   async function updatePayment(){

@@ -5,9 +5,9 @@ import MainLayout from "../components/layout/MainLayout";
 import { supabase } from "@/lib/supabase";
 
 const categories = [
-  { type: "raw_photo", label: "Ảnh RAW" },
-  { type: "raw_video", label: "Video RAW" },
-  { type: "edit_photo", label: "Ảnh đã sửa" },
+  { type: "raw_photo", label: "Ảnh gốc" },
+  { type: "raw_video", label: "Video gốc" },
+  { type: "edit_photo", label: "Ảnh hoàn thiện" },
   { type: "final_video", label: "Video hoàn thiện" },
   { type: "album", label: "Album giao khách" },
   { type: "contract", label: "Hợp đồng" },
@@ -145,7 +145,7 @@ export default function DrivePage() {
     <MainLayout>
       <div className="mb-8 flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Google Drive</h1>
+          <h1 className="text-3xl font-bold">SẢN PHẨM</h1>
           <p className="text-gray-500 mt-1">
             Quản lý link RAW, ảnh sửa, video dựng, album giao khách theo từng job
           </p>
@@ -276,10 +276,10 @@ export default function DrivePage() {
               {selectedJob.event_name || selectedJob.customer_name}
             </p>
 
-            <label className="block text-sm text-gray-600 mb-1">Link Google Drive</label>
+            <label className="block text-sm text-gray-600 mb-1">Link sản phẩm / Drive</label>
             <input
               className="border p-3 rounded-lg w-full mb-3"
-              placeholder="Dán link Google Drive vào đây"
+              placeholder="Dán link Drive / sản phẩm vào đây"
               value={form.file_url}
               onChange={(e) => setForm({ ...form, file_url: e.target.value })}
             />

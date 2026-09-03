@@ -12,7 +12,8 @@ const addDays=(n:number)=>{const d=new Date();d.setDate(d.getDate()+n);return lo
 const money=(v:any)=>Number(v||0).toLocaleString("vi-VN")+" đ";
 
 type SearchResult={key:string;title:string;sub:string;href:string;kind:string};
-type AppNotification={id:string;groupId:string;type:"job"|"debt"|"new_job";title:string;sub:string;href:string};
+type AppNotification={id:string;groupId:string;type:"job"|"debt"|"new_job"|"attendance";title:string;sub:string;href:string};
+const jobCompleted=(status:any)=>String(status||"").toLowerCase().includes("hoàn thành")||String(status||"").toLowerCase().includes("đã bàn giao");
 
 export default function Header({user,onMenuClick}:{user:AppUser;onMenuClick?:()=>void}){
  const router=useRouter(); const brand=useBranding();
@@ -55,18 +56,25 @@ export default function Header({user,onMenuClick}:{user:AppUser;onMenuClick?:()=
    if(user.role==="admin"){
      const [{data:days},{data:debts}]=await Promise.all([
        supabase.from("job_days").select("id,shooting_date,start_time,jobs(id,event_name,customer_name)").gte("shooting_date",today).lte("shooting_date",tomorrow).order("shooting_date").limit(12),
-       supabase.from("jobs").select("id,event_name,customer_name,debt,status").gt("debt",0).order("debt",{ascending:false}).limit(8)
+       supabase.from("jobs").select("id,event_name,customer_name,debt,status").gt("debt",0).order("debt",{ascending:false}).limit(30)
      ]);
      (days||[]).forEach((d:any)=>list.push({
        id:"admin-job-"+d.id,groupId:"admin-job-"+d.id,type:"job",
        title:d.jobs?.event_name||d.jobs?.customer_name||"Job sắp tới",
        sub:`${d.shooting_date===today?"Hôm nay":"Ngày mai"} • ${d.start_time||"--:--"}`,href:"/schedule"
      }));
-     (debts||[]).forEach((j:any)=>list.push({
+     (debts||[]).filter((j:any)=>jobCompleted(j.status)).slice(0,8).forEach((j:any)=>list.push({
        id:"admin-debt-"+j.id,groupId:"admin-debt-"+j.id,type:"debt",
        title:j.event_name||j.customer_name||"Khách còn nợ",
        sub:`Còn nợ ${money(j.debt)}`,href:"/payments"
      }));
+     const since=new Date(Date.now()-24*60*60*1000).toISOString();
+     const {data:attendance}=await supabase.from("attendance_records").select("id,check_in_at,check_out_at,updated_at,employees(full_name),jobs(event_name,customer_name)").gte("updated_at",since).order("updated_at",{ascending:false}).limit(20);
+     (attendance||[]).forEach((r:any)=>{
+       const name=r.employees?.full_name||"Nhân sự",job=r.jobs?.event_name||r.jobs?.customer_name||"Job";
+       if(r.check_out_at) list.push({id:`attendance-out-${r.id}-${r.check_out_at}`,groupId:`attendance-out-${r.id}`,type:"attendance",title:`${name} đã CHECK-OUT`,sub:`${job} • ${new Date(r.check_out_at).toLocaleTimeString("vi-VN",{hour:"2-digit",minute:"2-digit"})} • Có ảnh xác nhận`,href:"/attendance"});
+       else if(r.check_in_at) list.push({id:`attendance-in-${r.id}-${r.check_in_at}`,groupId:`attendance-in-${r.id}`,type:"attendance",title:`${name} đã CHECK-IN`,sub:`${job} • ${new Date(r.check_in_at).toLocaleTimeString("vi-VN",{hour:"2-digit",minute:"2-digit"})} • Xem ảnh`,href:"/attendance"});
+     });
    } else {
      // Nhân sự chỉ nhận thông báo liên quan đúng các job được phân công cho chính mình.
      const {data:assignments,error}=await supabase
@@ -107,6 +115,23 @@ export default function Header({user,onMenuClick}:{user:AppUser;onMenuClick?:()=
    setNotifications(list.filter(n=>!read.has(n.id)));
  }catch{setNotifications([])}})()},[user.id,user.role]);
 
+ useEffect(()=>{
+   if(user.role!=="admin") return;
+   const channel=supabase.channel("admin-attendance-notify")
+     .on("postgres_changes",{event:"*",schema:"public",table:"attendance_records"},async(payload:any)=>{
+       const id=payload.new?.id||payload.old?.id; if(!id)return;
+       const {data:r}=await supabase.from("attendance_records").select("id,check_in_at,check_out_at,employees(full_name),jobs(event_name,customer_name)").eq("id",id).maybeSingle();
+       if(!r)return;
+       const name=(r as any).employees?.full_name||"Nhân sự",job=(r as any).jobs?.event_name||(r as any).jobs?.customer_name||"Job";
+       const n:AppNotification=(r as any).check_out_at
+        ?{id:`attendance-out-${id}-${(r as any).check_out_at}`,groupId:`attendance-out-${id}`,type:"attendance",title:`${name} đã CHECK-OUT`,sub:`${job} • ${new Date((r as any).check_out_at).toLocaleTimeString("vi-VN",{hour:"2-digit",minute:"2-digit"})} • Có ảnh xác nhận`,href:"/attendance"}
+        :{id:`attendance-in-${id}-${(r as any).check_in_at}`,groupId:`attendance-in-${id}`,type:"attendance",title:`${name} đã CHECK-IN`,sub:`${job} • ${new Date((r as any).check_in_at).toLocaleTimeString("vi-VN",{hour:"2-digit",minute:"2-digit"})} • Xem ảnh`,href:"/attendance"};
+       if(getReadIds().has(n.id))return;
+       setNotifications(prev=>prev.some(x=>x.id===n.id)?prev:[n,...prev]);
+     }).subscribe();
+   return()=>{supabase.removeChannel(channel)};
+ },[user.id,user.role]);
+
  useEffect(()=>{if(timer.current)clearTimeout(timer.current);const term=q.trim();if(term.length<2){setResults([]);setSearching(false);return;}setSearching(true);timer.current=setTimeout(async()=>{try{const safe=term.replace(/[,()]/g," ");const [{data:customers},{data:jobs},{data:employees}]=await Promise.all([
    supabase.from("customers").select("id,full_name,phone,service").or(`full_name.ilike.%${safe}%,phone.ilike.%${safe}%`).limit(5),
    supabase.from("jobs").select("id,event_name,customer_name,customer_phone,status").or(`event_name.ilike.%${safe}%,customer_name.ilike.%${safe}%,customer_phone.ilike.%${safe}%`).limit(5),
@@ -117,6 +142,7 @@ export default function Header({user,onMenuClick}:{user:AppUser;onMenuClick?:()=
  return <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b bg-white px-4 text-slate-900 sm:px-6 lg:px-8">
    <div className="relative flex min-w-0 flex-1 items-center gap-3 text-gray-500"><button onClick={onMenuClick} aria-label="Mở menu" className="rounded-lg border p-2 text-slate-700 lg:hidden"><Menu size={20}/></button><div className="relative hidden w-full max-w-xl sm:block"><Search size={18} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><input value={q} onFocus={()=>setShowSearch(true)} onChange={e=>{setQ(e.target.value);setShowSearch(true)}} placeholder="Tìm khách, SĐT, Job, nhân sự..." className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-10 pr-9 text-sm text-slate-900 focus:bg-white"/>{q&&<button onClick={()=>{setQ("");setResults([])}} className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400"><X size={16}/></button>}{showSearch&&q.trim().length>=2&&<div className="absolute left-0 right-0 top-12 max-h-[60vh] overflow-auto rounded-2xl border bg-white p-2 shadow-2xl">{searching?<p className="p-3 text-sm text-slate-500">Đang tìm...</p>:results.length?results.map(r=><button key={r.key} onClick={()=>{setShowSearch(false);setQ("");router.push(r.href)}} className="flex w-full items-start justify-between gap-3 rounded-xl p-3 text-left hover:bg-blue-50"><div><p className="font-semibold text-slate-900">{r.title}</p><p className="text-xs text-slate-500">{r.sub||"Không có thông tin thêm"}</p></div><span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-500">{r.kind}</span></button>):<p className="p-3 text-sm text-slate-500">Không tìm thấy kết quả.</p>}</div>}</div></div>
    <div className="flex items-center gap-3 sm:gap-5">
+     <div className="hidden rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-extrabold text-blue-700 md:block" title="Phiên bản đang chạy">V8.3.7</div>
      <div className="relative">
        <button onClick={()=>setShowNotifications(v=>!v)} className="relative rounded-full p-2 text-gray-500 hover:bg-slate-100" aria-label="Thông báo">
          <Bell size={20}/>
