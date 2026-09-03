@@ -453,16 +453,14 @@ export default function AdminJobPage() {
   useEffect(()=>{
     if(!jobs.length || typeof window === "undefined") return;
     const params=new URLSearchParams(window.location.search);
-    const storedId=sessionStorage.getItem("been-open-job-edit");
-    const id=storedId||params.get("open");
+    const id=params.get("open");
     if(!id) return;
     const found=jobs.find((j:any)=>String(j.id)===String(id));
     if(!found) return;
 
-    if(storedId){
-      sessionStorage.removeItem("been-open-job-edit");
-      openEdit(found,{skipPin:true,focusStaff:true});
-    }else if(params.get("edit")==="1"){
+    // Chỉ mở form sửa khi URL nói rõ edit=1.
+    // Bấm menu Job (/job) luôn chỉ mở danh sách, không đọc trạng thái cũ trong sessionStorage.
+    if(params.get("edit")==="1"){
       openEdit(found,{skipPin:true,focusStaff:params.get("focus")==="staff"});
     }else{
       setSelectedJob(found);
