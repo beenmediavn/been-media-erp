@@ -144,8 +144,8 @@ export default function EmployeesPage() {
 
   async function deleteEmployee(id: string) {
     if(!(await requireEditPin("xóa nhân sự"))) return;
-    if (!confirm("Bạn chắc chắn muốn xóa nhân sự này?")) return;
-    const { error } = await supabase.from("employees").delete().eq("id", id);
+    if (!confirm("Chuyển nhân sự này vào Thùng rác 30 ngày?")) return;
+    const { error } = await supabase.from("employees").update({ deleted_at: new Date().toISOString(), deleted_by: "Admin ERP" }).eq("id", id);
     if (error) alert(error.message);
     loadData();
   }

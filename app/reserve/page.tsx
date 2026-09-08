@@ -6,6 +6,7 @@ import EmployeePicker from "../components/EmployeePicker";
 import { supabase } from "@/lib/supabase";
 import { CalendarDays, Clock3, Plus, Trash2, Users } from "lucide-react";
 import { requireEditPin } from "@/lib/admin-pin";
+import Time24Input from "../components/Time24Input";
 
 const pad2=(n:number)=>String(n).padStart(2,"0");
 const localDateInput=(d=new Date())=>`${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
@@ -115,8 +116,8 @@ export default function ReserveWorkersPage(){
       <div className="mb-4 flex items-center gap-2 font-bold"><Plus size={20}/> Chốt thợ dự phòng</div>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
         <label className="text-sm text-slate-600">Ngày <span className="text-red-500">*</span><input type="date" value={reserveDate} onChange={e=>setReserveDate(e.target.value)} className="mt-1 w-full rounded-xl border p-3"/></label>
-        <label className="text-sm text-slate-600">Giờ bắt đầu <span className="text-slate-400">(tùy chọn)</span><input type="time" value={startTime} onChange={e=>setStartTime(e.target.value)} className="mt-1 w-full rounded-xl border p-3"/></label>
-        <label className="text-sm text-slate-600">Giờ kết thúc <span className="text-slate-400">(tùy chọn)</span><input type="time" value={endTime} onChange={e=>setEndTime(e.target.value)} className="mt-1 w-full rounded-xl border p-3"/></label>
+        <label className="text-sm text-slate-600">Giờ bắt đầu <span className="text-slate-400">(tùy chọn)</span><Time24Input value={startTime} onChange={setStartTime} className="mt-1 w-full rounded-xl border p-3" placeholder="Ví dụ 1535 → 15:35"/></label>
+        <label className="text-sm text-slate-600">Giờ kết thúc <span className="text-slate-400">(tùy chọn)</span><Time24Input value={endTime} onChange={setEndTime} className="mt-1 w-full rounded-xl border p-3" placeholder="Ví dụ 1730 → 17:30"/></label>
         <label className="text-sm text-slate-600">Chọn thợ<EmployeePicker employees={employees} value={employeeId} onChange={(id)=>{setEmployeeId(id);const emp=employees.find(x=>x.id===id);if(emp?.role)setRole(normalizeRole(emp.role));}} getConflict={()=>null}/></label>
         <label className="text-sm text-slate-600">Vai trò<select value={role} onChange={e=>setRole(e.target.value)} className="mt-1 w-full rounded-xl border p-3"><option>Thợ chụp</option><option>Thợ quay</option><option>Flycam</option><option>Editor</option><option>Livestream</option><option>Makeup</option><option>Lái xe</option></select></label>
         <button onClick={save} disabled={saving} className="self-end rounded-xl bg-blue-600 p-3 font-bold text-white disabled:opacity-50">{saving?"Đang lưu...":"+ Chốt dự phòng"}</button>

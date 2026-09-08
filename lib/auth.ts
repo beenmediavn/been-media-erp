@@ -41,12 +41,12 @@ export const ROLE_PERMISSIONS: Record<AppRole, string[]> = {
   admin: [
     "dashboard", "customers", "schedule", "job", "employees", "attendance", "reserve",
     "payments", "cashflow", "salary", "drive", "reports", "chat",
-    "profile", "ai", "settings", "audit"
+    "profile", "ai", "settings", "audit", "backup"
   ],
 
   // Điều phối / Sale: quản lý khách, lịch, job, thợ dự phòng; chỉ xem lương cá nhân.
   coordinator: [
-    "dashboard", "customers", "schedule", "job", "reserve",
+    "dashboard", "customers", "schedule", "job", "attendance", "reserve",
     "salary", "chat", "profile"
   ],
 
@@ -62,18 +62,18 @@ export const ROLE_PERMISSIONS: Record<AppRole, string[]> = {
 
   // Editor: job liên quan, Drive giao nhận, lương cá nhân, chat/hồ sơ.
   editor: [
-    "dashboard", "schedule", "job", "drive", "salary", "chat", "profile"
+    "dashboard", "schedule", "job", "attendance", "drive", "salary", "chat", "profile"
   ],
 
   // Kế toán: các phần tài chính + báo cáo + dữ liệu khách/job cần đối soát.
   accountant: [
-    "dashboard", "customers", "job", "payments", "cashflow",
+    "dashboard", "customers", "job", "attendance", "payments", "cashflow",
     "salary", "reports", "chat", "profile"
   ],
 
   // Chỉ xem: xem tổng quan, lịch và job; không có quyền quản trị.
   viewer: [
-    "dashboard", "schedule", "job", "chat", "profile"
+    "dashboard", "schedule", "job", "attendance", "chat", "profile"
   ],
 };
 
@@ -111,6 +111,7 @@ export function permissionFromPath(pathname: string) {
   if (pathname.startsWith("/ai")) return "ai";
   if (pathname.startsWith("/settings")) return "settings";
   if (pathname.startsWith("/audit")) return "audit";
+  if (pathname.startsWith("/backup")) return "backup";
   return "dashboard";
 }
 

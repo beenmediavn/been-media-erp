@@ -1,0 +1,17 @@
+BEEN MEDIA ERP V8.3.9 - SAO LƯU + THÙNG RÁC
+
+1) Copy .env.local từ bản đang chạy sang thư mục V8.3.9.
+2) Supabase -> SQL Editor -> chạy UPDATE_V8_3_9_BACKUP_TRASH.sql một lần.
+3) CMD tại thư mục V8.3.9:
+   npm install
+   npm run build
+   npm run dev
+4) Mở app -> menu SAO LƯU DỮ LIỆU.
+5) Chọn Theo tháng hoặc Toàn bộ -> Tải Excel về máy.
+6) Nên tải thêm JSON phục hồi kỹ thuật cùng thời điểm.
+
+LƯU Ý:
+- File Excel/JSON đã tải về máy không bị ảnh hưởng nếu sau này dữ liệu trên app bị xóa.
+- Mật khẩu nhân sự KHÔNG được ghi ra file backup Excel/JSON.
+- Xóa Khách hàng/Nhân sự/Job từ app sẽ chuyển vào Thùng rác, không xóa cứng ngay.
+- Có thể khôi phục từ menu SAO LƯU DỮ LIỆU -> THÙNG RÁC 30 NGÀY.

@@ -45,9 +45,9 @@ export default function CustomersPage() {
 
   const deleteCustomer = async (id: string) => {
     if(!(await requireEditPin("xóa khách hàng"))) return;
-    if (!confirm("Bạn chắc chắn muốn xóa khách hàng?")) return;
+    if (!confirm("Chuyển khách hàng này vào Thùng rác 30 ngày?")) return;
 
-    const { error } = await supabase.from("customers").delete().eq("id", id);
+    const { error } = await supabase.from("customers").update({ deleted_at: new Date().toISOString(), deleted_by: "Admin ERP" }).eq("id", id);
 
     if (error) {
       alert(error.message);

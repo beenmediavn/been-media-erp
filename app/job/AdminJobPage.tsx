@@ -977,8 +977,8 @@ export default function AdminJobPage() {
 
   async function deleteJob(id: string) {
     if (!(await requestPin("xóa Job"))) return;
-    if (!confirm("Bạn chắc chắn muốn xóa job này? Thao tác này sẽ xóa ngày chụp và phân công liên quan.")) return;
-    const { error } = await supabase.from("jobs").delete().eq("id", id);
+    if (!confirm("Chuyển Job này vào Thùng rác 30 ngày? Ngày chụp và phân công vẫn được giữ để có thể khôi phục.")) return;
+    const { error } = await supabase.from("jobs").update({ deleted_at: new Date().toISOString(), deleted_by: "Admin ERP" }).eq("id", id);
     if (error) return alert(error.message);
     setSelectedJob(null);
     loadData();

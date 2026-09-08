@@ -25,17 +25,22 @@ function AttendanceApp({user}:{user:AppUser}){
   const [assignments,setAssignments]=useState<any[]>([]);
   const [records,setRecords]=useState<any[]>([]);
   const [loading,setLoading]=useState(true);
+  const [loadError,setLoadError]=useState("");
   const [capture,setCapture]=useState<{mode:CaptureMode;assignment:any}|null>(null);
 
   async function load(){
     setLoading(true);
+    setLoadError("");
     let q=supabase.from("job_assignments").select("*,employees(id,full_name,role),jobs(id,event_name,customer_name,status,service),job_days(id,shooting_date,start_time,end_time,location)").order("created_at",{ascending:true});
     if(!admin) q=q.eq("employee_id",user.id);
     const [{data:ass,error},{data:att}]=await Promise.all([
       q,
       admin?supabase.from("attendance_records").select("*,employees(full_name,role),jobs(event_name,customer_name,service),job_days(shooting_date,start_time,end_time)").order("check_in_at",{ascending:false}):supabase.from("attendance_records").select("*").eq("employee_id",user.id).order("check_in_at",{ascending:false})
     ]);
-    if(error&&navigator.onLine)alert(error.message);
+    if(error){
+      setLoadError(error.message);
+      if(navigator.onLine) console.error("Attendance load error", error);
+    }
     setAssignments((ass||[]).filter((a:any)=>a.job_days?.shooting_date===date));
     setRecords(att||[]);
     setLoading(false);
@@ -91,6 +96,7 @@ function AttendanceApp({user}:{user:AppUser}){
       <label className="text-sm font-semibold">Ngày<input type="date" value={date} onChange={e=>setDate(e.target.value)} className="ml-2 rounded-xl border bg-white p-2"/></label>
     </div>
 
+    {loadError&&<div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">Không tải được dữ liệu chấm công: {loadError}<br/><span className="font-normal">Nếu đây là lần đầu dùng Chấm công, hãy chạy file SQL cập nhật V8.3.10 trong Supabase.</span></div>}
     {admin?<AdminView assignments={assignments} records={visibleRecords} recordByAssignment={recordByAssignment}/>:<WorkerView assignments={assignments} recordByAssignment={recordByAssignment} openCapture={openCapture}/>}    
     {loading&&<div className="mt-4 rounded-2xl bg-white p-6 text-center text-slate-500">Đang tải chấm công...</div>}
     {capture&&<CameraCapture mode={capture.mode} assignment={capture.assignment} onClose={()=>setCapture(null)} onCapture={(blob)=>saveCapture(blob,capture.mode,capture.assignment)}/>}  
@@ -120,13 +126,83 @@ function AdminView({assignments,records,recordByAssignment}:{assignments:any[];r
 }
 
 function CameraCapture({mode,assignment,onClose,onCapture}:{mode:CaptureMode;assignment:any;onClose:()=>void;onCapture:(b:Blob)=>Promise<boolean>}){
-  const videoRef=useRef<HTMLVideoElement|null>(null);const canvasRef=useRef<HTMLCanvasElement|null>(null);const streamRef=useRef<MediaStream|null>(null);
-  const [facing,setFacing]=useState<"user"|"environment">(mode==="checkin_customer"?"environment":"user");const [saving,setSaving]=useState(false);const [error,setError]=useState("");
-  async function start(){try{streamRef.current?.getTracks().forEach(t=>t.stop());const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:facing},audio:false});streamRef.current=stream;if(videoRef.current){videoRef.current.srcObject=stream;await videoRef.current.play();}}catch(e:any){setError("Không mở được camera. Hãy cấp quyền Camera cho trình duyệt hoặc dùng HTTPS/localhost.");}}
+  const videoRef=useRef<HTMLVideoElement|null>(null);
+  const canvasRef=useRef<HTMLCanvasElement|null>(null);
+  const fileRef=useRef<HTMLInputElement|null>(null);
+  const streamRef=useRef<MediaStream|null>(null);
+  const [facing,setFacing]=useState<"user"|"environment">(mode==="checkin_customer"||mode==="checkout"?"environment":"user");
+  const [saving,setSaving]=useState(false);
+  const [cameraReady,setCameraReady]=useState(false);
+  const [error,setError]=useState("");
+
+  async function start(){
+    setError("");
+    setCameraReady(false);
+    try{
+      streamRef.current?.getTracks().forEach(t=>t.stop());
+      if(!navigator.mediaDevices?.getUserMedia) throw new Error("Trình duyệt không hỗ trợ camera trực tiếp");
+      const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:facing}},audio:false});
+      streamRef.current=stream;
+      if(videoRef.current){
+        videoRef.current.srcObject=stream;
+        await videoRef.current.play();
+        setCameraReady(true);
+      }
+    }catch(e:any){
+      setError("Camera trực tiếp chưa mở được. Bạn vẫn có thể bấm “CHỤP BẰNG CAMERA ĐIỆN THOẠI” bên dưới để chụp và gửi ảnh.");
+    }
+  }
+
   useEffect(()=>{start();return()=>streamRef.current?.getTracks().forEach(t=>t.stop())},[facing]);
-  async function snap(){const v=videoRef.current,c=canvasRef.current;if(!v||!c||!v.videoWidth)return;setSaving(true);c.width=v.videoWidth;c.height=v.videoHeight;c.getContext("2d")?.drawImage(v,0,0);c.toBlob(async blob=>{if(!blob){setSaving(false);return;}await onCapture(blob);setSaving(false)},"image/jpeg",0.82)}
+
+  async function submitBlob(blob:Blob){
+    setSaving(true);
+    try{ await onCapture(blob); }
+    finally{ setSaving(false); }
+  }
+
+  async function snap(){
+    const v=videoRef.current,c=canvasRef.current;
+    if(!v||!c||!v.videoWidth){
+      fileRef.current?.click();
+      return;
+    }
+    c.width=v.videoWidth;c.height=v.videoHeight;
+    c.getContext("2d")?.drawImage(v,0,0);
+    c.toBlob(async blob=>{if(blob)await submitBlob(blob)},"image/jpeg",0.82);
+  }
+
+  async function choosePhoto(e:React.ChangeEvent<HTMLInputElement>){
+    const file=e.target.files?.[0];
+    e.target.value="";
+    if(!file)return;
+    if(!file.type.startsWith("image/")){alert("Vui lòng chọn hoặc chụp một ảnh.");return;}
+    await submitBlob(file);
+  }
+
   const copy=mode==="checkin_face"?"Chụp rõ khuôn mặt bạn để CHECK-IN":mode==="checkin_customer"?"Hãy chụp ảnh bạn cùng cô dâu chú rể / khách hàng để gửi về Studio":"Hãy chụp ảnh BẠN cùng không gian làm việc hoặc khách hàng để CHECK-OUT hoàn thành Job";
-  return <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/80 p-3"><div className="w-full max-w-2xl overflow-hidden rounded-3xl bg-white"><div className="flex items-start justify-between gap-3 p-4"><div><h2 className="text-lg font-black">📸 {mode==="checkout"?"ẢNH CHECK-OUT":"ẢNH CHECK-IN"}</h2><p className="mt-1 text-sm font-semibold text-blue-700">{copy}</p><p className="text-xs text-slate-500">{assignment.jobs?.event_name||assignment.jobs?.customer_name||"Job"}</p></div><button onClick={onClose} className="rounded-xl border p-2"><X/></button></div><div className="bg-black"><video ref={videoRef} playsInline muted className="mx-auto max-h-[60vh] w-full object-contain"/><canvas ref={canvasRef} className="hidden"/></div>{error&&<p className="p-3 text-sm font-semibold text-red-600">{error}</p>}<div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-3"><button onClick={()=>setFacing(v=>v==="user"?"environment":"user")} className="rounded-xl border px-3 py-3 font-semibold"><RefreshCcw className="mr-2 inline" size={17}/>Đổi camera</button><button disabled={saving||!!error} onClick={snap} className="col-span-1 rounded-xl bg-blue-600 px-3 py-3 font-black text-white disabled:bg-slate-400 sm:col-span-2"><Camera className="mr-2 inline" size={18}/>{saving?"Đang gửi về Studio...":"CHỤP & XÁC NHẬN"}</button></div></div></div>;
+  const captureFacing=mode==="checkin_face"?"user":"environment";
+
+  return <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/80 p-3">
+    <div className="w-full max-w-2xl overflow-hidden rounded-3xl bg-white">
+      <div className="flex items-start justify-between gap-3 p-4">
+        <div><h2 className="text-lg font-black">📸 {mode==="checkout"?"ẢNH CHECK-OUT":"ẢNH CHECK-IN"}</h2><p className="mt-1 text-sm font-semibold text-blue-700">{copy}</p><p className="text-xs text-slate-500">{assignment.jobs?.event_name||assignment.jobs?.customer_name||"Job"}</p></div>
+        <button type="button" onClick={onClose} className="rounded-xl border p-2"><X/></button>
+      </div>
+      <div className="relative min-h-56 bg-black">
+        <video ref={videoRef} playsInline muted className="mx-auto max-h-[55vh] min-h-56 w-full object-contain"/>
+        {!cameraReady&&<div className="absolute inset-0 grid place-items-center p-6 text-center text-sm text-white/80">Camera trực tiếp chưa sẵn sàng.<br/>Dùng nút chụp bằng camera điện thoại bên dưới.</div>}
+        <canvas ref={canvasRef} className="hidden"/>
+      </div>
+      {error&&<p className="mx-4 mt-3 rounded-xl bg-amber-50 p-3 text-sm font-semibold text-amber-800">{error}</p>}
+      <input ref={fileRef} type="file" accept="image/*" capture={captureFacing as any} onChange={choosePhoto} className="hidden"/>
+      <div className="grid gap-2 p-4 sm:grid-cols-2">
+        <button type="button" disabled={saving} onClick={()=>fileRef.current?.click()} className="rounded-xl bg-emerald-600 px-3 py-3 font-black text-white disabled:bg-slate-400"><Camera className="mr-2 inline" size={18}/>{saving?"Đang gửi...":"CHỤP BẰNG CAMERA ĐIỆN THOẠI"}</button>
+        <button type="button" disabled={saving} onClick={snap} className="rounded-xl bg-blue-600 px-3 py-3 font-black text-white disabled:bg-slate-400"><Camera className="mr-2 inline" size={18}/>{saving?"Đang gửi về Studio...":"CHỤP & XÁC NHẬN"}</button>
+        <button type="button" disabled={saving} onClick={()=>setFacing(v=>v==="user"?"environment":"user")} className="rounded-xl border px-3 py-3 font-semibold sm:col-span-2"><RefreshCcw className="mr-2 inline" size={17}/>Đổi camera trước / sau</button>
+      </div>
+    </div>
+  </div>;
 }
 
 function AttendanceBadge({r}:{r:any}){if(!r?.check_in_at)return <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">Chưa Check-in</span>;if(r.check_out_at)return <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">✓ Đã Check-out</span>;if(!r.check_in_customer_url)return <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-700">⚠ Thiếu ảnh cùng khách</span>;return <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700">Đang ở Job</span>}
