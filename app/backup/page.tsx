@@ -108,14 +108,106 @@ export default function BackupPage() {
     }
   }
 
+  function buildSimpleExcel(selected: Record<string, any[]>) {
+    const jobs = selected.jobs || [];
+    const days = selected.job_days || [];
+    const assignments = selected.job_assignments || [];
+    const employees = selected.employees || [];
+    const payments = selected.customer_payments || [];
+    const tx = selected.finance_transactions || [];
+
+    const employeeName = new Map(employees.map((e:any)=>[String(e.id), e.full_name || e.name || "Nhân sự"]));
+    const daysByJob = new Map<string, any[]>();
+    for (const d of days) {
+      const key=String(d.job_id||"");
+      if(!daysByJob.has(key)) daysByJob.set(key,[]);
+      daysByJob.get(key)!.push(d);
+    }
+    const assignmentsByJob = new Map<string, any[]>();
+    for (const a of assignments) {
+      let jobId=String(a.job_id||"");
+      if(!jobId && a.job_day_id){
+        const d=days.find((x:any)=>String(x.id)===String(a.job_day_id));
+        jobId=String(d?.job_id||"");
+      }
+      if(!jobId) continue;
+      if(!assignmentsByJob.has(jobId)) assignmentsByJob.set(jobId,[]);
+      assignmentsByJob.get(jobId)!.push(a);
+    }
+
+    const jobRows = jobs.map((job:any)=>{
+      const jobId=String(job.id||"");
+      const jobDays=(daysByJob.get(jobId)||[]).slice().sort((a:any,b:any)=>String(a.shooting_date||"").localeCompare(String(b.shooting_date||"")));
+      const ass=assignmentsByJob.get(jobId)||[];
+      const namesFor=(kind:string)=>Array.from(new Set(ass.filter((a:any)=>{
+        const r=String(a.role||"").toLowerCase();
+        return kind==="photo" ? r.includes("chụp") : (r.includes("quay") && !r.includes("fly"));
+      }).map((a:any)=>String(employeeName.get(String(a.employee_id))||"Nhân sự")))).join(", ");
+      const total=Number(job.total_price||0);
+      const paid=Number(job.deposit||0);
+      const debt=Math.max(Number(job.debt ?? (total-paid)),0);
+      const salary=ass.reduce((sum:number,a:any)=>sum+Number(a.salary_amount||0),0);
+      return {
+        "Ngày Job": Array.from(new Set(jobDays.map((d:any)=>String(d.shooting_date||"")).filter(Boolean))).join(" / "),
+        "Khách / Job": job.event_name || job.customer_name || "Job",
+        "Tổng tiền": total,
+        "Đã cọc / đã thu": paid,
+        "Còn nợ": debt,
+        "Thợ chụp": namesFor("photo"),
+        "Thợ quay": namesFor("video"),
+        "Lương ekip": salary,
+        "Lãi dự kiến Job": total-salary,
+      };
+    });
+
+    const incoming = payments.reduce((sum:number,p:any)=>sum+Number(p.amount||0),0);
+    const outgoing = tx.filter((x:any)=>String(x.transaction_type||"").toLowerCase()==="expense").reduce((sum:number,x:any)=>sum+Number(x.amount||0),0);
+    const totalJobValue = jobs.reduce((sum:number,j:any)=>sum+Number(j.total_price||0),0);
+    const totalDeposits = jobs.reduce((sum:number,j:any)=>sum+Number(j.deposit||0),0);
+    const totalDebt = jobs.reduce((sum:number,j:any)=>sum+Math.max(Number(j.debt ?? (Number(j.total_price||0)-Number(j.deposit||0))),0),0);
+    const totalSalary = assignments.reduce((sum:number,a:any)=>sum+Number(a.salary_amount||0),0);
+    const summary=[{
+      "Kỳ sao lưu": scope === "all" ? "Toàn bộ" : month,
+      "Số Job": jobs.length,
+      "Tổng giá trị Job": totalJobValue,
+      "Tổng đã cọc / đã thu của Job": totalDeposits,
+      "Tổng còn nợ": totalDebt,
+      "Tiền vào trong kỳ": incoming,
+      "Tiền ra trong kỳ": outgoing,
+      "Tổng lương thợ theo Job": totalSalary,
+      "Còn lãi (Tiền vào - Tiền ra)": incoming-outgoing,
+    }];
+
+    const salaryMap=new Map<string,{name:string,photo:number,video:number,other:number,jobs:Set<string>,salary:number}>();
+    for(const a of assignments){
+      const id=String(a.employee_id||"unknown");
+      if(!salaryMap.has(id)) salaryMap.set(id,{name:String(employeeName.get(id)||"Nhân sự"),photo:0,video:0,other:0,jobs:new Set(),salary:0});
+      const row=salaryMap.get(id)!;
+      const role=String(a.role||"").toLowerCase();
+      if(role.includes("chụp")) row.photo++; else if(role.includes("quay")&&!role.includes("fly")) row.video++; else row.other++;
+      if(a.job_id) row.jobs.add(String(a.job_id));
+      row.salary+=Number(a.salary_amount||0);
+    }
+    const salaryRows=Array.from(salaryMap.values()).map(x=>({
+      "Nhân sự":x.name,
+      "Số Job":x.jobs.size,
+      "Lượt chụp":x.photo,
+      "Lượt quay":x.video,
+      "Việc khác":x.other,
+      "Tổng lương":x.salary,
+    })).sort((a,b)=>Number(b["Tổng lương"])-Number(a["Tổng lương"]));
+
+    return [
+      { name: "TONG HOP", rows: summary },
+      { name: "CHI TIET JOB", rows: jobRows },
+      { name: "LUONG THO", rows: salaryRows },
+    ];
+  }
+
   async function exportExcel() {
     const result = await collectBackup();
-    const sheets = [
-      { name: "THONG TIN", rows: result.meta },
-      ...tableSpecs.map((spec) => ({ name: spec.sheet, rows: result.selected[spec.table] || [] })),
-    ];
-    downloadXlsx(`${filenameBase}.xlsx`, sheets);
-    if (result.errors.length) alert("Đã xuất bản sao lưu. Một số bảng chưa có hoặc chưa được cài nên được bỏ qua:\n" + result.errors.join("\n"));
+    downloadXlsx(`${filenameBase}.xlsx`, buildSimpleExcel(result.selected));
+    if (result.errors.length) alert("Đã xuất Excel gọn. Một số bảng chưa có hoặc chưa được cài nên được bỏ qua:\n" + result.errors.join("\n"));
   }
 
   async function exportJson() {
@@ -162,7 +254,7 @@ export default function BackupPage() {
         </div>
 
         <section className="rounded-3xl bg-white p-5 shadow sm:p-6">
-          <div className="mb-5 flex items-center gap-3"><DatabaseBackup className="text-blue-600"/><div><h2 className="text-xl font-bold">Xuất bản sao lưu</h2><p className="text-sm text-slate-500">Excel để mở xem nhanh; JSON để giữ bản dữ liệu kỹ thuật phục hồi sau này.</p></div></div>
+          <div className="mb-5 flex items-center gap-3"><DatabaseBackup className="text-blue-600"/><div><h2 className="text-xl font-bold">Xuất bản sao lưu</h2><p className="text-sm text-slate-500">Excel chỉ giữ các số liệu chính để quản lý nhanh: tổng tháng, chi tiết Job và lương thợ. JSON vẫn giữ đầy đủ dữ liệu kỹ thuật để phục hồi khi cần.</p></div></div>
           <div className="grid gap-3 md:grid-cols-4">
             <select value={scope} onChange={(e)=>setScope(e.target.value as any)} className="rounded-xl border px-4 py-3">
               <option value="month">Theo tháng</option>
@@ -173,7 +265,7 @@ export default function BackupPage() {
             <button onClick={exportJson} disabled={loading} className="flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 font-bold text-white disabled:opacity-50"><FileJson size={18}/>Tải JSON phục hồi</button>
           </div>
           <div className="mt-4 rounded-2xl bg-blue-50 p-4 text-sm text-blue-900">
-            <b>File lưu trên máy là độc lập.</b> Sau khi tải xong, nếu anh xóa khách/Job/thợ trên ERP thì file Excel/JSON cũ vẫn còn nguyên cho đến khi anh tự xóa file trên máy.
+            <b>Excel đã được rút gọn.</b> Chỉ còn các số chính: tiền vào, tiền ra, số Job, tổng tiền/cọc/còn nợ, ai chụp/quay, lương ekip và lãi. File JSON vẫn là bản sao lưu đầy đủ để phục hồi dữ liệu khi cần.
           </div>
         </section>
 

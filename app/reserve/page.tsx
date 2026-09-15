@@ -40,22 +40,52 @@ export default function ReserveWorkersPage(){
   const [note,setNote]=useState("");
   const [statusFilter,setStatusFilter]=useState<StatusFilter>("reserved");
   const [saving,setSaving]=useState(false);
+  const [scheduleDays,setScheduleDays]=useState<any[]>([]);
 
   async function load(){
-    const [{data:emp,error:empError},{data:res,error}]=await Promise.all([
+    const [{data:emp,error:empError},{data:res,error},{data:dayData,error:dayError}]=await Promise.all([
       supabase.from("employees").select("*").eq("active",true).order("full_name"),
-      supabase.from("reserve_workers").select("*, employees(*)").order("reserve_date").order("start_time",{ascending:true,nullsFirst:true})
+      supabase.from("reserve_workers").select("*, employees(*)").order("reserve_date").order("start_time",{ascending:true,nullsFirst:true}),
+      supabase.from("job_days").select("id,shooting_date,start_time,end_time,jobs(id,event_name,customer_name,status),job_assignments(employee_id)")
     ]);
     if(empError){alert(`Không tải được nhân sự: ${empError.message}`);return}
     if(error){alert(`Không tải được thợ dự phòng: ${error.message}\nNếu vừa nâng V8.3.7, hãy chạy file UPDATE_V8_3_6_RESERVE_TIME_STATUS.sql trong Supabase.`);return}
-    setEmployees(emp||[]);setRows(res||[]);
+    if(dayError){console.warn("Không tải được lịch để kiểm tra trùng thợ dự phòng:",dayError.message)}
+    setEmployees(emp||[]);setRows(res||[]);setScheduleDays(dayData||[]);
   }
   useEffect(()=>{load()},[]);
+
+  function reserveConflicts(id:string){
+    if(!id||!reserveDate)return [] as any[];
+    const toMin=(v?:string|null)=>{const m=String(v||"").match(/^(\d{1,2}):(\d{2})/);return m?Number(m[1])*60+Number(m[2]):null};
+    const wantedStart=toMin(startTime), wantedEnd=toMin(endTime);
+    return scheduleDays.filter((d:any)=>{
+      if(d.shooting_date!==reserveDate)return false;
+      if(d.jobs?.status==="Đã hủy"||d.jobs?.status==="Hủy")return false;
+      if(!(d.job_assignments||[]).some((a:any)=>String(a.employee_id)===String(id)))return false;
+      // Không nhập giờ = giữ cả ngày: chỉ cần thợ có bất kỳ Job nào trong ngày là cảnh báo.
+      if(wantedStart===null)return true;
+      const jobStart=toMin(d.start_time), jobEnd=toMin(d.end_time);
+      // Job thiếu giờ vẫn phải cảnh báo vì không thể khẳng định thợ rảnh.
+      if(jobStart===null)return true;
+      const wEnd=wantedEnd ?? 24*60;
+      const jEnd=jobEnd ?? 24*60;
+      return wantedStart < jEnd && jobStart < wEnd;
+    });
+  }
+  const selectedConflicts=reserveConflicts(employeeId);
+  const conflictText=(d:any)=>`${formatTime(d.start_time)||"Chưa rõ giờ"}${d.end_time?`–${formatTime(d.end_time)}`:""} • ${d.jobs?.event_name||d.jobs?.customer_name||"Job"}`;
 
   async function save(){
     if(!reserveDate)return alert("Chọn ngày dự phòng");
     if(!employeeId)return alert("Chọn thợ dự phòng");
     if(startTime&&endTime&&endTime<=startTime)return alert("Giờ kết thúc phải lớn hơn giờ bắt đầu");
+    const conflicts=reserveConflicts(employeeId);
+    if(conflicts.length){
+      const name=employees.find(e=>e.id===employeeId)?.full_name||"Thợ này";
+      const detail=conflicts.map((d:any)=>`• ${conflictText(d)}`).join("\n");
+      if(!confirm(`⚠ CẢNH BÁO TRÙNG LỊCH\n\n${name} đã có Job trong ${startTime?"khung giờ dự phòng này":"ngày này"}:\n${detail}\n\nVẫn chốt người này làm thợ dự phòng?`))return;
+    }
     setSaving(true);
     try{
       let query=supabase.from("reserve_workers").select("id").eq("reserve_date",reserveDate).eq("employee_id",employeeId).eq("status","reserved");
@@ -118,10 +148,11 @@ export default function ReserveWorkersPage(){
         <label className="text-sm text-slate-600">Ngày <span className="text-red-500">*</span><input type="date" value={reserveDate} onChange={e=>setReserveDate(e.target.value)} className="mt-1 w-full rounded-xl border p-3"/></label>
         <label className="text-sm text-slate-600">Giờ bắt đầu <span className="text-slate-400">(tùy chọn)</span><Time24Input value={startTime} onChange={setStartTime} className="mt-1 w-full rounded-xl border p-3" placeholder="Ví dụ 1535 → 15:35"/></label>
         <label className="text-sm text-slate-600">Giờ kết thúc <span className="text-slate-400">(tùy chọn)</span><Time24Input value={endTime} onChange={setEndTime} className="mt-1 w-full rounded-xl border p-3" placeholder="Ví dụ 1730 → 17:30"/></label>
-        <label className="text-sm text-slate-600">Chọn thợ<EmployeePicker employees={employees} value={employeeId} onChange={(id)=>{setEmployeeId(id);const emp=employees.find(x=>x.id===id);if(emp?.role)setRole(normalizeRole(emp.role));}} getConflict={()=>null}/></label>
+        <label className="text-sm text-slate-600">Chọn thợ<EmployeePicker employees={employees} value={employeeId} onChange={(id)=>{setEmployeeId(id);const emp=employees.find(x=>x.id===id);if(emp?.role)setRole(normalizeRole(emp.role));if(id){const hits=reserveConflicts(id);if(hits.length)alert(`⚠ ${emp?.full_name||"Thợ này"} đã có Job ${startTime?"trùng khung giờ":"trong ngày"}:\n${hits.map((d:any)=>`• ${conflictText(d)}`).join("\n")}\n\nBạn vẫn có thể chọn, nhưng hệ thống sẽ hỏi xác nhận khi Chốt dự phòng.`);}}} getConflict={()=>null}/></label>
         <label className="text-sm text-slate-600">Vai trò<select value={role} onChange={e=>setRole(e.target.value)} className="mt-1 w-full rounded-xl border p-3"><option>Thợ chụp</option><option>Thợ quay</option><option>Flycam</option><option>Editor</option><option>Livestream</option><option>Makeup</option><option>Lái xe</option></select></label>
         <button onClick={save} disabled={saving} className="self-end rounded-xl bg-blue-600 p-3 font-bold text-white disabled:opacity-50">{saving?"Đang lưu...":"+ Chốt dự phòng"}</button>
       </div>
+      {employeeId&&selectedConflicts.length>0&&<div className="mt-3 rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-800"><b>⚠ Thợ này đã có lịch {startTime?"trùng khung giờ":"trong ngày"}</b>{selectedConflicts.map((d:any)=><div key={d.id} className="mt-1">• {conflictText(d)}</div>)}<div className="mt-1 text-xs font-semibold">Vẫn có thể chốt dự phòng nếu Admin xác nhận.</div></div>}
       <input value={note} onChange={e=>setNote(e.target.value)} className="mt-3 w-full rounded-xl border p-3" placeholder="Ghi chú: ưu tiên job cưới, đã chốt riêng với thợ..."/>
     </div>
 

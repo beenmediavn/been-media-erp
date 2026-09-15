@@ -509,18 +509,37 @@ export default function AdminJobPage() {
 
   const addReservedWorker = (dayIndex: number, locationIndex: number, reserve: any) => {
     const emp = employees.find((x:any)=>x.id===reserve.employee_id) || reserve.employees;
+    const reserveRole = reserve.role || emp?.role || "Thợ chụp";
     setDays((prev) => prev.map((day, i) => {
       if (i !== dayIndex) return day;
+      const alreadyInDay=(day.locations||[]).some((loc:any)=>(loc.assignments||[]).some((a:any)=>String(a.employee_id)===String(reserve.employee_id)));
+      if(alreadyInDay){
+        setTimeout(()=>alert(`${emp?.full_name||"Thợ"} đã có trong phân công của ngày này.`),0);
+        return day;
+      }
       return {...day, locations: day.locations.map((loc:any,j:number)=>{
         if(j!==locationIndex) return loc;
-        const alreadyAdded=(loc.assignments||[]).some((a:any)=>String(a.employee_id)===String(reserve.employee_id));
-        if(alreadyAdded){
-          setTimeout(()=>alert(`${emp?.full_name||"Thợ"} đã có trong phân công của địa điểm này.`),0);
-          return loc;
-        }
-        return {...loc, assignments:[...loc.assignments, {employee_id: reserve.employee_id, role: reserve.role || emp?.role || "Thợ chụp", salary_amount: Number(emp?.base_fee || (String(reserve.role).includes("quay") ? 900000 : 700000)), note: "Thêm từ thợ dự phòng", reserve_worker_id: reserve.id, client_requested: false, contact_visible: false}]};
+        const assignments=[...(loc.assignments||[])];
+        // Ưu tiên điền vào ô trống có sẵn đúng vai trò để không sinh thêm cột/dòng thừa.
+        let emptyIndex=assignments.findIndex((a:any)=>!a.employee_id && roleKind(a.role)===roleKind(reserveRole));
+        if(emptyIndex<0) emptyIndex=assignments.findIndex((a:any)=>!a.employee_id);
+        const nextAssignment={employee_id: reserve.employee_id, role: reserveRole, salary_amount: Number(emp?.base_fee || (String(reserveRole).toLowerCase().includes("quay") ? 900000 : 700000)), note: "Thêm từ thợ dự phòng", reserve_worker_id: reserve.id, client_requested: false, contact_visible: false};
+        if(emptyIndex>=0) assignments[emptyIndex]={...assignments[emptyIndex],...nextAssignment};
+        else assignments.push(nextAssignment);
+        return {...loc, assignments};
       })};
     }));
+  };
+
+  const availableReserveWorkersForDay = (day:any) => {
+    if(!day?.shooting_date) return [];
+    const usedReserveIds=new Set<string>();
+    const usedEmployeeIds=new Set<string>();
+    for(const loc of (day.locations||[])) for(const a of (loc.assignments||[])){
+      if(a?.reserve_worker_id) usedReserveIds.add(String(a.reserve_worker_id));
+      if(a?.employee_id) usedEmployeeIds.add(String(a.employee_id));
+    }
+    return reserveWorkers.filter((r:any)=>r.reserve_date===day.shooting_date && !usedReserveIds.has(String(r.id)) && !usedEmployeeIds.has(String(r.employee_id)));
   };
 
   const updateDay = (dayIndex: number, key: string, value: any) => {
@@ -1121,6 +1140,7 @@ export default function AdminJobPage() {
           duplicateDay={duplicateDay}
           removeDay={removeDay}
           addReservedWorker={addReservedWorker}
+          availableReserveWorkersForDay={availableReserveWorkersForDay}
           addLocation={addLocation}
           updateLocation={updateLocation}
           removeLocation={removeLocation}
@@ -1247,6 +1267,7 @@ function JobForm(props: any) {
     duplicateDay,
     removeDay,
     addReservedWorker,
+    availableReserveWorkersForDay,
     addLocation,
     updateLocation,
     removeLocation,
@@ -1379,10 +1400,10 @@ function JobForm(props: any) {
                 <button onClick={() => addLocation(dayIndex)} className="bg-blue-600 text-white px-3 py-2 rounded-lg">+ Thêm địa chỉ / nhà gái</button>
               </div>
 
-              {day.shooting_date && reserveWorkers.filter((r:any)=>r.reserve_date===day.shooting_date).length>0 && (
+              {day.shooting_date && availableReserveWorkersForDay(day).length>0 && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
-                  <p className="mb-2 text-sm font-bold text-amber-900">Thợ dự phòng ngày {formatDateVN(day.shooting_date)} — chọn để xếp vào Job</p>
-                  <div className="flex flex-wrap gap-2">{reserveWorkers.filter((r:any)=>r.reserve_date===day.shooting_date).map((r:any)=><span key={r.id} className="rounded-full bg-white px-3 py-1 text-sm ring-1 ring-amber-200">{r.employees?.full_name||"Nhân sự"} • {r.role}</span>)}</div>
+                  <p className="mb-2 text-sm font-bold text-amber-900">Thợ dự phòng còn có thể xếp ngày {formatDateVN(day.shooting_date)}</p>
+                  <div className="flex flex-wrap gap-2">{availableReserveWorkersForDay(day).map((r:any)=><span key={r.id} className="rounded-full bg-white px-3 py-1 text-sm ring-1 ring-amber-200">{r.employees?.full_name||"Nhân sự"} • {r.role}</span>)}</div>
                 </div>
               )}
 
@@ -1401,7 +1422,7 @@ function JobForm(props: any) {
                     <button onClick={() => removeLocation(dayIndex, locationIndex)} className="text-red-600 md:col-span-1 pb-2">X</button>
                   </div>
 
-                  {day.shooting_date && reserveWorkers.filter((r:any)=>r.reserve_date===day.shooting_date).length>0&&<div className="rounded-lg bg-amber-50 p-2"><p className="mb-2 text-xs font-bold text-amber-800">+ Thêm thợ dự phòng vào {location.location_name||"địa điểm này"}</p><div className="flex flex-wrap gap-2">{reserveWorkers.filter((r:any)=>r.reserve_date===day.shooting_date).map((r:any)=><button type="button" key={r.id} onClick={()=>addReservedWorker(dayIndex,locationIndex,r)} className="rounded-full border border-amber-300 bg-white px-3 py-1 text-xs font-semibold text-amber-900">+ {r.employees?.full_name||"Nhân sự"} • {r.role}</button>)}</div></div>}
+                  {day.shooting_date && availableReserveWorkersForDay(day).length>0&&<div className="rounded-lg bg-amber-50 p-2"><p className="mb-2 text-xs font-bold text-amber-800">+ Thêm thợ dự phòng vào {location.location_name||"địa điểm này"}</p><div className="flex flex-wrap gap-2">{availableReserveWorkersForDay(day).map((r:any)=><button type="button" key={r.id} onClick={()=>addReservedWorker(dayIndex,locationIndex,r)} className="rounded-full border border-amber-300 bg-white px-3 py-1 text-xs font-semibold text-amber-900">+ {r.employees?.full_name||"Nhân sự"} • {r.role}</button>)}</div></div>}
 
                   <div className="flex flex-wrap gap-2">
                     <button onClick={() => addAssignment(dayIndex, locationIndex, "Thợ chụp")} className="border px-3 py-1 rounded">+ Chụp</button>
