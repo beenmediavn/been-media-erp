@@ -1,0 +1,44 @@
+BEEN MEDIA ERP V8.3
+===================
+
+BAN NAY DA GOM LUON CAC MUC ANH CHUA LAM O V8.2:
+- CHAM CONG camera: Check-in mat, anh cung khach, Check-out anh cung khong gian/khach.
+- Admin nhan thong bao Check-in / Check-out.
+- No khach chi nhac khi Job da Hoan thanh / Da ban giao.
+- No luong chi tinh Job da hoan thanh; bam Xem Job no de xem chi tiet.
+- Chat: xoa ca cuoc tro chuyen ca nhan / nhom.
+- Offline + tu dong dong bo + hien thi trang thai mang.
+
+MOI V8.3 - NHAP JOB NHANH:
+- Uu tien doc dung mau 1 -> 8 BEEN MEDIA.
+- Tach Co dau / Chu re.
+- Tach SĐT chinh, SĐT nha trai, SĐT nha gai.
+- Tach dia chi nha trai / nha gai.
+- Doc nhieu ngay: Le an hoi, Le cuoi... va tao dung 2 ngay tro len.
+- Bo qua ngay Am lich trong ngoac, khong nham thanh ngay Job.
+- Doc gio sang/chieu/toi va chuyen sang 24h.
+- Doc Goi chot / tong tien.
+- Doc so Photographer / CAMERAMEN.
+- Doc tho dich danh.
+- Man hinh KIEM TRA cho sua tay tat ca truong truoc khi dua vao form Job.
+
+CACH CHAY:
+1. Giai nen vao thu muc moi.
+2. Copy .env.local tu project cu sang thu muc V8.3.
+3. Neu CHUA tung lam V8.2: vao Supabase > SQL Editor va chay UPDATE_V8_3_ALL_IN_ONE.sql mot lan.
+4. Bam CHAY_DUNG_BAN_V8_3.cmd.
+5. Mo http://localhost:3010.
+6. Kiem tra tren thanh tren cung phai hien V8.3.
+
+TEST NHAP JOB NHANH:
+Dan nguyen mau thong tin cua Thu Hong & Huu Loc. Ket qua dung phai la:
+- Co dau: Thu Hong
+- Chu re: Huu Loc
+- Ngay 1: Le an hoi 27/11/2026 08:00
+- Ngay 2: Le cuoi 28/11/2026 14:00
+- Nha trai: Nha van hoa thon Phu Doi, Phuong Duc, Ha Noi / 0375172383
+- Nha gai: 46 xom Dong Binh, Van Diem, Phu Xuyen, Ha Noi / 0398725086
+- Tong tien: 12.499.000
+- Chup: 2
+- Quay: 1
+- Dich danh: BEEN

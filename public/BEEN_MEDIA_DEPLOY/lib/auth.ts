@@ -1,0 +1,135 @@
+export type AppRole =
+  | "admin"
+  | "coordinator"
+  | "photographer"
+  | "videographer"
+  | "editor"
+  | "accountant"
+  | "viewer";
+
+export type AppUser = {
+  id: string;
+  full_name: string;
+  username: string;
+  role: AppRole;
+  role_label: string;
+  phone?: string;
+};
+
+export const ROLE_LABELS: Record<AppRole, string> = {
+  admin: "Admin",
+  coordinator: "Điều phối / Sale",
+  photographer: "Photographer",
+  videographer: "CAMERAMEN",
+  editor: "Editor",
+  accountant: "Kế toán",
+  viewer: "Chỉ xem",
+};
+
+export const ROLE_OPTIONS: { value: AppRole; label: string }[] = [
+  { value: "admin", label: "Admin" },
+  { value: "coordinator", label: "Điều phối / Sale" },
+  { value: "photographer", label: "Photographer" },
+  { value: "videographer", label: "CAMERAMEN" },
+  { value: "editor", label: "Editor" },
+  { value: "accountant", label: "Kế toán" },
+  { value: "viewer", label: "Chỉ xem" },
+];
+
+export const ROLE_PERMISSIONS: Record<AppRole, string[]> = {
+  // Admin phụ có quyền đầy đủ giống Admin chính.
+  admin: [
+    "dashboard", "customers", "schedule", "job", "employees", "reserve",
+    "payments", "cashflow", "salary", "drive", "reports", "chat",
+    "profile", "ai", "settings"
+  ],
+
+  // Điều phối / Sale: quản lý khách, lịch, job, thợ dự phòng; chỉ xem lương cá nhân.
+  coordinator: [
+    "dashboard", "customers", "schedule", "job", "reserve",
+    "salary", "chat", "profile"
+  ],
+
+  // Thợ chụp: chỉ công việc được phân công + lương cá nhân + chat/hồ sơ.
+  photographer: [
+    "dashboard", "schedule", "job", "salary", "chat", "profile"
+  ],
+
+  // CAMERAMEN: chỉ công việc được phân công + lương cá nhân + chat/hồ sơ.
+  videographer: [
+    "dashboard", "schedule", "job", "salary", "chat", "profile"
+  ],
+
+  // Editor: job liên quan, Drive giao nhận, lương cá nhân, chat/hồ sơ.
+  editor: [
+    "dashboard", "schedule", "job", "drive", "salary", "chat", "profile"
+  ],
+
+  // Kế toán: các phần tài chính + báo cáo + dữ liệu khách/job cần đối soát.
+  accountant: [
+    "dashboard", "customers", "job", "payments", "cashflow",
+    "salary", "reports", "chat", "profile"
+  ],
+
+  // Chỉ xem: xem tổng quan, lịch và job; không có quyền quản trị.
+  viewer: [
+    "dashboard", "schedule", "job", "chat", "profile"
+  ],
+};
+
+export function normalizeRole(role: string | null | undefined): AppRole {
+  const value = String(role || "viewer").toLowerCase().trim();
+  if (["admin", "quản trị", "quan tri", "quản trị viên", "quan tri vien"].includes(value)) return "admin";
+  if (["coordinator", "sale", "điều phối", "dieu phoi", "sale / điều phối", "sale / dieu phoi"].includes(value)) return "coordinator";
+  if (["photographer", "thợ chụp", "tho chup", "chụp", "chup"].includes(value)) return "photographer";
+  if (["videographer", "cameramen", "cameraman", "camera man", "thợ quay", "tho quay", "quay", "quay phim", "flycam"].includes(value)) return "videographer";
+  if (["editor", "dựng", "dung", "hậu kỳ", "hau ky", "thiết kế", "thiet ke"].includes(value)) return "editor";
+  if (["accountant", "kế toán", "ke toan", "ketoan"].includes(value)) return "accountant";
+  return "viewer";
+}
+
+export function canAccess(role: AppRole | string | null | undefined, permission: string) {
+  const normalized = normalizeRole(String(role || "viewer"));
+  return ROLE_PERMISSIONS[normalized].includes(permission);
+}
+
+export function permissionFromPath(pathname: string) {
+  if (pathname === "/") return "dashboard";
+  if (pathname.startsWith("/customers")) return "customers";
+  if (pathname.startsWith("/schedule")) return "schedule";
+  if (pathname.startsWith("/job")) return "job";
+  if (pathname.startsWith("/employees")) return "employees";
+  if (pathname.startsWith("/reserve")) return "reserve";
+  if (pathname.startsWith("/payments")) return "payments";
+  if (pathname.startsWith("/cashflow")) return "cashflow";
+  if (pathname.startsWith("/salary")) return "salary";
+  if (pathname.startsWith("/drive")) return "drive";
+  if (pathname.startsWith("/reports")) return "reports";
+  if (pathname.startsWith("/chat")) return "chat";
+  if (pathname.startsWith("/profile")) return "profile";
+  if (pathname.startsWith("/ai")) return "ai";
+  if (pathname.startsWith("/settings")) return "settings";
+  return "dashboard";
+}
+
+export function saveSession(user: AppUser) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem("been_media_user", JSON.stringify(user));
+}
+
+export function getSession(): AppUser | null {
+  if (typeof window === "undefined") return null;
+  const raw = localStorage.getItem("been_media_user");
+  if (!raw) return null;
+  try {
+    const user = JSON.parse(raw);
+    return { ...user, role: normalizeRole(user.role) };
+  } catch {
+    return null;
+  }
+}
+
+export function clearSession() {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem("been_media_user");
+}

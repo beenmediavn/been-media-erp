@@ -1,0 +1,9 @@
+BEEN MEDIA ERP V8.3.1
+
+MỚI:
+- Ô Chọn tên thợ có ô tìm kiếm ngay trong danh sách.
+- Gõ BEEN, Tuấn, Zimy... để lọc tức thì.
+- Tìm không dấu vẫn được (ví dụ "tuan" vẫn tìm "TUẤN").
+- Ưu tiên tên bắt đầu bằng từ đang gõ.
+- Áp dụng tại mọi nơi đang dùng EmployeePicker trong form phân công Job.
+- Vẫn giữ cảnh báo thợ bị trùng lịch.

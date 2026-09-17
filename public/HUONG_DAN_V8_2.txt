@@ -1,0 +1,20 @@
+BEEN MEDIA ERP V8.2
+
+1. Copy .env.local tu project cu vao thu muc V8.2.
+2. Supabase -> SQL Editor -> chay UPDATE_V8_2_ATTENDANCE_DEBT_CHAT.sql.
+3. Bam CHAY_DUNG_BAN_V8_2.cmd.
+4. Mo http://localhost:3010.
+
+DA SUA / THEM:
+- Chat: Admin xoa ca cuoc tro chuyen ca nhan hoac nhom (soft delete + audit).
+- Thong bao cong no: chi nhac khach con no neu Job da HOAN THANH.
+- Dashboard: Khach con no va Can tra tho chi tinh Job da HOAN THANH.
+- Luong: Job chua hoan thanh khong phat sinh no luong.
+- Bam Xem Job no de xem Job nao da xong, da duoc phan bo thanh toan bao nhieu, Job nao con no.
+- CHAM CONG: Check-in camera anh mat, anh cung khach, Check-out anh ban + khong gian/khach hang.
+- Admin nhan thong bao Check-in/Check-out trong chuong thong bao.
+- Anh cham cong luu vao Supabase Storage bucket attendance.
+
+LUU Y CAMERA:
+- Camera trinh duyet hoat dong tren localhost hoac website HTTPS.
+- Dien thoai phai cap quyen Camera cho trinh duyet.

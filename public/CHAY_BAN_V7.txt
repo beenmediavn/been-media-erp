@@ -1,0 +1,18 @@
+BEEN MEDIA ERP V7 GREEN GOLD
+
+Bản này có:
+- Giao diện xanh #15302B + vàng gold + hoa văn vàng mờ.
+- Dashboard có biểu đồ doanh thu và trạng thái Job.
+- Lịch chụp: chọn ngày rồi bấm Tạo Job ngày này, form mở ngay trên Lịch và lưu trực tiếp, KHÔNG chuyển sang Job / Booking.
+- Các chức năng V6 giữ nguyên.
+
+CÁCH CHẠY:
+1. Giải nén đúng thư mục BEEN_MEDIA_ERP_V7_GREEN_GOLD.
+2. Mở PowerShell NGAY TRONG thư mục này.
+3. npm install
+4. npm run dev
+5. Mở http://localhost:3000
+
+Kiểm tra thanh menu trái: cuối menu phải thấy “V7 GREEN GOLD • #15302B”. Nếu không thấy, bạn đang chạy nhầm bản cũ.
+
+V7.2: fixed table hover/selected row contrast (gold cream #F4D67A + forest text #15302B).

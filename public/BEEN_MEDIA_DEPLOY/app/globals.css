@@ -1,0 +1,110 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f1f5f9;
+  --foreground: #0f172a;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html, body { overflow-x: hidden; }
+body {
+  margin: 0;
+  background: #f1f5f9;
+  color: #0f172a;
+  font-family: Arial, Helvetica, sans-serif;
+  min-height: 100vh;
+}
+
+/* Khôi phục giao diện gốc BEEN MEDIA: nền sáng, sidebar xanh đen, nút xanh dương. */
+.been-shell { min-height: 100vh; background:#f1f5f9; color:#0f172a; }
+.been-shell main { background:#f1f5f9; color:#0f172a; }
+.been-shell button, .been-shell a { -webkit-tap-highlight-color: transparent; }
+
+/* Các component mới vẫn dùng token bm-* nhưng hiển thị theo giao diện gốc. */
+.been-shell .bm-card {
+  background:#ffffff;
+  color:#0f172a;
+  border:1px solid #e2e8f0;
+  box-shadow:0 1px 3px rgba(15,23,42,.08);
+}
+.been-shell .bm-muted { color:#64748b !important; }
+.been-shell .bm-gold { color:#2563eb !important; }
+.been-shell .bm-chip {
+  background:#f1f5f9;
+  color:#334155;
+  border:1px solid #e2e8f0;
+}
+
+/* Form giống giao diện ban đầu. */
+.been-shell input,
+.been-shell select,
+.been-shell textarea {
+  background:#ffffff;
+  color:#0f172a;
+  border-color:#cbd5e1;
+  outline:none;
+}
+.been-shell input::placeholder,
+.been-shell textarea::placeholder { color:#94a3b8; }
+.been-shell input:focus,
+.been-shell select:focus,
+.been-shell textarea:focus {
+  border-color:#2563eb !important;
+  box-shadow:0 0 0 3px rgba(37,99,235,.10);
+}
+
+/* Các màu còn sót từ theme xanh/vàng cũ được đưa về tone gốc. */
+.been-shell main .text-red-300,
+.been-shell main .text-red-400 { color:#dc2626 !important; }
+.been-shell main .text-emerald-300,
+.been-shell main .text-emerald-400 { color:#15803d !important; }
+.been-shell main .text-slate-300 { color:#94a3b8 !important; }
+.been-shell main .text-slate-400 { color:#64748b !important; }
+.been-shell main .bg-black\/10 { background:#f1f5f9 !important; }
+.been-shell main .bg-amber-300\/5 { background:#fffbeb !important; }
+
+/* Bảng dữ liệu: trắng, chữ đậm vừa, hover xanh rất nhạt. */
+.been-shell table { color:#0f172a; }
+.been-shell thead { background:#f8fafc; color:#334155; }
+.been-shell table tbody tr > td {
+  background:#ffffff;
+  color:#0f172a;
+  transition:background-color .12s ease;
+}
+.been-shell table tbody tr:hover > td,
+.been-shell table tbody tr:focus-within > td,
+.been-shell table tbody tr[aria-selected="true"] > td,
+.been-shell table tbody tr[data-selected="true"] > td,
+.been-shell table tbody tr.is-selected > td {
+  background:#eff6ff !important;
+  color:#0f172a !important;
+}
+
+/* Calendar: tất cả ngày phải nhìn rõ trên nền trắng. */
+.been-calendar button:not(:disabled) { color:#0f172a; }
+.been-calendar button:disabled { color:#cbd5e1; }
+
+@media (max-width: 768px) {
+  main { width:100%; overflow-x:hidden; }
+  h1.text-3xl { font-size:1.5rem !important; line-height:2rem !important; }
+  .text-5xl { font-size:2rem !important; line-height:2.5rem !important; }
+  .text-3xl { font-size:1.5rem !important; line-height:2rem !important; }
+  .text-2xl { font-size:1.25rem !important; line-height:1.75rem !important; }
+  .grid.grid-cols-5,.grid.grid-cols-4,.grid.grid-cols-3,.grid.grid-cols-2 {
+    grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+    gap:.75rem !important;
+  }
+  .grid.grid-cols-5 > *,.grid.grid-cols-4 > *,.grid.grid-cols-3 > *,.grid.grid-cols-2 > * { min-width:0; }
+  .rounded-xl.p-6,.rounded-xl.p-5 { padding:1rem !important; }
+  table { white-space:nowrap; }
+  .overflow-x-auto { -webkit-overflow-scrolling:touch; }
+}
+@media (max-width:480px){
+  .grid.grid-cols-5,.grid.grid-cols-4,.grid.grid-cols-3,.grid.grid-cols-2 { grid-template-columns:1fr !important; }
+}

@@ -1,0 +1,15 @@
+BEEN MEDIA ERP V8.1.1 - CACH CHAY DUNG BAN MOI
+
+1. Giai nen vao MOT THU MUC MOI. KHONG de de len thu muc V8.0.2 cu.
+2. Copy file .env.local tu project cu sang thu muc V8.1.1 nay.
+3. Bam dup file: CHAY_DUNG_BAN_V8_1_1.cmd
+4. Ban moi se mo tai: http://localhost:3010
+   KHONG mo http://localhost:3000 vi do co the la server V8.0.2 cu.
+5. Dau hieu chac chan dang o ban moi:
+   - Tren header co badge V8.1.1
+   - Duoi Sidebar ghi V8.1.1 • OFFLINE AUTO SYNC + NETWORK
+   - Goc duoi phai luon co nut Online/Offline, ping, va so ban ghi cho sync.
+6. Neu tat mang khi tao Job, app luu vao IndexedDB; khi co mang lai tu dong sync.
+
+SQL can chay tren Supabase:
+UPDATE_V8_1_OFFLINE_CHAT_COMPLETE.sql
