@@ -48,6 +48,7 @@ export default function LoginPage() {
       .select("*")
       .ilike("username", user)
       .eq("password", pass)
+      .is("deleted_at", null)
       .maybeSingle();
 
     setLoading(false);

@@ -41,7 +41,7 @@ export default function PaymentsPage() {
 
   async function loadData() {
     const [{ data: jobData, error }, { data: paymentData }] = await Promise.all([
-      supabase.from("jobs").select("*, customers(*)").order("created_at", { ascending: false }),
+      supabase.from("jobs").select("*, customers(*)").is("deleted_at", null).order("created_at", { ascending: false }),
       supabase.from("customer_payments").select("*, customers(*), jobs(*)").order("payment_date", { ascending: false }),
     ]);
 

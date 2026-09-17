@@ -37,7 +37,7 @@ export default function EmployeesPage() {
 
   async function loadData() {
     const [{ data: emp }, { data: ass }, { data: adv }, { data: pay }] = await Promise.all([
-      supabase.from("employees").select("*").order("created_at", { ascending: false }),
+      supabase.from("employees").select("*").is("deleted_at", null).order("created_at", { ascending: false }),
       supabase
         .from("job_assignments")
         .select("*, employees(*), jobs(*, customers(*)), job_days(*)")
@@ -145,8 +145,19 @@ export default function EmployeesPage() {
   async function deleteEmployee(id: string) {
     if(!(await requireEditPin("xóa nhân sự"))) return;
     if (!confirm("Chuyển nhân sự này vào Thùng rác 30 ngày?")) return;
-    const { error } = await supabase.from("employees").update({ deleted_at: new Date().toISOString(), deleted_by: "Admin ERP" }).eq("id", id);
-    if (error) alert(error.message);
+    const deletedAt = new Date().toISOString();
+    const today = new Date().toISOString().slice(0, 10);
+    // Nhân sự xóa phải biến mất ngay và không thể đăng nhập/chọn lại.
+    const { error } = await supabase.from("employees").update({ deleted_at: deletedAt, deleted_by: "Admin ERP", active: false, can_login: false }).eq("id", id);
+    if (!error) {
+      // Giải phóng các phân công hôm nay/tương lai; lịch sử Job cũ vẫn được giữ nguyên.
+      const { data: futureDays } = await supabase.from("job_days").select("id").gte("shooting_date", today);
+      const dayIds = (futureDays || []).map((d:any) => d.id);
+      if (dayIds.length) await supabase.from("job_assignments").delete().eq("employee_id", id).in("job_day_id", dayIds);
+    }
+    if (error) return alert(error.message);
+    setEmployees(prev => prev.filter((e:any) => e.id !== id));
+    setSelected((prev:any) => prev?.id === id ? null : prev);
     loadData();
   }
 

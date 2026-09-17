@@ -8,7 +8,23 @@ import { formatDateVN } from "@/lib/date-vn";
 import { requireEditPin } from "@/lib/admin-pin";
 
 type SalaryFilter = "all" | "paid" | "unpaid" | "debt" | "advance";
-const jobCompleted=(status:any)=>String(status||"").toLowerCase().includes("hoàn thành")||String(status||"").toLowerCase().includes("đã bàn giao");
+const jobCompleted=(status:any)=>{
+  const s=String(status||"").trim().toLowerCase();
+  return s.includes("hoàn thành")||s.includes("đã hoàn thành")||s.includes("đã bàn giao");
+};
+const dayHasEnded=(day:any)=>{
+  const date=String(day?.shooting_date||"");
+  if(!date) return false;
+  const now=new Date();
+  const today=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
+  if(date<today) return true;
+  if(date>today) return false;
+  const end=String(day?.end_time||"").slice(0,5);
+  if(!end) return false;
+  const current=`${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
+  return end<=current;
+};
+const assignmentCompleted=(a:any)=>jobCompleted(a?.jobs?.status)||dayHasEnded(a?.job_days);
 
 const FILTERS: { key: SalaryFilter; label: string }[] = [
   { key: "all", label: "Tất cả" },
@@ -37,10 +53,10 @@ export default function AdminSalaryPage() {
   const formatMoney = (n: number) => Number(n || 0).toLocaleString("vi-VN") + " đ";
 
   const loadData = async () => {
-    const { data: emp } = await supabase.from("employees").select("*").order("created_at", { ascending: false });
+    const { data: emp } = await supabase.from("employees").select("*").is("deleted_at", null).order("created_at", { ascending: false });
     const { data: ass } = await supabase
       .from("job_assignments")
-      .select("*, jobs(customer_name, event_name, service, status), job_days(shooting_date,start_time,end_time)");
+      .select("*, jobs(customer_name, event_name, service, status, deleted_at), job_days(shooting_date,start_time,end_time)");
     const { data: adv } = await supabase.from("salary_advances").select("*").order("advance_date", { ascending: false });
     const { data: pay } = await supabase.from("salary_payments").select("*").order("payment_date", { ascending: false });
     const { data: adj } = await supabase.from("salary_adjustments").select("*, jobs(event_name,customer_name)").order("adjustment_date",{ascending:false});
@@ -56,16 +72,35 @@ export default function AdminSalaryPage() {
     loadData();
   }, []);
 
-  const monthAssignments = assignments.filter((a) => a.job_days?.shooting_date?.startsWith(month));
+  const monthAssignments = assignments.filter((a) => a.job_days?.shooting_date?.startsWith(month) && !a.jobs?.deleted_at);
   const monthAdvances = advances.filter((a) => a.advance_date?.startsWith(month));
   const monthPayments = payments.filter((p) => p.payment_date?.startsWith(month));
   const monthAdjustments = adjustments.filter((a)=>a.adjustment_date?.startsWith(month));
 
   const rows = useMemo(() => {
     return employees.map((emp) => {
-      const empAssignmentsAll = monthAssignments.filter((a) => a.employee_id === emp.id);
+      const empAssignmentsRaw = monthAssignments.filter((a) => a.employee_id === emp.id);
+      // Khử trùng phân công: dữ liệu cũ có thể có 2 record cho cùng một thợ/cùng Job/cùng ca.
+      // Không khử theo tên Job vì một thợ có thể làm hợp lệ nhiều ngày trong cùng Job.
+      const seenAssignments = new Set<string>();
+      const empAssignmentsAll = empAssignmentsRaw.filter((a:any) => {
+        const key = [
+          String(a.job_id || ""),
+          String(a.job_day_id || a.job_days?.shooting_date || ""),
+          String(a.employee_id || ""),
+          String(a.role || "").trim().toLowerCase(),
+          String(a.work_location_name || "").trim().toLowerCase(),
+          String(a.work_location_address || "").trim().toLowerCase(),
+          String(a.job_days?.start_time || "").slice(0,5),
+          String(a.job_days?.end_time || "").slice(0,5),
+        ].join("|");
+        if (seenAssignments.has(key)) return false;
+        seenAssignments.add(key);
+        return true;
+      });
       // Chỉ Job đã hoàn thành mới phát sinh nghĩa vụ trả lương. Job tương lai/đang làm vẫn hiển thị để đối chiếu nhưng KHÔNG cộng nợ.
-      const empAssignments = empAssignmentsAll.filter((a)=>jobCompleted(a.jobs?.status));
+      const empAssignments = empAssignmentsAll.filter((a)=>assignmentCompleted(a));
+      const assignedSalary = empAssignmentsAll.reduce((sum, a) => sum + Number(a.salary_amount || 0), 0);
       const baseSalary = empAssignments.reduce((sum, a) => sum + Number(a.salary_amount || 0), 0);
       const allEmployeeAdjustments = monthAdjustments.filter((a)=>a.employee_id===emp.id);
       const completedJobIds = new Set(empAssignments.map((a:any)=>a.job_id));
@@ -89,7 +124,7 @@ export default function AdminSalaryPage() {
         return {...a,jobDue:due,jobPaid:allocated,jobRemain:Math.max(due-allocated,0)};
       });
 
-      return { ...emp, baseSalary, adjustmentTotal, employeeAdjustments, totalSalary, totalAdvance, totalPaid, remain, remainRaw, overpaid, jobs: empAssignmentsAll, completedJobs: empAssignments, salaryJobs };
+      return { ...emp, assignedSalary, baseSalary, adjustmentTotal, employeeAdjustments, totalSalary, totalAdvance, totalPaid, remain, remainRaw, overpaid, jobs: empAssignmentsAll, completedJobs: empAssignments, salaryJobs };
     });
   }, [employees, monthAssignments, monthAdvances, monthPayments, monthAdjustments]);
 
@@ -107,6 +142,8 @@ export default function AdminSalaryPage() {
     });
   }, [rows, filter, search]);
 
+  const totalAssignedSalary = rows.reduce((s, r) => s + r.assignedSalary, 0);
+  const totalCompletedSalary = rows.reduce((s, r) => s + r.baseSalary, 0);
   const totalSalary = rows.reduce((s, r) => s + r.totalSalary, 0);
   const totalAdvance = rows.reduce((s, r) => s + r.totalAdvance, 0);
   const totalPaid = rows.reduce((s, r) => s + r.totalPaid, 0);
@@ -197,9 +234,10 @@ export default function AdminSalaryPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5 mb-5">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-6 mb-5">
         <div className="bg-white rounded-xl p-4 shadow"><p className="text-gray-500">Nhân sự</p><p className="text-2xl font-bold">{employees.length}</p></div>
-        <div className="bg-white rounded-xl p-4 shadow"><p className="text-gray-500">Tổng lương</p><p className="text-xl font-bold">{formatMoney(totalSalary)}</p></div>
+        <div className="bg-white rounded-xl p-4 shadow"><p className="text-gray-500">Tổng lương đã phân công</p><p className="text-xl font-bold">{formatMoney(totalAssignedSalary)}</p></div>
+        <div className="bg-white rounded-xl p-4 shadow"><p className="text-gray-500">Lương Job đã hoàn thành</p><p className="text-xl font-bold">{formatMoney(totalCompletedSalary)}</p></div>
         <div className="bg-white rounded-xl p-4 shadow"><p className="text-gray-500">Đã ứng</p><p className="text-xl font-bold text-orange-600">{formatMoney(totalAdvance)}</p></div>
         <div className="bg-white rounded-xl p-4 shadow"><p className="text-gray-500">Đã trả</p><p className="text-xl font-bold text-green-600">{formatMoney(totalPaid)}</p></div>
         <div className="bg-white rounded-xl p-4 shadow col-span-2 lg:col-span-1"><p className="text-gray-500">BEEN MEDIA còn phải trả thợ</p><p className="text-xl font-bold text-red-600">{formatMoney(totalRemain)}</p></div>
@@ -237,7 +275,8 @@ export default function AdminSalaryPage() {
                 <th className="text-left p-3">Nhân sự</th>
                 <th className="text-left p-3">Vai trò</th>
                 <th className="text-left p-3">Job tháng</th>
-                <th className="text-left p-3">Lương Job</th>
+                <th className="text-left p-3">Tổng lương thợ</th>
+                <th className="text-left p-3">Lương Job đã xong</th>
                 <th className="text-left p-3">Phát sinh +/-</th>
                 <th className="text-left p-3">Lương sau phát sinh</th>
                 <th className="text-left p-3">Đã ứng</th>
@@ -253,6 +292,7 @@ export default function AdminSalaryPage() {
                   <td className="p-3 font-bold">{emp.full_name}</td>
                   <td className="p-3">{emp.role}</td>
                   <td className="p-3">{emp.jobs.length}</td>
+                  <td className="p-3 font-bold">{formatMoney(emp.assignedSalary)}</td>
                   <td className="p-3">{formatMoney(emp.baseSalary)}</td>
                   <td className={`p-3 font-semibold ${emp.adjustmentTotal<0?"text-red-600":"text-emerald-700"}`}>{emp.adjustmentTotal>=0?"+":""}{formatMoney(emp.adjustmentTotal)}</td>
                   <td className="p-3 font-bold">{formatMoney(emp.totalSalary)}</td>
@@ -351,21 +391,21 @@ export default function AdminSalaryPage() {
               </div>
             </div>
 
-            <h3 className="font-bold mb-1">Job của thợ trong tháng</h3><p className="mb-3 text-sm text-slate-500">Chỉ Job có trạng thái <b>Đã hoàn thành</b> mới được cộng vào nợ lương. Job chưa hoàn thành chỉ hiển thị để theo dõi.</p>
+            <h3 className="font-bold mb-1">Job của thợ trong tháng</h3><p className="mb-3 text-sm text-slate-500">Job đã được đánh dấu hoàn thành <b>hoặc đã qua giờ kết thúc</b> sẽ được tính vào lương phải trả. Job sắp tới chỉ hiển thị để theo dõi.</p>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[800px]">
                 <thead><tr className="border-b bg-gray-50"><th className="text-left p-2">Ngày</th><th className="text-left p-2">Khách / sự kiện</th><th className="text-left p-2">Vai trò</th><th className="text-left p-2">Trạng thái</th><th className="text-left p-2">Địa điểm</th><th className="text-left p-2">Lương</th><th className="text-left p-2">Đã trả phân bổ</th><th className="text-left p-2">Còn nợ Job</th><th className="text-left p-2">Ghi chú</th></tr></thead>
                 <tbody>
-                  {[...(selectedEmployee.salaryJobs||[]),...selectedEmployee.jobs.filter((j:any)=>!jobCompleted(j.jobs?.status))].map((job: any) => (
+                  {[...(selectedEmployee.salaryJobs||[]),...selectedEmployee.jobs.filter((j:any)=>!assignmentCompleted(j))].map((job: any) => (
                     <tr key={job.id} className="border-b">
                       <td className="p-2">{formatDateVN(job.job_days?.shooting_date)}<br /><span className="text-gray-500">{job.job_days?.start_time} - {job.job_days?.end_time}</span></td>
                       <td className="p-2">{job.jobs?.event_name || job.jobs?.customer_name}<br /><span className="text-gray-500">{job.jobs?.service}</span></td>
                       <td className="p-2">{job.role}</td>
-                      <td className="p-2"><span className={`rounded-full px-2 py-1 text-xs font-bold ${jobCompleted(job.jobs?.status)?"bg-emerald-100 text-emerald-700":"bg-slate-100 text-slate-600"}`}>{job.jobs?.status||"Chưa xác định"}</span></td>
+                      <td className="p-2"><span className={`rounded-full px-2 py-1 text-xs font-bold ${assignmentCompleted(job)?"bg-emerald-100 text-emerald-700":"bg-slate-100 text-slate-600"}`}>{assignmentCompleted(job)?"Đã hoàn thành / đã qua giờ":(job.jobs?.status||"Chưa xác định")}</span></td>
                       <td className="p-2">{job.work_location_name}<br /><span className="text-gray-500">{job.work_location_address}</span></td>
                       <td className="p-2 font-bold">{formatMoney(job.salary_amount)}</td>
-                      <td className="p-2">{jobCompleted(job.jobs?.status)?formatMoney(job.jobPaid||0):"—"}</td>
-                      <td className="p-2">{jobCompleted(job.jobs?.status)?<b className={Number(job.jobRemain||0)>0?"text-red-600":"text-emerald-700"}>{Number(job.jobRemain||0)>0?formatMoney(job.jobRemain):"ĐÃ TRẢ ĐỦ"}</b>:<span className="text-slate-400">Chưa hoàn thành - chưa tính nợ</span>}</td>
+                      <td className="p-2">{assignmentCompleted(job)?formatMoney(job.jobPaid||0):"—"}</td>
+                      <td className="p-2">{assignmentCompleted(job)?<b className={Number(job.jobRemain||0)>0?"text-red-600":"text-emerald-700"}>{Number(job.jobRemain||0)>0?formatMoney(job.jobRemain):"ĐÃ TRẢ ĐỦ"}</b>:<span className="text-slate-400">Chưa hoàn thành - chưa tính nợ</span>}</td>
                       <td className="p-2">{job.note}</td>
                     </tr>
                   ))}

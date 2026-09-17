@@ -56,7 +56,7 @@ export default function Header({user,onMenuClick}:{user:AppUser;onMenuClick?:()=
    if(user.role==="admin"){
      const [{data:days},{data:debts}]=await Promise.all([
        supabase.from("job_days").select("id,shooting_date,start_time,jobs(id,event_name,customer_name)").gte("shooting_date",today).lte("shooting_date",tomorrow).order("shooting_date").limit(12),
-       supabase.from("jobs").select("id,event_name,customer_name,debt,status").gt("debt",0).order("debt",{ascending:false}).limit(30)
+       supabase.from("jobs").select("id,event_name,customer_name,debt,status").is("deleted_at",null).gt("debt",0).order("debt",{ascending:false}).limit(30)
      ]);
      (days||[]).forEach((d:any)=>list.push({
        id:"admin-job-"+d.id,groupId:"admin-job-"+d.id,type:"job",
@@ -134,8 +134,8 @@ export default function Header({user,onMenuClick}:{user:AppUser;onMenuClick?:()=
 
  useEffect(()=>{if(timer.current)clearTimeout(timer.current);const term=q.trim();if(term.length<2){setResults([]);setSearching(false);return;}setSearching(true);timer.current=setTimeout(async()=>{try{const safe=term.replace(/[,()]/g," ");const [{data:customers},{data:jobs},{data:employees}]=await Promise.all([
    supabase.from("customers").select("id,full_name,phone,service").or(`full_name.ilike.%${safe}%,phone.ilike.%${safe}%`).limit(5),
-   supabase.from("jobs").select("id,event_name,customer_name,customer_phone,status").or(`event_name.ilike.%${safe}%,customer_name.ilike.%${safe}%,customer_phone.ilike.%${safe}%`).limit(5),
-   supabase.from("employees").select("id,full_name,phone,role").or(`full_name.ilike.%${safe}%,phone.ilike.%${safe}%`).limit(4)
+   supabase.from("jobs").select("id,event_name,customer_name,customer_phone,status").is("deleted_at",null).or(`event_name.ilike.%${safe}%,customer_name.ilike.%${safe}%,customer_phone.ilike.%${safe}%`).limit(5),
+   supabase.from("employees").select("id,full_name,phone,role").is("deleted_at",null).or(`full_name.ilike.%${safe}%,phone.ilike.%${safe}%`).limit(4)
   ]);const out:SearchResult[]=[];(customers||[]).forEach((x:any)=>out.push({key:"c"+x.id,title:x.full_name||"Khách hàng",sub:[x.phone,x.service].filter(Boolean).join(" • "),href:"/customers",kind:"Khách"}));(jobs||[]).forEach((x:any)=>out.push({key:"j"+x.id,title:x.event_name||x.customer_name||"Job",sub:[x.customer_name,x.status].filter(Boolean).join(" • "),href:`/job?open=${x.id}`,kind:"Job"}));(employees||[]).forEach((x:any)=>out.push({key:"e"+x.id,title:x.full_name||"Nhân sự",sub:[x.role,x.phone].filter(Boolean).join(" • "),href:"/employees",kind:"Nhân sự"}));setResults(out)}catch{setResults([])}finally{setSearching(false)}},280);return()=>{if(timer.current)clearTimeout(timer.current)}},[q]);
 
  const notificationCount=useMemo(()=>notifications.length,[notifications]);

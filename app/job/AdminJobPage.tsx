@@ -299,9 +299,10 @@ export default function AdminJobPage() {
       supabase
         .from("jobs")
         .select("*, customers(*), job_days(*, job_locations(*), job_assignments(*, employees(*)))")
+        .is("deleted_at", null)
         .order("created_at", { ascending: false }),
       supabase.from("customers").select("*").order("created_at", { ascending: false }),
-      supabase.from("employees").select("*").eq("active", true).order("full_name", { ascending: true }),
+      supabase.from("employees").select("*").eq("active", true).is("deleted_at", null).order("full_name", { ascending: true }),
       supabase.from("reserve_workers").select("*, employees(*)").eq("status","reserved").order("reserve_date", { ascending: true }),
     ]);
     setLoading(false);
@@ -1000,6 +1001,7 @@ export default function AdminJobPage() {
     const { error } = await supabase.from("jobs").update({ deleted_at: new Date().toISOString(), deleted_by: "Admin ERP" }).eq("id", id);
     if (error) return alert(error.message);
     setSelectedJob(null);
+    setJobs(prev => prev.filter((j:any) => j.id !== id));
     loadData();
   }
 
@@ -1462,6 +1464,37 @@ function JobForm(props: any) {
 }
 
 function JobDetail({ job, onClose, onEdit, onDelete }: any) {
+  const copyDayJob = async (day:any, index:number) => {
+    const locs = day.job_locations || [];
+    const findLocation = (keyword:string) => locs.find((l:any) =>
+      String(l.location_name || "").toLowerCase().includes(keyword)
+    );
+    const groom = findLocation("trai");
+    const bride = findLocation("gái") || findLocation("gai");
+    const workerNames = Array.from(new Set(
+      (day.job_assignments || [])
+        .map((a:any) => a.employees?.full_name)
+        .filter(Boolean)
+    ));
+
+    const lines:string[] = [
+      `${day.start_time || "--:--"} - ${day.end_time || "--:--"}`,
+      `Khách hàng: ${job.customers?.full_name || job.customer_name || ""}`,
+      `Sự kiện: ${job.event_name || job.customer_name || ""}`,
+      ``,
+      `Nhà trai: ${groom?.address || ""}`,
+      `SĐT: ${groom?.phone || job.customers?.phone || job.customer_phone || ""}`,
+      ``,
+      `Nhà gái: ${bride?.address || ""}`,
+      `SĐT: ${bride?.phone || job.customers?.secondary_phone || job.secondary_phone || ""}`,
+      ``,
+      `Thợ: ${workerNames.length ? workerNames.join(", ") : "Chưa xếp thợ"}`
+    ];
+
+    await navigator.clipboard.writeText(lines.join("\n"));
+    alert(`Đã sao chép ${day.note || `Ngày ${index + 1}`}`);
+  };
+
   const copyFullJob = async () => {
     const lines:string[]=[`BEEN MEDIA - THÔNG TIN JOB`,`Sự kiện: ${job.event_name||job.customer_name||""}`,`Khách: ${job.customers?.full_name||job.customer_name||""}`,`SĐT khách: ${job.customers?.phone||job.customer_phone||""}`,`SĐT phụ: ${job.customers?.secondary_phone||job.secondary_phone||""}`,`Dịch vụ: ${job.service||""}`,`Ghi chú Job: ${job.note||""}`];
     (job.job_days||[]).forEach((d:any,i:number)=>{lines.push(``,`Ngày ${i+1}: ${formatDateVN(d.shooting_date)||""} • ${d.start_time||"--:--"}-${d.end_time||"--:--"}`,`Địa điểm chung: ${d.location||""}`,`Ghi chú ngày: ${d.note||""}`);(d.job_assignments||[]).forEach((a:any)=>lines.push(`- ${a.role||""}: ${a.employees?.full_name||"Chưa chọn"} | ${a.work_location_name||""} | ${a.work_location_address||""} | SĐT: ${a.work_location_phone||""} | Lương: ${money(a.salary_amount)} | ${a.note||""}`))});
@@ -1623,7 +1656,10 @@ function JobDetail({ job, onClose, onEdit, onDelete }: any) {
         <div className="space-y-4">
           {days.map((day: any, index: number) => (
             <div key={day.id} className="border rounded-xl p-4">
-              <h3 className="font-bold mb-2">Ngày {index + 1}: {formatDateVN(day.shooting_date)} • {day.start_time} - {day.end_time}</h3>
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <h3 className="font-bold">Ngày {index + 1}{day.note ? ` – ${day.note}` : ""}: {formatDateVN(day.shooting_date)} • {day.start_time} - {day.end_time}</h3>
+                <button onClick={() => copyDayJob(day,index)} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm font-semibold text-blue-700 hover:bg-blue-100">📋 Sao chép ngày này</button>
+              </div>
               <p className="text-gray-600 mb-3">Địa điểm: {day.location}</p>
               <table className="w-full">
                 <thead className="bg-slate-50"><tr><th className="text-left p-2">Địa điểm</th><th className="text-left p-2">Địa chỉ / SĐT</th><th className="text-left p-2">Vai trò</th><th className="text-left p-2">Thợ</th><th className="text-left p-2">Lương</th><th className="text-left p-2">SĐT cho thợ</th><th className="text-left p-2">Ghi chú</th></tr></thead>

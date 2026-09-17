@@ -44,7 +44,7 @@ export default function ReserveWorkersPage(){
 
   async function load(){
     const [{data:emp,error:empError},{data:res,error},{data:dayData,error:dayError}]=await Promise.all([
-      supabase.from("employees").select("*").eq("active",true).order("full_name"),
+      supabase.from("employees").select("*").eq("active",true).is("deleted_at",null).order("full_name"),
       supabase.from("reserve_workers").select("*, employees(*)").order("reserve_date").order("start_time",{ascending:true,nullsFirst:true}),
       supabase.from("job_days").select("id,shooting_date,start_time,end_time,jobs(id,event_name,customer_name,status),job_assignments(employee_id)")
     ]);

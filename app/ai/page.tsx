@@ -22,7 +22,7 @@ export default function AiPage(){
 
  useEffect(()=>{
    fetch("/api/ai").then(r=>r.json()).then(x=>{setConfigured(Boolean(x.configured));setModel(x.model||"")}).catch(()=>setConfigured(false));
-   supabase.from("employees").select("id,full_name,role").eq("active",true).order("full_name").then(({data})=>setEmployees(data||[]));
+   supabase.from("employees").select("id,full_name,role").eq("active",true).is("deleted_at",null).order("full_name").then(({data})=>setEmployees(data||[]));
  },[]);
 
  async function parseJob(){
@@ -36,7 +36,7 @@ export default function AiPage(){
 
  async function buildContext(){
    const [jobs,tx,payments,salary,advances]=await Promise.all([
-     supabase.from("jobs").select("id,job_code,event_name,service,total_price,deposit,debt,status,customer_name,customer_phone,customers(full_name,phone),job_days(shooting_date,start_time,end_time,location,job_assignments(role,salary_amount,client_requested,employees(full_name)))").order("created_at",{ascending:false}).limit(120),
+     supabase.from("jobs").select("id,job_code,event_name,service,total_price,deposit,debt,status,customer_name,customer_phone,customers(full_name,phone),job_days(shooting_date,start_time,end_time,location,job_assignments(role,salary_amount,client_requested,employees(full_name)))").is("deleted_at",null).order("created_at",{ascending:false}).limit(120),
      supabase.from("finance_transactions").select("transaction_date,transaction_type,amount,category,description").order("transaction_date",{ascending:false}).limit(250),
      supabase.from("customer_payments").select("payment_date,amount,payment_type,job_id").order("payment_date",{ascending:false}).limit(200),
      supabase.from("salary_payments").select("payment_date,amount,employee_id").order("payment_date",{ascending:false}).limit(200),

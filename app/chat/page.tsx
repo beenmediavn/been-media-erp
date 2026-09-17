@@ -114,7 +114,7 @@ function ChatApp({user}:{user:AppUser}){
   }
 
   async function openNew(){
-    const {data}=await supabase.from("employees").select("id,full_name,app_role,role").eq("active",true).order("full_name");
+    const {data}=await supabase.from("employees").select("id,full_name,app_role,role").eq("active",true).is("deleted_at",null).order("full_name");
     const arr:Member[]=[{user_id:"admin",display_name:"Admin chính",role:"admin"},
       ...(data||[]).map((e:any)=>({user_id:e.id,display_name:e.full_name,role:e.app_role||e.role}))];
     const available=arr.filter(p=>p.user_id!==user.id);
