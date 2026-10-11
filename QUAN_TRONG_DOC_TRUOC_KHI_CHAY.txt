@@ -1,0 +1,7 @@
+BEEN MEDIA - BAN SUA LOI DONG GOI 11/10/2026
+
+Da sua loi dong goi: app/job/AdminJobPage.tsx co muc '4. PHAN CONG HAU KY' va da dong bo sang BEEN_MEDIA_DEPLOY/app/job/AdminJobPage.tsx.
+SQL UPDATE_POSTPRODUCTION_2026_10_11.sql can duoc xem xet ky ve RLS truoc khi chay tren Supabase that; policy all trong SQL khong an toan. Khong chay truc tiep tren production.
+CHUA HOAN THIEN: Gui sao ke luong vao tai khoan tho; chua test build va DB. Khong deploy production.
+
+Chay thu: npm install; npm run dev -- -p 3002
