@@ -1,0 +1,10 @@
+BEEN MEDIA ERP NỘI BỘ - BẢN SỬA MỘT PHẦN
+
+ĐÃ CHỈNH TRONG MÃ NGUỒN:
+- Hồ sơ cá nhân: lựa chọn ảnh từ thư viện điện thoại riêng với nút chụp ảnh mới.
+- Trang Lương: chống bấm lưu thưởng/phạt trùng trong khi đang gửi, thêm Sửa/Xóa khoản thưởng/phạt và nút X cố định trên cửa sổ chi tiết.
+- Giữ các chỉnh sửa thử nghiệm lương cộng dồn từ bản ZIP trước.
+
+CHƯA HOÀN THÀNH: sao kê lương gửi thợ, phân công hậu kỳ, lịch sử thanh toán khách, đồng bộ dự phòng, hoàn thành Job và các phép tính tài chính xuyên màn hình.
+
+CẢNH BÁO: Chưa kiểm thử build hoặc Supabase thực tế. Không triển khai lên production. Cần sao lưu và kiểm thử trên cơ sở dữ liệu thử nghiệm trước.
