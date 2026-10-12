@@ -10,58 +10,69 @@ import { getOfflineCache, setOfflineCache } from "@/lib/offline-db";
 const money = (value: number | null | undefined) =>
   Number(value || 0).toLocaleString("vi-VN");
 
-// Hàm chuẩn hóa hiển thị nhãn và màu sắc trạng thái giống hệt bên Job
+// Hàm xác định trạng thái thực tế chính xác như bên Job
 function renderCustomerJobStatus(customer: any) {
-  // Lấy danh sách jobs của khách hàng này (nếu có)
+  const total = Number(customer.total_price || 0);
+  const deposit = Number(customer.deposit || 0);
+  const debt = Number(customer.debt ?? (total - deposit));
+
   const jobList = Array.isArray(customer.jobs) ? customer.jobs : [];
-  const primaryJob = jobList[0]; // Lấy job gần nhất
+  const primaryJob = jobList[0];
+  const jobStatus = String(primaryJob?.status || "").toLowerCase();
 
-  const debt = Number(customer.debt ?? primaryJob?.debt ?? 0);
-  const rawStatus = (primaryJob?.status || customer.status || "").toLowerCase();
+  // 1. Trường hợp chưa nhập tiền / Job tư vấn
+  if (total === 0) {
+    return (
+      <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+        Đang tư vấn
+      </span>
+    );
+  }
 
-  // 1. Trường hợp đã xong job
-  if (
-    rawStatus.includes("xong") ||
-    rawStatus.includes("hoàn thành") ||
-    rawStatus.includes("done") ||
-    rawStatus.includes("completed")
-  ) {
+  // 2. Job đã xong / Hoàn thành
+  const isDoneJob =
+    jobStatus.includes("xong") ||
+    jobStatus.includes("hoàn thành") ||
+    jobStatus.includes("done") ||
+    jobStatus.includes("completed");
+
+  if (isDoneJob) {
     if (debt <= 0) {
       return (
         <span className="inline-flex items-center rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800">
-          Đã xong & Đã thanh toán
+          Hoàn thành (Đã TT đủ)
         </span>
       );
     }
     return (
       <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-900 border border-amber-300">
-        Đã xong Job (Chưa TT hết)
+        Đã xong Job (Còn nợ)
       </span>
     );
   }
 
-  // 2. Trường hợp đang thực hiện
-  if (rawStatus.includes("đang") || rawStatus.includes("chụp") || rawStatus.includes("quay")) {
+  // 3. Đã thanh toán 100% nhưng chưa đánh dấu xong job
+  if (total > 0 && debt <= 0 && deposit >= total) {
     return (
-      <span className="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-800">
-        Đang thực hiện
+      <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 border border-emerald-300">
+        Đã thanh toán 100%
       </span>
     );
   }
 
-  // 3. Trường hợp mới cọc / chờ chụp
-  if (rawStatus.includes("cọc") || rawStatus.includes("chờ") || rawStatus.includes("pending")) {
+  // 4. Khách chưa cọc đồng nào
+  if (deposit === 0) {
     return (
-      <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
-        Đã đặt cọc (Chờ đi làm)
+      <span className="inline-flex items-center rounded-full bg-rose-100 px-3 py-1 text-xs font-bold text-rose-700 border border-rose-200">
+        Chưa đặt cọc
       </span>
     );
   }
 
-  // Mặc định hiển thị theo status có sẵn
+  // 5. Đã đặt cọc một phần và còn nợ
   return (
-    <span className="inline-flex items-center rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-700">
-      {customer.status || "Đã đặt cọc"}
+    <span className="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-800">
+      Đã cọc (Chờ đi làm)
     </span>
   );
 }
@@ -75,15 +86,15 @@ export default function CustomersPage() {
 
   const loadCustomers = async () => {
     setLoading(true);
-    // Truy vấn kèm jobs liên kết để lấy trạng thái thực tế
-    const { data, error } = await supabase
-      .from("customers")
-      .select("*, jobs:jobs(id, status, total_price, deposit, debt)")
-      .order("created_at", { ascending: false });
+    // Lấy khách hàng và đồng thời lấy toàn bộ job để ghép đúng trạng thái thực tế
+    const [{ data: custData, error: custErr }, { data: jobData }] = await Promise.all([
+      supabase.from("customers").select("*").order("created_at", { ascending: false }),
+      supabase.from("jobs").select("id, customer_id, customer_name, customer_phone, status, total_price, deposit, debt")
+    ]);
 
     setLoading(false);
 
-    if (error) {
+    if (custErr) {
       try {
         const cached = await getOfflineCache<any[]>("customers-data");
         if (cached?.data) {
@@ -91,12 +102,26 @@ export default function CustomersPage() {
           return;
         }
       } catch {}
-      if (typeof navigator === "undefined" || navigator.onLine) alert(error.message);
+      if (typeof navigator === "undefined" || navigator.onLine) alert(custErr.message);
       return;
     }
 
-    setCustomers(data || []);
-    setOfflineCache("customers-data", data || []).catch(() => {});
+    // Ghép Job vào từng khách hàng theo ID hoặc SĐT
+    const jobsList = jobData || [];
+    const merged = (custData || []).map((c: any) => {
+      const matchedJobs = jobsList.filter(
+        (j: any) =>
+          (j.customer_id && String(j.customer_id) === String(c.id)) ||
+          (c.phone && j.customer_phone && String(j.customer_phone).trim() === String(c.phone).trim())
+      );
+      return {
+        ...c,
+        jobs: matchedJobs,
+      };
+    });
+
+    setCustomers(merged);
+    setOfflineCache("customers-data", merged).catch(() => {});
   };
 
   useEffect(() => {
