@@ -8,7 +8,7 @@ import type { AppUser } from "@/lib/auth";
 import { formatVNDate, workerStatus } from "@/lib/workerAccess";
 import Link from "next/link";
 import { lunarShortFromISO } from "@/lib/lunar";
-import { AlertCircle, Clock3 } from "lucide-react";
+import { CalendarCheck, Clock3 } from "lucide-react";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -98,7 +98,7 @@ export default function WorkerSchedulePage({ user }: { user: AppUser }) {
       <div className="mx-auto max-w-5xl space-y-5">
         <div>
           <h1 className="text-2xl font-bold sm:text-3xl text-slate-800">Lịch công việc của tôi</h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1">Lịch phân công đi Job và lịch dự phòng của bạn</p>
+          <p className="text-xs sm:text-sm text-slate-500 mt-1">Lịch phân công và lịch làm việc của bạn</p>
         </div>
 
         {/* Lịch tháng */}
@@ -176,11 +176,11 @@ export default function WorkerSchedulePage({ user }: { user: AppUser }) {
               Ngày {formatVNDate(selected)}
             </h2>
             <span className="text-xs text-slate-500 font-medium">
-              {selectedRows.length} việc • {selectedReserves.length} dự phòng
+              {selectedRows.length + selectedReserves.length} lịch làm việc
             </span>
           </div>
 
-          {/* CẢNH BÁO GIỮ LỊCH DỰ PHÒNG NỔI BẬT DÀNH CHO THỢ */}
+          {/* CẢNH BÁO GIỮ LỊCH KÍN ĐÁO KHÔNG BỊ LỘ TỪ 'DỰ PHÒNG' */}
           {selectedReserves.length > 0 && (
             <div className="space-y-2">
               {selectedReserves.map((res: any) => (
@@ -188,10 +188,10 @@ export default function WorkerSchedulePage({ user }: { user: AppUser }) {
                   key={res.id}
                   className="rounded-2xl border border-amber-300 bg-amber-50 p-4 shadow-sm flex items-start gap-3"
                 >
-                  <AlertCircle className="text-amber-600 shrink-0 mt-0.5" size={20} />
+                  <CalendarCheck className="text-amber-600 shrink-0 mt-0.5" size={20} />
                   <div className="text-xs sm:text-sm text-amber-950 space-y-1">
                     <p className="font-bold text-amber-900 text-sm">
-                      ⚠️ BẠN ĐANG ĐƯỢC GIỮ LỊCH DỰ PHÒNG
+                      BẠN ĐANG ĐƯỢC XẾP LỊCH NGÀY NÀY CỦA STUDIO
                     </p>
                     <p className="flex items-center gap-1 font-semibold text-slate-700">
                       <Clock3 size={14} className="text-amber-600" />
