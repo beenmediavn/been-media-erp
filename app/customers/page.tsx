@@ -5,10 +5,77 @@ import { supabase } from "@/lib/supabase";
 import MainLayout from "../components/layout/MainLayout";
 import CustomerForm from "../components/CustomerForm";
 import { requireEditPin } from "@/lib/admin-pin";
-import { getOfflineCache, setOfflineCache } from "@/lib/offline-db";
+import { setOfflineCache } from "@/lib/offline-db";
 
 const money = (value: number | null | undefined) =>
   Number(value || 0).toLocaleString("vi-VN");
+
+// Hàm chuẩn hóa hiển thị trạng thái chuẩn xác 100%
+function renderCustomerJobStatus(customer: any) {
+  const total = Number(customer.total_price || 0);
+  const deposit = Number(customer.deposit || 0);
+  const debt = Number(customer.debt !== undefined && customer.debt !== null ? customer.debt : total - deposit);
+
+  const jobList = Array.isArray(customer.jobs) ? customer.jobs : [];
+  const primaryJob = jobList[0];
+  const jobStatus = String(primaryJob?.status || customer.status || "").toLowerCase();
+
+  // 1. Khách chưa nhập tiền hoặc Job đang tư vấn
+  if (total === 0) {
+    return (
+      <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+        Đang tư vấn
+      </span>
+    );
+  }
+
+  // 2. Job đã làm xong (hoàn thành / xong)
+  const isDone =
+    jobStatus.includes("xong") ||
+    jobStatus.includes("hoàn thành") ||
+    jobStatus.includes("done") ||
+    jobStatus.includes("completed");
+
+  if (isDone) {
+    if (debt <= 0) {
+      return (
+        <span className="inline-flex items-center rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800">
+          Đã xong & Hoàn thành
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-900 border border-amber-300">
+        Đã xong Job (Còn nợ)
+      </span>
+    );
+  }
+
+  // 3. Đã thanh toán đủ toàn bộ 100%
+  if (debt <= 0 && deposit >= total && total > 0) {
+    return (
+      <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 border border-emerald-300">
+        Đã thanh toán 100%
+      </span>
+    );
+  }
+
+  // 4. Chưa đặt cọc (Cọc = 0)
+  if (deposit <= 0) {
+    return (
+      <span className="inline-flex items-center rounded-full bg-rose-100 px-3 py-1 text-xs font-bold text-rose-700 border border-rose-200">
+        Chưa đặt cọc
+      </span>
+    );
+  }
+
+  // 5. Đã cọc một phần đang chờ đi làm
+  return (
+    <span className="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-800">
+      Đã đặt cọc (Chờ đi làm)
+    </span>
+  );
+}
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<any[]>([]);
@@ -19,35 +86,54 @@ export default function CustomersPage() {
 
   const loadCustomers = async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("customers")
-      .select("*")
-      .order("created_at", { ascending: false });
+    try {
+      const [{ data: custData, error: custErr }, { data: jobData }] = await Promise.all([
+        supabase.from("customers").select("*").order("created_at", { ascending: false }),
+        supabase.from("jobs").select("id, customer_id, customer_name, customer_phone, status, total_price, deposit, debt")
+      ]);
 
-    setLoading(false);
+      if (custErr) {
+        if (typeof navigator === "undefined" || navigator.onLine) alert(custErr.message);
+        setLoading(false);
+        return;
+      }
 
-    if (error) {
-      try { const cached=await getOfflineCache<any[]>("customers-data"); if(cached?.data){setCustomers(cached.data);return;} } catch {}
-      if(typeof navigator==="undefined"||navigator.onLine) alert(error.message);
-      return;
+      const jobsList = jobData || [];
+      const merged = (custData || []).map((c: any) => {
+        const matchedJobs = jobsList.filter(
+          (j: any) =>
+            (j.customer_id && String(j.customer_id) === String(c.id)) ||
+            (c.phone && j.customer_phone && String(j.customer_phone).replace(/\D/g, "") === String(c.phone).replace(/\D/g, "") && String(c.phone).trim() !== "") ||
+            (c.full_name && j.customer_name && String(j.customer_name).toLowerCase().trim() === String(c.full_name).toLowerCase().trim())
+        );
+        return {
+          ...c,
+          jobs: matchedJobs,
+        };
+      });
+
+      setCustomers(merged);
+      setOfflineCache("customers-data", merged).catch(() => {});
+    } finally {
+      setLoading(false);
     }
-
-    setCustomers(data || []);
-    setOfflineCache("customers-data",data||[]).catch(()=>{});
   };
 
   useEffect(() => {
     loadCustomers();
-    const synced=()=>loadCustomers();
-    window.addEventListener("been:offline-sync-complete",synced);
-    return()=>window.removeEventListener("been:offline-sync-complete",synced);
+    const synced = () => loadCustomers();
+    window.addEventListener("been:offline-sync-complete", synced);
+    return () => window.removeEventListener("been:offline-sync-complete", synced);
   }, []);
 
   const deleteCustomer = async (id: string) => {
-    if(!(await requireEditPin("xóa khách hàng"))) return;
+    if (!(await requireEditPin("xóa khách hàng"))) return;
     if (!confirm("Chuyển khách hàng này vào Thùng rác 30 ngày?")) return;
 
-    const { error } = await supabase.from("customers").update({ deleted_at: new Date().toISOString(), deleted_by: "Admin ERP" }).eq("id", id);
+    const { error } = await supabase
+      .from("customers")
+      .update({ deleted_at: new Date().toISOString(), deleted_by: "Admin ERP" })
+      .eq("id", id);
 
     if (error) {
       alert(error.message);
@@ -97,7 +183,7 @@ export default function CustomersPage() {
             setEditingCustomer(null);
             setOpenForm(true);
           }}
-          className="bg-blue-600 text-white px-5 py-3 rounded-lg hover:bg-blue-700"
+          className="bg-blue-600 text-white px-5 py-3 rounded-lg hover:bg-blue-700 font-semibold"
         >
           + Thêm khách hàng
         </button>
@@ -180,10 +266,8 @@ export default function CustomersPage() {
                   <td className="p-3">{money(customer.total_price)}</td>
                   <td className="p-3 text-green-700">{money(customer.deposit)}</td>
                   <td className="p-3 text-red-600">{money(customer.debt)}</td>
-                  <td className="p-3">
-                    <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-sm">
-                      {customer.status || "Đang xử lý"}
-                    </span>
+                  <td className="p-3 whitespace-nowrap">
+                    {renderCustomerJobStatus(customer)}
                   </td>
                   <td className="p-3 whitespace-nowrap">
                     <button
@@ -191,14 +275,14 @@ export default function CustomersPage() {
                         setEditingCustomer(customer);
                         setOpenForm(true);
                       }}
-                      className="bg-yellow-500 text-white px-3 py-1 rounded mr-2 hover:bg-yellow-600"
+                      className="bg-yellow-500 text-white px-3 py-1 rounded mr-2 hover:bg-yellow-600 text-sm font-semibold"
                     >
                       Sửa
                     </button>
 
                     <button
                       onClick={() => deleteCustomer(customer.id)}
-                      className="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700"
+                      className="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 text-sm font-semibold"
                     >
                       Xóa
                     </button>

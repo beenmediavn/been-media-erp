@@ -1,16 +1,64 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import MainLayout from "../components/layout/MainLayout";
 import { supabase } from "@/lib/supabase";
 import { downloadJson, downloadXlsx } from "@/lib/xlsx-export";
-import { DatabaseBackup, Download, FileJson, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import {
+  DatabaseBackup,
+  Download,
+  FileJson,
+  RefreshCw,
+  RotateCcw,
+  Trash2,
+  UploadCloud,
+  CheckCircle2,
+  AlertTriangle,
+  Layers,
+  FileText
+} from "lucide-react";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const today = new Date();
 const defaultMonth = `${today.getFullYear()}-${pad(today.getMonth() + 1)}`;
 
-const humanTable: Record<string, string> = { customers: "Khách hàng", employees: "Nhân sự", jobs: "Job" };
+// Hàm định dạng chuẩn: Ngày / Tháng / Năm
+function formatVNDate(isoDate?: string | null) {
+  if (!isoDate) return "";
+  const d = new Date(isoDate);
+  if (isNaN(d.getTime())) {
+    // Trường hợp chuỗi YYYY-MM-DD
+    const parts = String(isoDate).split("-");
+    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    return isoDate;
+  }
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+}
+
+// Hàm định dạng Giờ:Phút Ngày/Tháng/Năm
+function formatVNDateTime(isoDate?: string | null) {
+  if (!isoDate) return "";
+  const d = new Date(isoDate);
+  if (isNaN(d.getTime())) return isoDate;
+  return `${pad(d.getHours())}:${pad(d.getMinutes())} ${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+}
+
+const humanTable: Record<string, string> = {
+  customers: "Khách hàng",
+  employees: "Nhân sự",
+  jobs: "Job",
+  job_days: "Ngày chụp",
+  job_locations: "Địa điểm chụp",
+  job_assignments: "Phân công thợ",
+  customer_payments: "Thu khách",
+  salary_advances: "Ứng lương",
+  salary_payments: "Trả lương",
+  salary_adjustments: "Phát sinh lương",
+  finance_transactions: "Thu / Chi",
+  google_drive_files: "File sản phẩm",
+  reserve_workers: "Thợ dự phòng",
+  attendance_records: "Chấm công",
+};
 
 const tableSpecs = [
   { table: "customers", sheet: "Khach hang", mode: "all" },
@@ -32,13 +80,23 @@ const tableSpecs = [
 function stripFields(rows: any[], omit: readonly string[] = []) {
   return (rows || []).map((row) => {
     const out: Record<string, any> = {};
-    Object.entries(row || {}).forEach(([k, v]) => { if (!omit.includes(k)) out[k] = v; });
+    Object.entries(row || {}).forEach(([k, v]) => {
+      if (!omit.includes(k)) out[k] = v;
+    });
     return out;
   });
 }
 
 function rowMatchesMonth(row: any, month: string) {
-  const candidates = [row?.transaction_date, row?.payment_date, row?.advance_date, row?.adjustment_date, row?.reserve_date, row?.created_at, row?.check_in_at];
+  const candidates = [
+    row?.transaction_date,
+    row?.payment_date,
+    row?.advance_date,
+    row?.adjustment_date,
+    row?.reserve_date,
+    row?.created_at,
+    row?.check_in_at
+  ];
   return candidates.some((v) => String(v || "").startsWith(month));
 }
 
@@ -46,11 +104,48 @@ export default function BackupPage() {
   const [month, setMonth] = useState(defaultMonth);
   const [scope, setScope] = useState<"month" | "all">("month");
   const [loading, setLoading] = useState(false);
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const [loadingCounts, setLoadingCounts] = useState(true);
+
+  // Khôi phục từ JSON
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [restoreData, setRestoreData] = useState<any | null>(null);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreProgress, setRestoreProgress] = useState("");
+
+  // Thùng rác
   const [trashLoading, setTrashLoading] = useState(false);
   const [trash, setTrash] = useState<any[]>([]);
   const [trashReady, setTrashReady] = useState(true);
 
-  const filenameBase = useMemo(() => `BEEN_MEDIA_BACKUP_${scope === "all" ? "TOAN_BO" : month}`, [month, scope]);
+  const filenameBase = useMemo(() => {
+    if (scope === "all") {
+      return `BEEN_MEDIA_BACKUP_TOAN_BO_${pad(today.getDate())}_${pad(today.getMonth() + 1)}_${today.getFullYear()}`;
+    }
+    const [y, m] = month.split("-");
+    return `BEEN_MEDIA_BACKUP_THANG_${m}_${y}`;
+  }, [month, scope]);
+
+  async function loadTableCounts() {
+    setLoadingCounts(true);
+    const newCounts: Record<string, number> = {};
+    for (const spec of tableSpecs) {
+      try {
+        const { count, error } = await supabase
+          .from(spec.table)
+          .select("*", { count: "exact", head: true });
+        if (!error && count !== null) {
+          newCounts[spec.table] = count;
+        } else {
+          newCounts[spec.table] = 0;
+        }
+      } catch {
+        newCounts[spec.table] = 0;
+      }
+    }
+    setCounts(newCounts);
+    setLoadingCounts(false);
+  }
 
   async function fetchTable(table: string) {
     const { data, error } = await supabase.from(table).select("*");
@@ -70,7 +165,8 @@ export default function BackupPage() {
       }
 
       let jobDays = raw.job_days || [];
-      if (scope === "month") jobDays = jobDays.filter((r) => String(r.shooting_date || "").startsWith(month));
+      if (scope === "month")
+        jobDays = jobDays.filter((r) => String(r.shooting_date || "").startsWith(month));
       const jobIds = new Set(jobDays.map((r) => String(r.job_id || "")).filter(Boolean));
       const dayIds = new Set(jobDays.map((r) => String(r.id || "")).filter(Boolean));
 
@@ -84,23 +180,28 @@ export default function BackupPage() {
         if (spec.table === "jobs") rows = jobs;
         else if (spec.table === "job_days") rows = scope === "month" ? jobDays : rows;
         else if (scope === "month" && spec.mode === "job_related") {
-          rows = rows.filter((r) => jobIds.has(String(r.job_id || "")) || dayIds.has(String(r.job_day_id || "")));
+          rows = rows.filter(
+            (r) => jobIds.has(String(r.job_id || "")) || dayIds.has(String(r.job_day_id || ""))
+          );
         } else if (scope === "month" && spec.mode === "month_date") {
           rows = rows.filter((r) => rowMatchesMonth(r, month));
         }
         selected[spec.table] = stripFields(rows, "omit" in spec ? spec.omit : []);
       }
 
-      const meta = [{
-        studio: "BEEN MEDIA",
-        exported_at: new Date().toLocaleString("vi-VN"),
-        scope: scope === "all" ? "Toàn bộ dữ liệu" : `Theo tháng ${month}`,
-        customers: selected.customers?.length || 0,
-        employees: selected.employees?.length || 0,
-        jobs: selected.jobs?.length || 0,
-        note: "File Excel/JSON này độc lập với app. Dữ liệu đã tải về máy không tự mất khi xóa trên ERP.",
-        warning: errors.length ? errors.join(" | ") : "",
-      }];
+      const [curY, curM] = month.split("-");
+      const meta = [
+        {
+          studio: "BEEN MEDIA",
+          exported_at: formatVNDateTime(new Date().toISOString()),
+          scope: scope === "all" ? "Toàn bộ dữ liệu" : `Tháng ${curM}/${curY}`,
+          customers: selected.customers?.length || 0,
+          employees: selected.employees?.length || 0,
+          jobs: selected.jobs?.length || 0,
+          note: "File độc lập với app. Dữ liệu đã tải về máy không tự mất khi xóa trên ERP.",
+          warning: errors.length ? errors.join(" | ") : "",
+        },
+      ];
 
       return { selected, meta, errors };
     } finally {
@@ -116,86 +217,131 @@ export default function BackupPage() {
     const payments = selected.customer_payments || [];
     const tx = selected.finance_transactions || [];
 
-    const employeeName = new Map(employees.map((e:any)=>[String(e.id), e.full_name || e.name || "Nhân sự"]));
+    const employeeName = new Map(
+      employees.map((e: any) => [String(e.id), e.full_name || e.name || "Nhân sự"])
+    );
     const daysByJob = new Map<string, any[]>();
     for (const d of days) {
-      const key=String(d.job_id||"");
-      if(!daysByJob.has(key)) daysByJob.set(key,[]);
+      const key = String(d.job_id || "");
+      if (!daysByJob.has(key)) daysByJob.set(key, []);
       daysByJob.get(key)!.push(d);
     }
     const assignmentsByJob = new Map<string, any[]>();
     for (const a of assignments) {
-      let jobId=String(a.job_id||"");
-      if(!jobId && a.job_day_id){
-        const d=days.find((x:any)=>String(x.id)===String(a.job_day_id));
-        jobId=String(d?.job_id||"");
+      let jobId = String(a.job_id || "");
+      if (!jobId && a.job_day_id) {
+        const d = days.find((x: any) => String(x.id) === String(a.job_day_id));
+        jobId = String(d?.job_id || "");
       }
-      if(!jobId) continue;
-      if(!assignmentsByJob.has(jobId)) assignmentsByJob.set(jobId,[]);
+      if (!jobId) continue;
+      if (!assignmentsByJob.has(jobId)) assignmentsByJob.set(jobId, []);
       assignmentsByJob.get(jobId)!.push(a);
     }
 
-    const jobRows = jobs.map((job:any)=>{
-      const jobId=String(job.id||"");
-      const jobDays=(daysByJob.get(jobId)||[]).slice().sort((a:any,b:any)=>String(a.shooting_date||"").localeCompare(String(b.shooting_date||"")));
-      const ass=assignmentsByJob.get(jobId)||[];
-      const namesFor=(kind:string)=>Array.from(new Set(ass.filter((a:any)=>{
-        const r=String(a.role||"").toLowerCase();
-        return kind==="photo" ? r.includes("chụp") : (r.includes("quay") && !r.includes("fly"));
-      }).map((a:any)=>String(employeeName.get(String(a.employee_id))||"Nhân sự")))).join(", ");
-      const total=Number(job.total_price||0);
-      const paid=Number(job.deposit||0);
-      const debt=Math.max(Number(job.debt ?? (total-paid)),0);
-      const salary=ass.reduce((sum:number,a:any)=>sum+Number(a.salary_amount||0),0);
-      return {
-        "Ngày Job": Array.from(new Set(jobDays.map((d:any)=>String(d.shooting_date||"")).filter(Boolean))).join(" / "),
-        "Khách / Job": job.event_name || job.customer_name || "Job",
-        "Tổng tiền": total,
-        "Đã cọc / đã thu": paid,
-        "Còn nợ": debt,
-        "Thợ chụp": namesFor("photo"),
-        "Thợ quay": namesFor("video"),
-        "Lương ekip": salary,
-        "Lãi dự kiến Job": total-salary,
-      };
-    });
+    // Sắp xếp Job theo ngày chụp từ sớm đến muộn
+    const jobRows = jobs
+      .map((job: any) => {
+        const jobId = String(job.id || "");
+        const jobDays = (daysByJob.get(jobId) || [])
+          .slice()
+          .sort((a: any, b: any) =>
+            String(a.shooting_date || "").localeCompare(String(b.shooting_date || ""))
+          );
+        const earliestDate = jobDays[0]?.shooting_date || "";
+        const ass = assignmentsByJob.get(jobId) || [];
+        const namesFor = (kind: string) =>
+          Array.from(
+            new Set(
+              ass
+                .filter((a: any) => {
+                  const r = String(a.role || "").toLowerCase();
+                  return kind === "photo" ? r.includes("chụp") : r.includes("quay") && !r.includes("fly");
+                })
+                .map((a: any) => String(employeeName.get(String(a.employee_id)) || "Nhân sự"))
+            )
+          ).join(", ");
+        const total = Number(job.total_price || 0);
+        const paid = Number(job.deposit || 0);
+        const debt = Math.max(Number(job.debt ?? total - paid), 0);
+        const salary = ass.reduce((sum: number, a: any) => sum + Number(a.salary_amount || 0), 0);
+        return {
+          _rawDate: earliestDate,
+          "Ngày chụp (Ngày/Tháng/Năm)": Array.from(
+            new Set(jobDays.map((d: any) => formatVNDate(d.shooting_date)).filter(Boolean))
+          ).join(" / "),
+          "Khách / Job": job.event_name || job.customer_name || "Job",
+          "Tổng tiền": total,
+          "Đã cọc / đã thu": paid,
+          "Còn nợ": debt,
+          "Thợ chụp": namesFor("photo"),
+          "Thợ quay": namesFor("video"),
+          "Lương ekip": salary,
+          "Lãi dự kiến Job": total - salary,
+        };
+      })
+      .sort((a, b) => String(a._rawDate).localeCompare(String(b._rawDate)))
+      .map(({ _rawDate, ...rest }) => rest);
 
-    const incoming = payments.reduce((sum:number,p:any)=>sum+Number(p.amount||0),0);
-    const outgoing = tx.filter((x:any)=>String(x.transaction_type||"").toLowerCase()==="expense").reduce((sum:number,x:any)=>sum+Number(x.amount||0),0);
-    const totalJobValue = jobs.reduce((sum:number,j:any)=>sum+Number(j.total_price||0),0);
-    const totalDeposits = jobs.reduce((sum:number,j:any)=>sum+Number(j.deposit||0),0);
-    const totalDebt = jobs.reduce((sum:number,j:any)=>sum+Math.max(Number(j.debt ?? (Number(j.total_price||0)-Number(j.deposit||0))),0),0);
-    const totalSalary = assignments.reduce((sum:number,a:any)=>sum+Number(a.salary_amount||0),0);
-    const summary=[{
-      "Kỳ sao lưu": scope === "all" ? "Toàn bộ" : month,
-      "Số Job": jobs.length,
-      "Tổng giá trị Job": totalJobValue,
-      "Tổng đã cọc / đã thu của Job": totalDeposits,
-      "Tổng còn nợ": totalDebt,
-      "Tiền vào trong kỳ": incoming,
-      "Tiền ra trong kỳ": outgoing,
-      "Tổng lương thợ theo Job": totalSalary,
-      "Còn lãi (Tiền vào - Tiền ra)": incoming-outgoing,
-    }];
+    const incoming = payments.reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0);
+    const outgoing = tx
+      .filter((x: any) => String(x.transaction_type || "").toLowerCase() === "expense")
+      .reduce((sum: number, x: any) => sum + Number(x.amount || 0), 0);
+    const totalJobValue = jobs.reduce((sum: number, j: any) => sum + Number(j.total_price || 0), 0);
+    const totalDeposits = jobs.reduce((sum: number, j: any) => sum + Number(j.deposit || 0), 0);
+    const totalDebt = jobs.reduce(
+      (sum: number, j: any) =>
+        sum + Math.max(Number(j.debt ?? Number(j.total_price || 0) - Number(j.deposit || 0)), 0),
+      0
+    );
+    const totalSalary = assignments.reduce((sum: number, a: any) => sum + Number(a.salary_amount || 0), 0);
 
-    const salaryMap=new Map<string,{name:string,photo:number,video:number,other:number,jobs:Set<string>,salary:number}>();
-    for(const a of assignments){
-      const id=String(a.employee_id||"unknown");
-      if(!salaryMap.has(id)) salaryMap.set(id,{name:String(employeeName.get(id)||"Nhân sự"),photo:0,video:0,other:0,jobs:new Set(),salary:0});
-      const row=salaryMap.get(id)!;
-      const role=String(a.role||"").toLowerCase();
-      if(role.includes("chụp")) row.photo++; else if(role.includes("quay")&&!role.includes("fly")) row.video++; else row.other++;
-      if(a.job_id) row.jobs.add(String(a.job_id));
-      row.salary+=Number(a.salary_amount||0);
+    const [curY, curM] = month.split("-");
+    const summary = [
+      {
+        "Kỳ sao lưu": scope === "all" ? "Toàn bộ hệ thống" : `Tháng ${curM}/${curY}`,
+        "Thời điểm xuất": formatVNDateTime(new Date().toISOString()),
+        "Số Job": jobs.length,
+        "Tổng giá trị Job": totalJobValue,
+        "Tổng đã cọc / đã thu": totalDeposits,
+        "Tổng còn nợ": totalDebt,
+        "Tiền vào": incoming,
+        "Tiền ra": outgoing,
+        "Tổng lương thợ theo Job": totalSalary,
+        "Còn lãi": incoming - outgoing,
+      },
+    ];
+
+    const salaryMap = new Map<string, any>();
+    for (const a of assignments) {
+      const id = String(a.employee_id || "unknown");
+      if (!salaryMap.has(id)) {
+        salaryMap.set(id, {
+          name: String(employeeName.get(id) || "Nhân sự"),
+          photo: 0,
+          video: 0,
+          other: 0,
+          jobs: new Set(),
+          salary: 0,
+        });
+      }
+      const row = salaryMap.get(id)!;
+      const role = String(a.role || "").toLowerCase();
+      if (role.includes("chụp")) row.photo++;
+      else if (role.includes("quay") && !role.includes("fly")) row.video++;
+      else row.other++;
+      if (a.job_id) row.jobs.add(String(a.job_id));
+      row.salary += Number(a.salary_amount || 0);
     }
-    const salaryRows=Array.from(salaryMap.values()).map(x=>({
-      "Nhân sự":x.name,
-      "Số Job":x.jobs.size,
-      "Lượt chụp":x.photo,
-      "Lượt quay":x.video,
-      "Việc khác":x.other,
-      "Tổng lương":x.salary,
-    })).sort((a,b)=>Number(b["Tổng lương"])-Number(a["Tổng lương"]));
+    const salaryRows = Array.from(salaryMap.values())
+      .map((x) => ({
+        "Nhân sự": x.name,
+        "Số Job": x.jobs.size,
+        "Lượt chụp": x.photo,
+        "Lượt quay": x.video,
+        "Việc khác": x.other,
+        "Tổng lương": x.salary,
+      }))
+      .sort((a, b) => Number(b["Tổng lương"]) - Number(a["Tổng lương"]));
 
     return [
       { name: "TONG HOP", rows: summary },
@@ -207,7 +353,8 @@ export default function BackupPage() {
   async function exportExcel() {
     const result = await collectBackup();
     downloadXlsx(`${filenameBase}.xlsx`, buildSimpleExcel(result.selected));
-    if (result.errors.length) alert("Đã xuất Excel gọn. Một số bảng chưa có hoặc chưa được cài nên được bỏ qua:\n" + result.errors.join("\n"));
+    if (result.errors.length)
+      alert("Đã xuất Excel gọn. Một số bảng chưa có được bỏ qua:\n" + result.errors.join("\n"));
   }
 
   async function exportJson() {
@@ -222,6 +369,57 @@ export default function BackupPage() {
     });
   }
 
+  function handleSelectJsonFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const json = JSON.parse(event.target?.result as string);
+        if (!json.data) {
+          alert("File JSON không hợp lệ hoặc không có dữ liệu sao lưu.");
+          return;
+        }
+        setRestoreData(json);
+      } catch (err: any) {
+        alert("Lỗi đọc file JSON: " + err.message);
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  async function executeRestore() {
+    if (!restoreData?.data) return;
+    if (
+      !confirm(
+        "CẢNH BÁO: Quá trình khôi phục sẽ ghi đè/bổ sung dữ liệu từ file backup vào hệ thống. Bạn có chắc chắn muốn thực hiện?"
+      )
+    )
+      return;
+
+    setRestoring(true);
+    try {
+      const data = restoreData.data;
+      for (const [table, rows] of Object.entries(data)) {
+        if (!Array.isArray(rows) || rows.length === 0) continue;
+        setRestoreProgress(`Đang khôi phục bảng ${humanTable[table] || table} (${rows.length} mục)...`);
+        const { error } = await supabase.from(table).upsert(rows, { onConflict: "id" });
+        if (error) {
+          console.error(`Lỗi khôi phục ${table}:`, error.message);
+        }
+      }
+      alert("Khôi phục dữ liệu từ bản sao lưu hoàn tất thành công!");
+      setRestoreData(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      loadTableCounts();
+    } catch (err: any) {
+      alert("Lỗi khôi phục: " + err.message);
+    } finally {
+      setRestoring(false);
+      setRestoreProgress("");
+    }
+  }
+
   async function loadTrash() {
     setTrashLoading(true);
     const { data, error } = await supabase.rpc("been_list_trash");
@@ -232,16 +430,28 @@ export default function BackupPage() {
       return;
     }
     setTrashReady(true);
-    setTrash(data || []);
+    // Sắp xếp thùng rác theo thứ tự ngày xóa mới nhất lên trước
+    const sorted = (data || []).sort(
+      (a: any, b: any) => new Date(b.deleted_at).getTime() - new Date(a.deleted_at).getTime()
+    );
+    setTrash(sorted);
   }
 
-  useEffect(() => { loadTrash(); }, []);
+  useEffect(() => {
+    loadTableCounts();
+    loadTrash();
+  }, []);
 
   async function restore(item: any) {
-    if (!confirm(`Khôi phục ${humanTable[item.entity_type] || item.entity_type}: ${item.name || item.id}?`)) return;
-    const { error } = await supabase.rpc("been_restore_trash", { p_entity_type: item.entity_type, p_id: item.id });
+    if (!confirm(`Khôi phục ${humanTable[item.entity_type] || item.entity_type}: ${item.name || item.id}?`))
+      return;
+    const { error } = await supabase.rpc("been_restore_trash", {
+      p_entity_type: item.entity_type,
+      p_id: item.id,
+    });
     if (error) return alert(error.message);
     await loadTrash();
+    await loadTableCounts();
     alert("Đã khôi phục dữ liệu.");
   }
 
@@ -249,33 +459,252 @@ export default function BackupPage() {
     <MainLayout>
       <div className="mx-auto max-w-7xl space-y-6">
         <div>
-          <h1 className="text-3xl font-bold">SAO LƯU DỮ LIỆU</h1>
-          <p className="mt-1 text-slate-500">Tải dữ liệu về máy tính để vẫn xem được kể cả khi sau này dữ liệu trên app bị xóa.</p>
+          <h1 className="text-2xl font-bold sm:text-3xl text-slate-800">SAO LƯU & PHỤC HỒI DỮ LIỆU</h1>
+          <p className="mt-1 text-xs sm:text-sm text-slate-500">
+            Tải dữ liệu an toàn về máy tính hoặc khôi phục lại khi cần thiết. Định dạng ngày tháng chuẩn Việt Nam (Ngày/Tháng/Năm).
+          </p>
         </div>
 
-        <section className="rounded-3xl bg-white p-5 shadow sm:p-6">
-          <div className="mb-5 flex items-center gap-3"><DatabaseBackup className="text-blue-600"/><div><h2 className="text-xl font-bold">Xuất bản sao lưu</h2><p className="text-sm text-slate-500">Excel chỉ giữ các số liệu chính để quản lý nhanh: tổng tháng, chi tiết Job và lương thợ. JSON vẫn giữ đầy đủ dữ liệu kỹ thuật để phục hồi khi cần.</p></div></div>
-          <div className="grid gap-3 md:grid-cols-4">
-            <select value={scope} onChange={(e)=>setScope(e.target.value as any)} className="rounded-xl border px-4 py-3">
-              <option value="month">Theo tháng</option>
-              <option value="all">Toàn bộ dữ liệu</option>
-            </select>
-            <input type="month" value={month} disabled={scope === "all"} onChange={(e)=>setMonth(e.target.value)} className="rounded-xl border px-4 py-3 disabled:bg-slate-100"/>
-            <button onClick={exportExcel} disabled={loading} className="flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 font-bold text-white disabled:opacity-50"><Download size={18}/>{loading ? "Đang tạo..." : "Tải Excel về máy"}</button>
-            <button onClick={exportJson} disabled={loading} className="flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 font-bold text-white disabled:opacity-50"><FileJson size={18}/>Tải JSON phục hồi</button>
+        {/* Thống kê dữ liệu hiện tại */}
+        <section className="rounded-3xl bg-white p-5 shadow-sm border sm:p-6">
+          <div className="mb-4 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Layers className="text-blue-600" size={20} />
+              <h2 className="text-base sm:text-lg font-bold text-slate-800">
+                Thống kê dữ liệu thực tế trên hệ thống
+              </h2>
+            </div>
+            <button
+              onClick={loadTableCounts}
+              disabled={loadingCounts}
+              className="flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold hover:bg-slate-50"
+            >
+              <RefreshCw size={14} className={loadingCounts ? "animate-spin" : ""} />
+              Cập nhật số liệu
+            </button>
           </div>
-          <div className="mt-4 rounded-2xl bg-blue-50 p-4 text-sm text-blue-900">
-            <b>Excel đã được rút gọn.</b> Chỉ còn các số chính: tiền vào, tiền ra, số Job, tổng tiền/cọc/còn nợ, ai chụp/quay, lương ekip và lãi. File JSON vẫn là bản sao lưu đầy đủ để phục hồi dữ liệu khi cần.
+
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+            {tableSpecs.map((spec) => (
+              <div key={spec.table} className="rounded-2xl border bg-slate-50/50 p-3 text-center">
+                <span className="block text-xs text-slate-500 truncate" title={humanTable[spec.table] || spec.table}>
+                  {humanTable[spec.table] || spec.table}
+                </span>
+                <span className="mt-1 block text-lg font-extrabold text-slate-800">
+                  {loadingCounts ? "..." : counts[spec.table] ?? 0}
+                </span>
+              </div>
+            ))}
           </div>
         </section>
 
-        <section className="rounded-3xl bg-white p-5 shadow sm:p-6">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3"><Trash2 className="text-red-600"/><div><h2 className="text-xl font-bold">THÙNG RÁC 30 NGÀY</h2><p className="text-sm text-slate-500">Khách hàng, nhân sự và Job bị xóa sẽ chuyển vào đây thay vì mất ngay.</p></div></div>
-            <button onClick={loadTrash} className="flex items-center gap-2 rounded-xl border px-4 py-2"><RefreshCw size={16}/>Làm mới</button>
+        {/* Khối Xuất dữ liệu */}
+        <section className="rounded-3xl bg-white p-5 shadow-sm border sm:p-6">
+          <div className="mb-5 flex items-center gap-3">
+            <DatabaseBackup className="text-blue-600" size={26} />
+            <div>
+              <h2 className="text-lg sm:text-xl font-bold text-slate-800">1. Xuất bản sao lưu về máy tính</h2>
+              <p className="text-xs sm:text-sm text-slate-500">
+                Dữ liệu xuất ra được sắp xếp chuẩn ngày/tháng/năm. Excel để xem nhanh, JSON dùng để phục hồi hệ thống.
+              </p>
+            </div>
           </div>
-          {!trashReady && <div className="rounded-xl bg-amber-50 p-4 text-amber-800">Chưa cài chức năng Thùng rác trong Supabase. Chạy file <b>UPDATE_V8_3_9_BACKUP_TRASH.sql</b> một lần.</div>}
-          {trashReady && <div className="overflow-x-auto"><table className="w-full min-w-[760px]"><thead><tr className="border-b bg-slate-50"><th className="p-3 text-left">Loại</th><th className="p-3 text-left">Tên</th><th className="p-3 text-left">Ngày xóa</th><th className="p-3 text-left">Người xóa</th><th className="p-3 text-left">Còn lại</th><th className="p-3 text-left">Thao tác</th></tr></thead><tbody>{trashLoading?<tr><td className="p-4" colSpan={6}>Đang tải...</td></tr>:trash.length===0?<tr><td className="p-6 text-center text-slate-500" colSpan={6}>Thùng rác đang trống.</td></tr>:trash.map((item:any)=>{const del=new Date(item.deleted_at);const days=Math.max(0,30-Math.floor((Date.now()-del.getTime())/86400000));return <tr key={`${item.entity_type}-${item.id}`} className="border-b"><td className="p-3">{humanTable[item.entity_type]||item.entity_type}</td><td className="p-3 font-semibold">{item.name||item.id}</td><td className="p-3">{del.toLocaleString("vi-VN")}</td><td className="p-3">{item.deleted_by||"Admin"}</td><td className="p-3">{days} ngày</td><td className="p-3"><button onClick={()=>restore(item)} className="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-white"><RotateCcw size={16}/>Khôi phục</button></td></tr>})}</tbody></table></div>}
+
+          <div className="grid gap-3 md:grid-cols-4">
+            <select
+              value={scope}
+              onChange={(e) => setScope(e.target.value as any)}
+              className="rounded-xl border px-4 py-3 text-sm font-semibold focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="month">Theo tháng</option>
+              <option value="all">Toàn bộ dữ liệu hệ thống</option>
+            </select>
+            <input
+              type="month"
+              value={month}
+              disabled={scope === "all"}
+              onChange={(e) => setMonth(e.target.value)}
+              className="rounded-xl border px-4 py-3 text-sm disabled:bg-slate-100 focus:ring-2 focus:ring-blue-500"
+            />
+            <button
+              onClick={exportExcel}
+              disabled={loading}
+              className="flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50 transition-all"
+            >
+              <Download size={18} />
+              {loading ? "Đang xử lý..." : "Tải Excel báo cáo"}
+            </button>
+            <button
+              onClick={exportJson}
+              disabled={loading}
+              className="flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white shadow-sm hover:bg-black disabled:opacity-50 transition-all"
+            >
+              <FileJson size={18} />
+              Tải JSON sao lưu
+            </button>
+          </div>
+        </section>
+
+        {/* Khối Phục hồi dữ liệu từ file JSON */}
+        <section className="rounded-3xl bg-white p-5 shadow-sm border sm:p-6">
+          <div className="mb-5 flex items-center gap-3">
+            <UploadCloud className="text-indigo-600" size={26} />
+            <div>
+              <h2 className="text-lg sm:text-xl font-bold text-slate-800">2. Phục hồi dữ liệu từ file sao lưu (JSON)</h2>
+              <p className="text-xs sm:text-sm text-slate-500">
+                Tải lên tệp JSON đã backup trước đây để khôi phục hoặc bổ sung lại dữ liệu vào database.
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border-2 border-dashed p-6 text-center">
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept=".json"
+              onChange={handleSelectJsonFile}
+              className="hidden"
+              id="restore-file-input"
+            />
+            <label
+              htmlFor="restore-file-input"
+              className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-indigo-50 px-5 py-3 text-sm font-bold text-indigo-700 hover:bg-indigo-100 transition-colors"
+            >
+              <FileText size={18} />
+              Chọn file JSON từ máy tính
+            </label>
+
+            {restoreData && (
+              <div className="mt-5 rounded-2xl border bg-slate-50 p-4 text-left">
+                <div className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-800">
+                  <CheckCircle2 size={18} className="text-emerald-600" />
+                  Đã đọc file sao lưu hợp lệ (Phiên bản: {restoreData.version || "8.x"} • Ngày xuất: {formatVNDateTime(restoreData.exported_at)})
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 sm:grid-cols-4">
+                  {Object.entries(restoreData.data || {}).map(([table, rows]: any) => (
+                    <div key={table} className="rounded-lg border bg-white p-2">
+                      <span className="font-semibold text-slate-700">{humanTable[table] || table}:</span>{" "}
+                      <span className="text-blue-600 font-bold">{rows.length}</span> mục
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-4 flex items-center justify-end gap-3">
+                  <button
+                    onClick={() => {
+                      setRestoreData(null);
+                      if (fileInputRef.current) fileInputRef.current.value = "";
+                    }}
+                    className="rounded-xl border px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-white"
+                  >
+                    Hủy bỏ
+                  </button>
+                  <button
+                    onClick={executeRestore}
+                    disabled={restoring}
+                    className="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-xs sm:text-sm font-bold text-white shadow hover:bg-indigo-700 disabled:opacity-50"
+                  >
+                    <RotateCcw size={16} />
+                    {restoring ? restoreProgress || "Đang khôi phục..." : "Xác nhận khôi phục vào hệ thống"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* Thùng rác 30 ngày */}
+        <section className="rounded-3xl bg-white p-5 shadow-sm border sm:p-6">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <Trash2 className="text-rose-600" size={24} />
+              <div>
+                <h2 className="text-lg sm:text-xl font-bold text-slate-800">3. THÙNG RÁC 30 NGÀY</h2>
+                <p className="text-xs sm:text-sm text-slate-500">
+                  Mục xóa mới nhất sẽ hiển thị lên đầu. Tự động dọn dẹp sau 30 ngày.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={loadTrash}
+              className="flex items-center gap-2 rounded-xl border px-3.5 py-2 text-xs sm:text-sm font-semibold hover:bg-slate-50"
+            >
+              <RefreshCw size={14} className={trashLoading ? "animate-spin" : ""} />
+              Làm mới
+            </button>
+          </div>
+
+          {!trashReady && (
+            <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-xs sm:text-sm text-amber-900 flex items-start gap-2">
+              <AlertTriangle className="shrink-0 text-amber-600" size={18} />
+              <div>
+                Chức năng Thùng rác yêu cầu SQL trigger hỗ trợ. Nếu chưa kích hoạt, bạn có thể chạy tệp SQL nâng cấp Thùng rác trong cơ sở dữ liệu.
+              </div>
+            </div>
+          )}
+
+          {trashReady && (
+            <div className="overflow-x-auto rounded-2xl border">
+              <table className="w-full min-w-[700px] text-xs sm:text-sm">
+                <thead>
+                  <tr className="border-b bg-slate-50 text-slate-600 font-semibold">
+                    <th className="p-3 text-left">Phân loại</th>
+                    <th className="p-3 text-left">Tên mục</th>
+                    <th className="p-3 text-left">Thời điểm xóa (Giờ - Ngày/Tháng/Năm)</th>
+                    <th className="p-3 text-left">Người xóa</th>
+                    <th className="p-3 text-left">Thời hạn còn lại</th>
+                    <th className="p-3 text-right">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-700">
+                  {trashLoading ? (
+                    <tr>
+                      <td className="p-6 text-center text-slate-400" colSpan={6}>
+                        Đang kiểm tra thùng rác...
+                      </td>
+                    </tr>
+                  ) : trash.length === 0 ? (
+                    <tr>
+                      <td className="p-8 text-center text-slate-400" colSpan={6}>
+                        Thùng rác hiện đang trống.
+                      </td>
+                    </tr>
+                  ) : (
+                    trash.map((item: any) => {
+                      const del = new Date(item.deleted_at);
+                      const days = Math.max(
+                        0,
+                        30 - Math.floor((Date.now() - del.getTime()) / 86400000)
+                      );
+                      return (
+                        <tr key={`${item.entity_type}-${item.id}`} className="hover:bg-slate-50/50">
+                          <td className="p-3">
+                            <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-700">
+                              {humanTable[item.entity_type] || item.entity_type}
+                            </span>
+                          </td>
+                          <td className="p-3 font-semibold text-slate-900">{item.name || item.id}</td>
+                          <td className="p-3 text-slate-600 font-medium">{formatVNDateTime(item.deleted_at)}</td>
+                          <td className="p-3 text-slate-600">{item.deleted_by || "Admin"}</td>
+                          <td className="p-3 font-bold text-amber-600">{days} ngày</td>
+                          <td className="p-3 text-right">
+                            <button
+                              onClick={() => restore(item)}
+                              className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-blue-700 transition-all"
+                            >
+                              <RotateCcw size={14} />
+                              Khôi phục
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
       </div>
     </MainLayout>
