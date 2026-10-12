@@ -4,385 +4,567 @@ import { useEffect, useMemo, useState } from "react";
 import MainLayout from "../components/layout/MainLayout";
 import { supabase } from "@/lib/supabase";
 import MoneyInput from "../components/MoneyInput";
-import { ROLE_OPTIONS, normalizeRole } from "@/lib/auth";
 import { formatDateVN } from "@/lib/date-vn";
-import { requireEditPin } from "@/lib/admin-pin";
 
-const money = (value: number | string | null | undefined) =>
-  Number(value || 0).toLocaleString("vi-VN") + " đ";
-
-const emptyForm = {
-  full_name: "",
-  phone: "",
-  role: "Photographer",
-  app_role: "photographer",
-  username: "",
-  password: "",
-  base_fee: 0,
-  active: true,
-  can_login: true,
+// Hàm kiểm tra trạng thái Job đã hoàn thành
+const isJobCompleted = (status: any) => {
+  const s = String(status || "").trim().toLowerCase();
+  return s.includes("hoàn thành") || s.includes("đã hoàn thành") || s.includes("đã bàn giao");
 };
+
+// Hàm kiểm tra thời gian ca chụp đã qua chưa (hết ngày hoặc hết giờ)
+const isDayEnded = (day: any) => {
+  const date = String(day?.shooting_date || "");
+  if (!date) return false;
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  if (date < today) return true;
+  if (date > today) return false;
+  const end = String(day?.end_time || "").slice(0, 5);
+  if (!end) return false;
+  const current = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  return end <= current;
+};
+
+// Điều kiện bắt buộc: Job chỉ được tính lương khi đã thực tế hoàn thành hoặc hết ca
+const isAssignmentDone = (a: any) => isJobCompleted(a?.jobs?.status) || isDayEnded(a?.job_days);
 
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState<any[]>([]);
   const [assignments, setAssignments] = useState<any[]>([]);
   const [advances, setAdvances] = useState<any[]>([]);
   const [payments, setPayments] = useState<any[]>([]);
-  const [openForm, setOpenForm] = useState(false);
-  const [editing, setEditing] = useState<any>(null);
-  const [selected, setSelected] = useState<any>(null);
-  const [form, setForm] = useState(emptyForm);
+  const [postProductions, setPostProductions] = useState<any[]>([]);
+  const [adjustments, setAdjustments] = useState<any[]>([]);
+  
+  const [search, setSearch] = useState("");
+  const [showModal, setShowModal] = useState(false);
+  const [editingEmployee, setEditingEmployee] = useState<any>(null);
+  const [formData, setFormData] = useState<any>({
+    full_name: "",
+    phone: "",
+    role: "Photographer",
+    username: "",
+    password: "",
+    avatar_url: "",
+  });
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
-  const monthKey = new Date().toISOString().slice(0, 7);
+  const formatMoney = (n: number) => Number(n || 0).toLocaleString("vi-VN") + " đ";
 
-  async function loadData() {
-    const [{ data: emp }, { data: ass }, { data: adv }, { data: pay }] = await Promise.all([
-      supabase.from("employees").select("*").is("deleted_at", null).order("created_at", { ascending: false }),
-      supabase
-        .from("job_assignments")
-        .select("*, employees(*), jobs(*, customers(*)), job_days(*)")
-        .order("created_at", { ascending: false }),
-      supabase.from("salary_advances").select("*, employees(*)").order("advance_date", { ascending: false }),
-      supabase.from("salary_payments").select("*, employees(*)").order("payment_date", { ascending: false }),
-    ]);
+  const loadData = async () => {
+    const { data: emp } = await supabase
+      .from("employees")
+      .select("*")
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false });
+
+    const { data: ass } = await supabase
+      .from("job_assignments")
+      .select("*, jobs(id, customer_name, event_name, status, deleted_at), job_days(shooting_date, start_time, end_time)");
+
+    const { data: adv } = await supabase.from("salary_advances").select("*");
+    const { data: pay } = await supabase.from("salary_payments").select("*");
+    const { data: adj } = await supabase.from("salary_adjustments").select("*");
+
+    try {
+      const { data: postData } = await supabase.from("job_post_productions").select("*");
+      setPostProductions(postData || []);
+    } catch {
+      setPostProductions([]);
+    }
 
     setEmployees(emp || []);
     setAssignments(ass || []);
     setAdvances(adv || []);
     setPayments(pay || []);
-  }
+    setAdjustments(adj || []);
+  };
 
   useEffect(() => {
     loadData();
   }, []);
 
-  const openCreate = () => {
-    setEditing(null);
-    setForm(emptyForm);
-    setOpenForm(true);
-  };
-
-  const openEdit = (employee: any) => {
-    setEditing(employee);
-    setForm({
-      full_name: employee.full_name || "",
-      phone: employee.phone || "",
-      role: employee.role || "Photographer",
-      app_role: employee.app_role || normalizeRole(employee.role),
-      username: employee.username || "",
-      password: employee.password || "",
-      base_fee: Number(employee.base_fee || 0),
-      active: employee.active ?? true,
-      can_login: employee.can_login ?? true,
-    });
-    setOpenForm(true);
-  };
-
-  async function saveEmployee() {
-    if (!form.full_name.trim()) {
-      alert("Vui lòng nhập tên nhân sự");
-      return;
-    }
-    if (!form.username.trim()) {
-      alert("Vui lòng nhập tài khoản đăng nhập");
-      return;
-    }
-    if (!form.password.trim()) {
-      alert("Vui lòng nhập mật khẩu");
-      return;
-    }
-
-    const normalizedUsername = form.username.trim().toLowerCase();
-
-    if (normalizedUsername === "admin") {
-      alert('Tài khoản "admin" dành riêng cho Admin chính. Vui lòng chọn tên đăng nhập khác.');
-      return;
-    }
-
-    const duplicate = employees.find(
-      (e) =>
-        String(e.username || "").trim().toLowerCase() === normalizedUsername &&
-        e.id !== editing?.id
-    );
-    if (duplicate) {
-      alert("Tài khoản đăng nhập đã tồn tại. Vui lòng chọn tài khoản khác.");
-      return;
-    }
-
-    const payload = {
-      ...form,
-      username: normalizedUsername,
-      password: form.password.trim(),
-      can_login: form.can_login !== false,
-      role: ROLE_OPTIONS.find((r) => r.value === form.app_role)?.label || form.role,
-      base_fee: Number(form.base_fee || 0),
-    };
-    const request = editing
-      ? supabase.from("employees").update(payload).eq("id", editing.id)
-      : supabase.from("employees").insert([payload]);
-
-    const { error } = await request;
-    if (error) {
-      const msg = String(error.message || "");
-      if (
-        msg.toLowerCase().includes("employees_username_unique_idx") ||
-        msg.toLowerCase().includes("duplicate key") ||
-        msg.toLowerCase().includes("unique")
-      ) {
-        alert("Tên đăng nhập đã tồn tại. Mỗi tài khoản phải có một tên đăng nhập riêng.");
-      } else {
-        alert(msg);
+  // Xử lý phím Esc để đóng Modal nhanh
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowModal(false);
+        setEditingEmployee(null);
       }
-      return;
-    }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
-    setOpenForm(false);
-    setEditing(null);
-    setForm(emptyForm);
-    loadData();
-  }
-
-  async function deleteEmployee(id: string) {
-    if(!(await requireEditPin("xóa nhân sự"))) return;
-    if (!confirm("Chuyển nhân sự này vào Thùng rác 30 ngày?")) return;
-    const deletedAt = new Date().toISOString();
-    const today = new Date().toISOString().slice(0, 10);
-    // Nhân sự xóa phải biến mất ngay và không thể đăng nhập/chọn lại.
-    const { error } = await supabase.from("employees").update({ deleted_at: deletedAt, deleted_by: "Admin ERP", active: false, can_login: false }).eq("id", id);
-    if (!error) {
-      // Giải phóng các phân công hôm nay/tương lai; lịch sử Job cũ vẫn được giữ nguyên.
-      const { data: futureDays } = await supabase.from("job_days").select("id").gte("shooting_date", today);
-      const dayIds = (futureDays || []).map((d:any) => d.id);
-      if (dayIds.length) await supabase.from("job_assignments").delete().eq("employee_id", id).in("job_day_id", dayIds);
-    }
-    if (error) return alert(error.message);
-    setEmployees(prev => prev.filter((e:any) => e.id !== id));
-    setSelected((prev:any) => prev?.id === id ? null : prev);
-    loadData();
-  }
-
-  const employeeSummary = useMemo(() => {
-    return employees.map((employee) => {
-      const empAssignments = assignments.filter((a) => a.employee_id === employee.id);
-      const monthAssignments = empAssignments.filter((a) =>
-        String(a.job_days?.shooting_date || a.created_at || "").startsWith(monthKey)
+  // Tính toán công nợ chuẩn xác: CHỈ TÍNH JOB THỰC TẾ ĐÃ HOÀN THÀNH
+  const rows = useMemo(() => {
+    return employees.map((emp) => {
+      const empAssignmentsAll = (assignments || []).filter(
+        (a) => a.employee_id === emp.id && !a.jobs?.deleted_at
       );
-      const monthAdvances = advances.filter(
-        (a) => a.employee_id === employee.id && String(a.advance_date || "").startsWith(monthKey)
-      );
-      const monthPayments = payments.filter(
-        (p) => p.employee_id === employee.id && String(p.payment_date || "").startsWith(monthKey)
-      );
-      const salary = monthAssignments.reduce((sum, a) => sum + Number(a.salary_amount || 0), 0);
-      const advance = monthAdvances.reduce((sum, a) => sum + Number(a.amount || 0), 0);
-      const paid = monthPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
-      return { employee, salary, advance, paid, remaining: salary - advance - paid, count: monthAssignments.length };
+      // Lọc ra các Job đã xong
+      const empAssignmentsDone = empAssignmentsAll.filter((a) => isAssignmentDone(a));
+
+      // Lương phát sinh thực tế (chỉ tính job đã xong)
+      const baseSalaryDone = empAssignmentsDone.reduce((sum, a) => sum + Number(a.salary_amount || 0), 0);
+
+      // Hậu kỳ hoàn thành
+      const empPostsDone = (postProductions || []).filter(
+        (p) => p.assigned_user_id === emp.id && p.status === "COMPLETED"
+      );
+      const postSalary = empPostsDone.reduce((sum, p) => sum + Number(p.actual_price || p.default_price || 0), 0);
+
+      // Thưởng / phạt của nhân sự
+      const empAdj = (adjustments || []).filter((a) => a.employee_id === emp.id);
+      const adjTotal = empAdj.reduce((sum, a) => sum + Number(a.amount || 0), 0);
+
+      // Tổng lương thực nhận = Job xong + Hậu kỳ + Thưởng/phạt
+      const totalEarned = baseSalaryDone + postSalary + adjTotal;
+
+      const totalAdvance = (advances || [])
+        .filter((a) => a.employee_id === emp.id)
+        .reduce((sum, a) => sum + Number(a.amount || 0), 0);
+
+      const totalPaid = (payments || [])
+        .filter((p) => p.employee_id === emp.id)
+        .reduce((sum, p) => sum + Number(p.amount || 0), 0);
+
+      // Công nợ thực tế Been Media còn phải trả thợ
+      const remain = Math.max(totalEarned - totalAdvance - totalPaid, 0);
+
+      return {
+        ...emp,
+        doneJobsCount: empAssignmentsDone.length,
+        totalJobsCount: empAssignmentsAll.length,
+        earnedSalary: totalEarned,
+        totalAdvance,
+        totalPaid,
+        remain,
+      };
     });
-  }, [employees, assignments, advances, payments, monthKey]);
+  }, [employees, assignments, postProductions, adjustments, advances, payments]);
+
+  const filteredRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((r) =>
+      [r.full_name, r.phone, r.role, r.username].some((val) =>
+        String(val || "").toLowerCase().includes(q)
+      )
+    );
+  }, [rows, search]);
+
+  const totalEarnedAll = rows.reduce((s, r) => s + r.earnedSalary, 0);
+  const totalAdvanceAll = rows.reduce((s, r) => s + r.totalAdvance, 0);
+  const totalRemainAll = rows.reduce((s, r) => s + r.remain, 0);
+
+  // Mở modal thêm/sửa
+  const openEdit = (emp?: any) => {
+    if (emp) {
+      setEditingEmployee(emp);
+      setFormData({
+        full_name: emp.full_name || "",
+        phone: emp.phone || "",
+        role: emp.role || "Photographer",
+        username: emp.username || "",
+        password: "",
+        avatar_url: emp.avatar_url || "",
+      });
+    } else {
+      setEditingEmployee(null);
+      setFormData({
+        full_name: "",
+        phone: "",
+        role: "Photographer",
+        username: "",
+        password: "",
+        avatar_url: "",
+      });
+    }
+    setAvatarFile(null);
+    setShowModal(true);
+  };
+
+  // Tải ảnh đại diện từ điện thoại hoặc máy tính
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setAvatarFile(e.target.files[0]);
+    }
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsUploading(true);
+
+    let avatar_url = formData.avatar_url;
+
+    if (avatarFile) {
+      const ext = avatarFile.name.split(".").pop();
+      const filePath = `avatars/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+      const { error: uploadError } = await supabase.storage.from("avatars").upload(filePath, avatarFile);
+      if (!uploadError) {
+        const { data: pubData } = supabase.storage.from("avatars").getPublicUrl(filePath);
+        avatar_url = pubData.publicUrl;
+      }
+    }
+
+    const payload: any = {
+      full_name: formData.full_name,
+      phone: formData.phone,
+      role: formData.role,
+      username: formData.username,
+      avatar_url,
+    };
+    if (formData.password) {
+      payload.password = formData.password;
+    }
+
+    if (editingEmployee) {
+      const { error } = await supabase.from("employees").update(payload).eq("id", editingEmployee.id);
+      if (error) alert("Lỗi cập nhật: " + error.message);
+    } else {
+      const { error } = await supabase.from("employees").insert([payload]);
+      if (error) alert("Lỗi thêm nhân sự: " + error.message);
+    }
+
+    setIsUploading(false);
+    setShowModal(false);
+    loadData();
+  };
+
+  const handleDelete = async (id: string, name: string) => {
+    if (!confirm(`Bạn có chắc muốn xóa nhân sự "${name}"?`)) return;
+    const { error } = await supabase.from("employees").update({ deleted_at: new Date().toISOString() }).eq("id", id);
+    if (error) alert("Lỗi khi xóa: " + error.message);
+    else loadData();
+  };
 
   return (
     <MainLayout>
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-3xl font-bold">Nhân sự</h1>
-          <p className="text-gray-500 mt-1">Danh sách thợ, tài khoản đăng nhập và lương theo job</p>
-        </div>
-        <button onClick={openCreate} className="bg-blue-600 text-white px-5 py-3 rounded-lg">
-          + Thêm nhân sự
-        </button>
-      </div>
-
-      <div className="grid grid-cols-4 gap-4 mb-6">
-        <div className="bg-white rounded-xl p-5 shadow">
-          <p className="text-gray-500">Tổng nhân sự</p>
-          <p className="text-3xl font-bold mt-2">{employees.length}</p>
-        </div>
-        <div className="bg-white rounded-xl p-5 shadow">
-          <p className="text-gray-500">Lương phát sinh tháng</p>
-          <p className="text-2xl font-bold mt-2">
-            {money(employeeSummary.reduce((s, x) => s + x.salary, 0))}
-          </p>
-        </div>
-        <div className="bg-white rounded-xl p-5 shadow">
-          <p className="text-gray-500">Đã ứng</p>
-          <p className="text-2xl font-bold mt-2 text-orange-600">
-            {money(employeeSummary.reduce((s, x) => s + x.advance, 0))}
-          </p>
-        </div>
-        <div className="bg-white rounded-xl p-5 shadow">
-          <p className="text-gray-500">Còn phải trả</p>
-          <p className="text-2xl font-bold mt-2 text-red-600">
-            {money(employeeSummary.reduce((s, x) => s + x.remaining, 0))}
-          </p>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl shadow p-6 overflow-x-auto">
-        <table className="w-full min-w-[1000px]">
-          <thead>
-            <tr className="border-b bg-slate-50">
-              <th className="text-left p-3">Nhân sự</th>
-              <th className="text-left p-3">Vai trò</th>
-              <th className="text-left p-3">User</th>
-              <th className="text-left p-3">Job tháng</th>
-              <th className="text-left p-3">Lương phát sinh</th>
-              <th className="text-left p-3">Đã ứng</th>
-              <th className="text-left p-3">Đã thanh toán</th>
-              <th className="text-left p-3">Còn phải trả</th>
-              <th className="text-left p-3">Thao tác</th>
-            </tr>
-          </thead>
-          <tbody>
-            {employeeSummary.map((row) => (
-              <tr key={row.employee.id} className="border-b hover:bg-slate-50">
-                <td className="p-3">
-                  <button onClick={() => setSelected(row.employee)} className="font-semibold text-blue-700 hover:underline">
-                    {row.employee.full_name}
-                  </button>
-                  <div className="text-xs text-gray-500">{row.employee.phone}</div>
-                </td>
-                <td className="p-3">{row.employee.role}</td>
-                <td className="p-3">{row.employee.username || "Chưa có"}</td>
-                <td className="p-3">{row.count}</td>
-                <td className="p-3">{money(row.salary)}</td>
-                <td className="p-3 text-orange-600">{money(row.advance)}</td>
-                <td className="p-3 text-green-700">{money(row.paid)}</td>
-                <td className="p-3 text-red-600 font-semibold">{money(row.remaining)}</td>
-                <td className="p-3 whitespace-nowrap">
-                  <button onClick={() => openEdit(row.employee)} className="bg-yellow-500 text-white px-3 py-1 rounded mr-2">
-                    Sửa
-                  </button>
-                  <button onClick={() => deleteEmployee(row.employee.id)} className="bg-red-600 text-white px-3 py-1 rounded">
-                    Xóa
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {openForm && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-xl p-6 shadow-xl">
-            <h2 className="text-2xl font-bold mb-4">{editing ? "Sửa nhân sự" : "Thêm nhân sự"}</h2>
-            <div className="space-y-3">
-              <input className="border p-3 rounded-lg w-full" placeholder="Họ tên nhân sự" value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} />
-              <input className="border p-3 rounded-lg w-full" placeholder="SĐT" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-              <select className="border p-3 rounded-lg w-full" value={(form as any).app_role} onChange={(e) => setForm({ ...form, app_role: e.target.value, role: ROLE_OPTIONS.find((r) => r.value === e.target.value)?.label || e.target.value })}>
-                {ROLE_OPTIONS.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
-              </select>
-              <div className="grid grid-cols-2 gap-3">
-                <input className="border p-3 rounded-lg" placeholder="Username đăng nhập" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
-                <input className="border p-3 rounded-lg" placeholder="Mật khẩu" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
-                <label className="flex items-center gap-2 border p-3 rounded-lg">
-                  <input
-                    type="checkbox"
-                    checked={form.can_login !== false}
-                    onChange={(e) => setForm({ ...form, can_login: e.target.checked })}
-                  />
-                  <span>Cho phép tài khoản này đăng nhập</span>
-                </label>
-              </div>
-              <MoneyInput className="border p-3 rounded-lg w-full" placeholder="Lương mặc định / ca" value={form.base_fee} onChange={(v) => setForm({ ...form, base_fee: v })} />
-            </div>
-            <div className="flex justify-end gap-3 mt-6">
-              <button onClick={() => setOpenForm(false)} className="border px-4 py-2 rounded-lg">Hủy</button>
-              <button onClick={saveEmployee} className="bg-blue-600 text-white px-4 py-2 rounded-lg">Lưu</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {selected && (
-        <EmployeeDetail
-          employee={selected}
-          assignments={assignments.filter((a) => a.employee_id === selected.id)}
-          advances={advances.filter((a) => a.employee_id === selected.id)}
-          payments={payments.filter((p) => p.employee_id === selected.id)}
-          onClose={() => setSelected(null)}
-          onChanged={loadData}
-        />
-      )}
-    </MainLayout>
-  );
-}
-
-function EmployeeDetail({ employee, assignments, advances, payments, onClose, onChanged }: any) {
-  const [advanceAmount, setAdvanceAmount] = useState(0);
-  const [paymentAmount, setPaymentAmount] = useState(0);
-  const monthKey = new Date().toISOString().slice(0, 7);
-  const monthAssignments = assignments.filter((a: any) => String(a.job_days?.shooting_date || a.created_at || "").startsWith(monthKey));
-  const monthAdvances = advances.filter((a: any) => String(a.advance_date || "").startsWith(monthKey));
-  const monthPayments = payments.filter((p: any) => String(p.payment_date || "").startsWith(monthKey));
-  const salary = monthAssignments.reduce((s: number, a: any) => s + Number(a.salary_amount || 0), 0);
-  const advance = monthAdvances.reduce((s: number, a: any) => s + Number(a.amount || 0), 0);
-  const paid = monthPayments.reduce((s: number, p: any) => s + Number(p.amount || 0), 0);
-
-  async function addAdvance() {
-    if (!advanceAmount) return;
-    const { error } = await supabase.from("salary_advances").insert([{ employee_id: employee.id, amount: advanceAmount, note: "Ứng lương" }]);
-    if (error) return alert(error.message);
-    setAdvanceAmount(0);
-    onChanged();
-  }
-
-  async function addPayment() {
-    if (!paymentAmount) return;
-    const { error } = await supabase.from("salary_payments").insert([{ employee_id: employee.id, amount: paymentAmount, note: "Thanh toán lương" }]);
-    if (error) return alert(error.message);
-    setPaymentAmount(0);
-    onChanged();
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-4xl p-6 shadow-xl max-h-[90vh] overflow-y-auto">
-        <div className="flex justify-between items-start mb-5">
+      <div className="space-y-5">
+        {/* Header trang */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-2xl font-bold">{employee.full_name}</h2>
-            <p className="text-gray-500">{employee.role} • Tháng {monthKey}</p>
+            <h1 className="text-2xl sm:text-3xl font-bold text-slate-800">Nhân sự</h1>
+            <p className="text-xs sm:text-sm text-slate-500">
+              Danh sách thợ, tài khoản đăng nhập và đối soát lương theo Job đã hoàn thành
+            </p>
           </div>
-          <button onClick={onClose} className="text-gray-500 hover:text-red-600">✕</button>
+          <button
+            onClick={() => openEdit()}
+            className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 transition-all self-start sm:self-auto"
+          >
+            <span>+</span> Thêm nhân sự
+          </button>
         </div>
 
-        <div className="grid grid-cols-4 gap-3 mb-5">
-          <div className="border rounded-xl p-4"><p className="text-gray-500">Lương phát sinh</p><p className="text-xl font-bold">{money(salary)}</p></div>
-          <div className="border rounded-xl p-4"><p className="text-gray-500">Đã ứng</p><p className="text-xl font-bold text-orange-600">{money(advance)}</p></div>
-          <div className="border rounded-xl p-4"><p className="text-gray-500">Đã thanh toán</p><p className="text-xl font-bold text-green-700">{money(paid)}</p></div>
-          <div className="border rounded-xl p-4"><p className="text-gray-500">Còn phải trả</p><p className="text-xl font-bold text-red-600">{money(salary - advance - paid)}</p></div>
+        {/* 3 Thẻ thống kê chuẩn xác */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="rounded-2xl border bg-white p-4 shadow-sm">
+            <p className="text-xs text-slate-500">Tổng nhân sự</p>
+            <p className="mt-1 text-2xl font-black text-slate-800">{employees.length}</p>
+          </div>
+          <div className="rounded-2xl border bg-white p-4 shadow-sm">
+            <p className="text-xs text-slate-500">Lương thực tế đã xong</p>
+            <p className="mt-1 text-xl font-black text-emerald-600">{formatMoney(totalEarnedAll)}</p>
+          </div>
+          <div className="rounded-2xl border bg-white p-4 shadow-sm">
+            <p className="text-xs text-slate-500">Đã ứng</p>
+            <p className="mt-1 text-xl font-black text-amber-600">{formatMoney(totalAdvanceAll)}</p>
+          </div>
+          <div className="rounded-2xl border border-rose-200 bg-rose-50/30 p-4 shadow-sm">
+            <p className="text-xs font-semibold text-rose-600">Còn phải trả</p>
+            <p className="mt-1 text-xl font-black text-rose-600">{formatMoney(totalRemainAll)}</p>
+          </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 mb-5">
-          <div className="border rounded-xl p-4">
-            <p className="font-bold mb-2">+ Ứng lương</p>
-            <div className="flex gap-2"><div className="flex-1"><MoneyInput value={advanceAmount} onChange={setAdvanceAmount} className="border p-2 rounded w-full" /></div><button onClick={addAdvance} className="bg-orange-500 text-white px-4 rounded">Lưu</button></div>
-          </div>
-          <div className="border rounded-xl p-4">
-            <p className="font-bold mb-2">+ Thanh toán lương</p>
-            <div className="flex gap-2"><div className="flex-1"><MoneyInput value={paymentAmount} onChange={setPaymentAmount} className="border p-2 rounded w-full" /></div><button onClick={addPayment} className="bg-green-600 text-white px-4 rounded">Lưu</button></div>
-          </div>
+        {/* Thanh tìm kiếm */}
+        <div className="flex items-center justify-between">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Tìm theo tên, SĐT, tài khoản, vai trò..."
+            className="w-full max-w-md rounded-xl border bg-white px-3.5 py-2.5 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
         </div>
 
-        <h3 className="font-bold mb-2">Job đã làm trong tháng</h3>
-        <div className="border rounded-xl overflow-hidden">
-          <table className="w-full">
-            <thead className="bg-slate-50"><tr><th className="text-left p-3">Ngày</th><th className="text-left p-3">Khách</th><th className="text-left p-3">Vai trò</th><th className="text-left p-3">Lương</th></tr></thead>
-            <tbody>
-              {monthAssignments.map((a: any) => (
-                <tr key={a.id} className="border-t">
-                  <td className="p-3">{formatDateVN(a.job_days?.shooting_date)} {a.job_days?.start_time}</td>
-                  <td className="p-3">{a.jobs?.customers?.full_name || a.jobs?.service}</td>
-                  <td className="p-3">{a.role}</td>
-                  <td className="p-3">{money(a.salary_amount)}</td>
+        {/* Bảng danh sách - Desktop */}
+        <div className="hidden lg:block overflow-hidden rounded-2xl border bg-white shadow-sm">
+          <table className="w-full text-left text-xs">
+            <thead className="border-b bg-slate-50 text-[11px] font-semibold uppercase text-slate-600">
+              <tr>
+                <th className="p-3.5">Nhân sự</th>
+                <th className="p-3.5">Vai trò</th>
+                <th className="p-3.5">User</th>
+                <th className="p-3.5 text-center">Job xong</th>
+                <th className="p-3.5 text-right">Lương phát sinh</th>
+                <th className="p-3.5 text-right">Đã ứng</th>
+                <th className="p-3.5 text-right">Đã thanh toán</th>
+                <th className="p-3.5 text-right">Còn phải trả</th>
+                <th className="p-3.5 text-center">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y text-slate-700">
+              {filteredRows.map((emp) => (
+                <tr key={emp.id} className="hover:bg-slate-50/60">
+                  <td className="p-3.5">
+                    <div className="flex items-center gap-3">
+                      <div className="h-9 w-9 overflow-hidden rounded-full border bg-slate-100 flex items-center justify-center font-bold text-slate-600 text-xs">
+                        {emp.avatar_url ? (
+                          <img src={emp.avatar_url} alt="" className="h-full w-full object-cover" />
+                        ) : (
+                          emp.full_name?.slice(0, 1) || "NV"
+                        )}
+                      </div>
+                      <div>
+                        <p className="font-bold text-slate-800">{emp.full_name}</p>
+                        <p className="text-[11px] text-slate-400">{emp.phone || "Chưa có SĐT"}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="p-3.5 font-medium">{emp.role}</td>
+                  <td className="p-3.5 text-slate-500">{emp.username}</td>
+                  <td className="p-3.5 text-center font-semibold text-blue-600">
+                    {emp.doneJobsCount}
+                  </td>
+                  <td className="p-3.5 text-right font-bold text-slate-800">
+                    {formatMoney(emp.earnedSalary)}
+                  </td>
+                  <td className="p-3.5 text-right font-medium text-amber-600">
+                    {emp.totalAdvance > 0 ? "-" + formatMoney(emp.totalAdvance) : "0 đ"}
+                  </td>
+                  <td className="p-3.5 text-right font-medium text-emerald-600">
+                    {formatMoney(emp.totalPaid)}
+                  </td>
+                  <td className="p-3.5 text-right font-black">
+                    {emp.remain > 0 ? (
+                      <span className="text-rose-600">{formatMoney(emp.remain)}</span>
+                    ) : (
+                      <span className="text-slate-400">0 đ</span>
+                    )}
+                  </td>
+                  <td className="p-3.5 text-center whitespace-nowrap space-x-1.5">
+                    <button
+                      onClick={() => openEdit(emp)}
+                      className="rounded-lg bg-amber-500 px-3 py-1 text-xs font-semibold text-white hover:bg-amber-600"
+                    >
+                      Sửa
+                    </button>
+                    <button
+                      onClick={() => handleDelete(emp.id, emp.full_name)}
+                      className="rounded-lg bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-700"
+                    >
+                      Xóa
+                    </button>
+                  </td>
                 </tr>
               ))}
-              {monthAssignments.length === 0 && <tr><td className="p-3 text-gray-500" colSpan={4}>Chưa có job trong tháng.</td></tr>}
+              {filteredRows.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="p-6 text-center text-slate-400">
+                    Không tìm thấy nhân sự phù hợp
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
+
+        {/* Danh sách thẻ - Mobile (Tối ưu chống tràn) */}
+        <div className="space-y-3 lg:hidden">
+          {filteredRows.map((emp) => (
+            <div key={emp.id} className="rounded-2xl border bg-white p-4 shadow-sm text-xs">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-10 w-10 overflow-hidden rounded-full border bg-slate-100 flex items-center justify-center font-bold text-slate-600">
+                    {emp.avatar_url ? (
+                      <img src={emp.avatar_url} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      emp.full_name?.slice(0, 1) || "NV"
+                    )}
+                  </div>
+                  <div>
+                    <p className="font-bold text-sm text-slate-800">{emp.full_name}</p>
+                    <p className="text-slate-400">{emp.phone} • {emp.role}</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] text-slate-400 block">Còn phải trả</span>
+                  <span className={`font-black text-sm ${emp.remain > 0 ? "text-rose-600" : "text-slate-500"}`}>
+                    {emp.remain > 0 ? formatMoney(emp.remain) : "0 đ"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-3 gap-2 border-t pt-2.5 text-center">
+                <div className="bg-slate-50 p-2 rounded-lg">
+                  <span className="text-[10px] text-slate-400 block">Job đã xong</span>
+                  <b className="text-blue-600 font-bold">{emp.doneJobsCount}</b>
+                </div>
+                <div className="bg-slate-50 p-2 rounded-lg">
+                  <span className="text-[10px] text-slate-400 block">Lương phát sinh</span>
+                  <b className="text-slate-700">{formatMoney(emp.earnedSalary)}</b>
+                </div>
+                <div className="bg-slate-50 p-2 rounded-lg">
+                  <span className="text-[10px] text-slate-400 block">Đã ứng</span>
+                  <b className="text-amber-600">{formatMoney(emp.totalAdvance)}</b>
+                </div>
+              </div>
+
+              <div className="mt-3 flex gap-2 border-t pt-2.5">
+                <button
+                  onClick={() => openEdit(emp)}
+                  className="flex-1 rounded-xl bg-amber-500 py-2 font-semibold text-white text-xs"
+                >
+                  Sửa thông tin
+                </button>
+                <button
+                  onClick={() => handleDelete(emp.id, emp.full_name)}
+                  className="rounded-xl bg-rose-600 px-4 py-2 font-semibold text-white text-xs"
+                >
+                  Xóa
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
-    </div>
+
+      {/* MODAL THÊM / SỬA NHÂN SỰ & THAY ẢNH ĐẠI DIỆN (CÓ NÚT X DÍNH TRÊN ĐẦU) */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-4 backdrop-blur-sm overflow-y-auto">
+          <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
+            
+            {/* Header dính trên đầu có nút X đóng nhanh */}
+            <div className="sticky top-0 z-20 flex items-center justify-between bg-white px-5 py-4 border-b rounded-t-2xl">
+              <div>
+                <h3 className="text-base sm:text-lg font-bold text-slate-800">
+                  {editingEmployee ? "Sửa thông tin nhân sự" : "Thêm nhân sự mới"}
+                </h3>
+                <p className="text-xs text-slate-400">Quản lý hồ sơ và phân quyền thợ</p>
+              </div>
+              <button
+                onClick={() => setShowModal(false)}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 font-bold"
+                title="Đóng (Esc)"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Nội dung form nhập */}
+            <form onSubmit={handleSave} className="p-5 overflow-y-auto space-y-4 text-xs text-slate-700 flex-1">
+              
+              {/* Tải ảnh đại diện từ điện thoại hoặc máy tính */}
+              <div className="flex items-center gap-4 border p-3 rounded-xl bg-slate-50">
+                <div className="h-16 w-16 overflow-hidden rounded-full border bg-white flex items-center justify-center font-bold text-slate-400 text-sm">
+                  {avatarFile ? (
+                    <img src={URL.createObjectURL(avatarFile)} alt="Preview" className="h-full w-full object-cover" />
+                  ) : formData.avatar_url ? (
+                    <img src={formData.avatar_url} alt="Avatar" className="h-full w-full object-cover" />
+                  ) : (
+                    "Ảnh"
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Ảnh đại diện</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleAvatarChange}
+                    className="text-xs text-slate-500 file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">Hỗ trợ chọn ảnh nét từ máy tính hoặc điện thoại</p>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold mb-1">Họ và tên *</label>
+                <input
+                  required
+                  value={formData.full_name}
+                  onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+                  placeholder="VD: Nguyễn Văn A"
+                  className="w-full rounded-xl border p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold mb-1">Số điện thoại *</label>
+                  <input
+                    required
+                    value={formData.phone}
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    placeholder="0912..."
+                    className="w-full rounded-xl border p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold mb-1">Vai trò</label>
+                  <select
+                    value={formData.role}
+                    onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                    className="w-full rounded-xl border p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                  >
+                    <option value="Photographer">Photographer</option>
+                    <option value="CAMERAMEN">CAMERAMEN</option>
+                    <option value="Flycam">Flycam</option>
+                    <option value="Editor">Editor (Hậu kỳ)</option>
+                    <option value="Make up">Make up</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 border-t pt-3">
+                <div>
+                  <label className="block font-semibold mb-1">Tên đăng nhập (User) *</label>
+                  <input
+                    required
+                    value={formData.username}
+                    onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                    placeholder="VD: thanhtoan1"
+                    className="w-full rounded-xl border p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold mb-1">
+                    {editingEmployee ? "Đổi mật khẩu (nếu cần)" : "Mật khẩu *"}
+                  </label>
+                  <input
+                    type="password"
+                    required={!editingEmployee}
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    placeholder="••••••"
+                    className="w-full rounded-xl border p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div className="sticky bottom-0 bg-white pt-3 border-t flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowModal(false)}
+                  className="rounded-xl border px-4 py-2 font-semibold hover:bg-slate-50"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUploading}
+                  className="rounded-xl bg-blue-600 px-5 py-2 font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {isUploading ? "Đang lưu..." : "Lưu nhân sự"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </MainLayout>
   );
 }
