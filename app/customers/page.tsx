@@ -5,22 +5,22 @@ import { supabase } from "@/lib/supabase";
 import MainLayout from "../components/layout/MainLayout";
 import CustomerForm from "../components/CustomerForm";
 import { requireEditPin } from "@/lib/admin-pin";
-import { getOfflineCache, setOfflineCache } from "@/lib/offline-db";
+import { setOfflineCache } from "@/lib/offline-db";
 
 const money = (value: number | null | undefined) =>
   Number(value || 0).toLocaleString("vi-VN");
 
-// Hàm xác định trạng thái thực tế chính xác như bên Job
+// Hàm chuẩn hóa hiển thị trạng thái chuẩn xác 100%
 function renderCustomerJobStatus(customer: any) {
   const total = Number(customer.total_price || 0);
   const deposit = Number(customer.deposit || 0);
-  const debt = Number(customer.debt ?? (total - deposit));
+  const debt = Number(customer.debt !== undefined && customer.debt !== null ? customer.debt : total - deposit);
 
   const jobList = Array.isArray(customer.jobs) ? customer.jobs : [];
   const primaryJob = jobList[0];
-  const jobStatus = String(primaryJob?.status || "").toLowerCase();
+  const jobStatus = String(primaryJob?.status || customer.status || "").toLowerCase();
 
-  // 1. Trường hợp chưa nhập tiền / Job tư vấn
+  // 1. Khách chưa nhập tiền hoặc Job đang tư vấn
   if (total === 0) {
     return (
       <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
@@ -29,18 +29,18 @@ function renderCustomerJobStatus(customer: any) {
     );
   }
 
-  // 2. Job đã xong / Hoàn thành
-  const isDoneJob =
+  // 2. Job đã làm xong (hoàn thành / xong)
+  const isDone =
     jobStatus.includes("xong") ||
     jobStatus.includes("hoàn thành") ||
     jobStatus.includes("done") ||
     jobStatus.includes("completed");
 
-  if (isDoneJob) {
+  if (isDone) {
     if (debt <= 0) {
       return (
         <span className="inline-flex items-center rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800">
-          Hoàn thành (Đã TT đủ)
+          Đã xong & Hoàn thành
         </span>
       );
     }
@@ -51,8 +51,8 @@ function renderCustomerJobStatus(customer: any) {
     );
   }
 
-  // 3. Đã thanh toán 100% nhưng chưa đánh dấu xong job
-  if (total > 0 && debt <= 0 && deposit >= total) {
+  // 3. Đã thanh toán đủ toàn bộ 100%
+  if (debt <= 0 && deposit >= total && total > 0) {
     return (
       <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 border border-emerald-300">
         Đã thanh toán 100%
@@ -60,8 +60,8 @@ function renderCustomerJobStatus(customer: any) {
     );
   }
 
-  // 4. Khách chưa cọc đồng nào
-  if (deposit === 0) {
+  // 4. Chưa đặt cọc (Cọc = 0)
+  if (deposit <= 0) {
     return (
       <span className="inline-flex items-center rounded-full bg-rose-100 px-3 py-1 text-xs font-bold text-rose-700 border border-rose-200">
         Chưa đặt cọc
@@ -69,10 +69,10 @@ function renderCustomerJobStatus(customer: any) {
     );
   }
 
-  // 5. Đã đặt cọc một phần và còn nợ
+  // 5. Đã cọc một phần đang chờ đi làm
   return (
     <span className="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-800">
-      Đã cọc (Chờ đi làm)
+      Đã đặt cọc (Chờ đi làm)
     </span>
   );
 }
@@ -86,42 +86,37 @@ export default function CustomersPage() {
 
   const loadCustomers = async () => {
     setLoading(true);
-    // Lấy khách hàng và đồng thời lấy toàn bộ job để ghép đúng trạng thái thực tế
-    const [{ data: custData, error: custErr }, { data: jobData }] = await Promise.all([
-      supabase.from("customers").select("*").order("created_at", { ascending: false }),
-      supabase.from("jobs").select("id, customer_id, customer_name, customer_phone, status, total_price, deposit, debt")
-    ]);
+    try {
+      const [{ data: custData, error: custErr }, { data: jobData }] = await Promise.all([
+        supabase.from("customers").select("*").order("created_at", { ascending: false }),
+        supabase.from("jobs").select("id, customer_id, customer_name, customer_phone, status, total_price, deposit, debt")
+      ]);
 
-    setLoading(false);
+      if (custErr) {
+        if (typeof navigator === "undefined" || navigator.onLine) alert(custErr.message);
+        setLoading(false);
+        return;
+      }
 
-    if (custErr) {
-      try {
-        const cached = await getOfflineCache<any[]>("customers-data");
-        if (cached?.data) {
-          setCustomers(cached.data);
-          return;
-        }
-      } catch {}
-      if (typeof navigator === "undefined" || navigator.onLine) alert(custErr.message);
-      return;
+      const jobsList = jobData || [];
+      const merged = (custData || []).map((c: any) => {
+        const matchedJobs = jobsList.filter(
+          (j: any) =>
+            (j.customer_id && String(j.customer_id) === String(c.id)) ||
+            (c.phone && j.customer_phone && String(j.customer_phone).replace(/\D/g, "") === String(c.phone).replace(/\D/g, "") && String(c.phone).trim() !== "") ||
+            (c.full_name && j.customer_name && String(j.customer_name).toLowerCase().trim() === String(c.full_name).toLowerCase().trim())
+        );
+        return {
+          ...c,
+          jobs: matchedJobs,
+        };
+      });
+
+      setCustomers(merged);
+      setOfflineCache("customers-data", merged).catch(() => {});
+    } finally {
+      setLoading(false);
     }
-
-    // Ghép Job vào từng khách hàng theo ID hoặc SĐT
-    const jobsList = jobData || [];
-    const merged = (custData || []).map((c: any) => {
-      const matchedJobs = jobsList.filter(
-        (j: any) =>
-          (j.customer_id && String(j.customer_id) === String(c.id)) ||
-          (c.phone && j.customer_phone && String(j.customer_phone).trim() === String(c.phone).trim())
-      );
-      return {
-        ...c,
-        jobs: matchedJobs,
-      };
-    });
-
-    setCustomers(merged);
-    setOfflineCache("customers-data", merged).catch(() => {});
   };
 
   useEffect(() => {
