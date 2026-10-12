@@ -108,3 +108,63 @@ body {
 @media (max-width:480px){
   .grid.grid-cols-5,.grid.grid-cols-4,.grid.grid-cols-3,.grid.grid-cols-2 { grid-template-columns:1fr !important; }
 }
+/* ========================================================
+   TĂNG KÍCH THƯỚC CHỮ & ĐỘ ĐẬM NÉT TOÀN BỘ HỆ THỐNG
+   ======================================================== */
+html {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+}
+
+@media (min-width: 1024px) {
+  html {
+    font-size: 16.5px; /* Màn hình máy tính hiển thị chữ to rõ hơn */
+  }
+}
+
+body {
+  font-weight: 500 !important; /* Tăng độ dày chữ từ mảnh sang rõ nét */
+  color: #1e293b !important;   /* Làm màu chữ đậm nét, chống mờ/lóa mắt */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Ép các cỡ chữ siêu nhỏ (text-xs / 10px-11px) lên mức chuẩn 13.5px */
+.text-xs, 
+.text-\[10px\], 
+.text-\[11px\],
+table thead th,
+table tbody td {
+  font-size: 0.85rem !important;
+  line-height: 1.45 !important;
+}
+
+/* Tiêu đề bảng biểu to đậm, rõ ràng */
+table thead th {
+  font-size: 0.85rem !important;
+  font-weight: 700 !important;
+  color: #334155 !important;
+}
+
+/* Đổi màu chữ ghi chú mờ thành xám đậm dễ đọc hơn */
+.text-gray-500, 
+.text-slate-500,
+.text-gray-400 {
+  color: #475569 !important;
+  font-weight: 500 !important;
+}
+
+/* Tăng độ đậm nét cho các nút bấm và ô nhập liệu */
+button, input, select, textarea {
+  font-weight: 600 !important;
+}
+
+/* Tối ưu riêng cho điện thoại không bị co chữ */
+@media (max-width: 768px) {
+  html {
+    font-size: 15.5px;
+  }
+  .text-xs {
+    font-size: 0.82rem !important;
+  }
+}
