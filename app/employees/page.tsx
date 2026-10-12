@@ -6,13 +6,13 @@ import { supabase } from "@/lib/supabase";
 import MoneyInput from "../components/MoneyInput";
 import { formatDateVN } from "@/lib/date-vn";
 
-// Hàm kiểm tra trạng thái Job đã hoàn thành
+// Kiểm tra Job đã hoàn thành thủ công
 const isJobCompleted = (status: any) => {
   const s = String(status || "").trim().toLowerCase();
   return s.includes("hoàn thành") || s.includes("đã hoàn thành") || s.includes("đã bàn giao");
 };
 
-// Hàm kiểm tra thời gian ca chụp đã qua chưa (hết ngày hoặc hết giờ)
+// Kiểm tra ca chụp đã qua ngày/giờ
 const isDayEnded = (day: any) => {
   const date = String(day?.shooting_date || "");
   if (!date) return false;
@@ -26,7 +26,7 @@ const isDayEnded = (day: any) => {
   return end <= current;
 };
 
-// Điều kiện bắt buộc: Job chỉ được tính lương khi đã thực tế hoàn thành hoặc hết ca
+// Job thực tế đã xong ca làm
 const isAssignmentDone = (a: any) => isJobCompleted(a?.jobs?.status) || isDayEnded(a?.job_days);
 
 export default function EmployeesPage() {
@@ -86,7 +86,6 @@ export default function EmployeesPage() {
     loadData();
   }, []);
 
-  // Xử lý phím Esc để đóng Modal nhanh
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -98,31 +97,34 @@ export default function EmployeesPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // Tính toán công nợ chuẩn xác: CHỈ TÍNH JOB THỰC TẾ ĐÃ HOÀN THÀNH
   const rows = useMemo(() => {
     return employees.map((emp) => {
       const empAssignmentsAll = (assignments || []).filter(
         (a) => a.employee_id === emp.id && !a.jobs?.deleted_at
       );
 
-      // Lọc ra các Job đã xong
-      const empAssignmentsDone = empAssignmentsAll.filter((a) => isAssignmentDone(a));
-
-      // Lương phát sinh thực tế (chỉ tính job đã xong)
-      const baseSalaryDone = empAssignmentsDone.reduce((sum, a) => sum + Number(a.salary_amount || 0), 0);
-
-      // Hậu kỳ hoàn thành
-      const empPostsDone = (postProductions || []).filter(
-        (p) => p.assigned_user_id === emp.id && p.status === "COMPLETED"
+      // 1. TỔNG LƯƠNG PHÁT SINH: Bao gồm TẤT CẢ các Job được phân công (cả tương lai + chưa thanh toán + đã xong)
+      const allAssignedJobSalary = empAssignmentsAll.reduce((sum, a) => sum + Number(a.salary_amount || 0), 0);
+      
+      const empPostsAll = (postProductions || []).filter(
+        (p) => p.assigned_user_id === emp.id
       );
-      const postSalary = empPostsDone.reduce((sum, p) => sum + Number(p.actual_price || p.default_price || 0), 0);
-
-      // Thưởng / phạt của nhân sự
+      const allPostSalary = empPostsAll.reduce((sum, p) => sum + Number(p.actual_price || p.default_price || 0), 0);
+      
       const empAdj = (adjustments || []).filter((a) => a.employee_id === emp.id);
       const adjTotal = empAdj.reduce((sum, a) => sum + Number(a.amount || 0), 0);
 
-      // Tổng lương thực nhận = Job xong + Hậu kỳ + Thưởng/phạt
-      const totalEarned = baseSalaryDone + postSalary + adjTotal;
+      // Lương phát sinh hiển thị ở cột = Tổng mọi job (quá khứ + hiện tại + tương lai)
+      const totalSalaryAssigned = allAssignedJobSalary + allPostSalary + adjTotal;
+
+      // 2. CÔNG NỢ THỰC TẾ: CHỈ TÍNH NHỮNG JOB ĐÃ HOÀN THÀNH
+      const empAssignmentsDone = empAssignmentsAll.filter((a) => isAssignmentDone(a));
+      const baseSalaryDone = empAssignmentsDone.reduce((sum, a) => sum + Number(a.salary_amount || 0), 0);
+      
+      const empPostsDone = empPostsAll.filter((p) => p.status === "COMPLETED");
+      const postSalaryDone = empPostsDone.reduce((sum, p) => sum + Number(p.actual_price || p.default_price || 0), 0);
+
+      const totalEarnedDone = baseSalaryDone + postSalaryDone + adjTotal;
 
       const totalAdvance = (advances || [])
         .filter((a) => a.employee_id === emp.id)
@@ -132,17 +134,18 @@ export default function EmployeesPage() {
         .filter((p) => p.employee_id === emp.id)
         .reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
-      // Công nợ thực tế Been Media còn phải trả thợ
-      const remain = Math.max(totalEarned - totalAdvance - totalPaid, 0);
+      // Còn phải trả: Chỉ tính trên Job đã xong
+      const remain = Math.max(totalEarnedDone - totalAdvance - totalPaid, 0);
 
       return {
         ...emp,
         doneJobsCount: empAssignmentsDone.length,
         totalJobsCount: empAssignmentsAll.length,
-        earnedSalary: totalEarned,
+        assignedSalary: totalSalaryAssigned, // Lương phát sinh tổng mọi job (chưa thanh toán + tương lai)
+        earnedSalary: totalEarnedDone,       // Lương thực tế job đã xong
         totalAdvance,
         totalPaid,
-        remain,
+        remain,                             // Chỉ nợ job đã hoàn thành
       };
     });
   }, [employees, assignments, postProductions, adjustments, advances, payments]);
@@ -161,7 +164,6 @@ export default function EmployeesPage() {
   const totalAdvanceAll = rows.reduce((s, r) => s + r.totalAdvance, 0);
   const totalRemainAll = rows.reduce((s, r) => s + r.remain, 0);
 
-  // Mở modal thêm/sửa
   const openEdit = (emp?: any) => {
     if (emp) {
       setEditingEmployee(emp);
@@ -188,7 +190,6 @@ export default function EmployeesPage() {
     setShowModal(true);
   };
 
-  // Tải ảnh đại diện từ điện thoại hoặc máy tính
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setAvatarFile(e.target.files[0]);
@@ -261,7 +262,7 @@ export default function EmployeesPage() {
           </button>
         </div>
 
-        {/* 3 Thẻ thống kê chuẩn xác */}
+        {/* 3 Thẻ thống kê */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div className="rounded-2xl border bg-white p-4 shadow-sm">
             <p className="text-xs text-slate-500">Tổng nhân sự</p>
@@ -276,12 +277,12 @@ export default function EmployeesPage() {
             <p className="mt-1 text-xl font-black text-amber-600">{formatMoney(totalAdvanceAll)}</p>
           </div>
           <div className="rounded-2xl border border-rose-200 bg-rose-50/30 p-4 shadow-sm">
-            <p className="text-xs font-semibold text-rose-600">Còn phải trả</p>
+            <p className="text-xs font-semibold text-rose-600">Còn phải trả (Job đã xong)</p>
             <p className="mt-1 text-xl font-black text-rose-600">{formatMoney(totalRemainAll)}</p>
           </div>
         </div>
 
-        {/* Thanh tìm kiếm */}
+        {/* Tìm kiếm */}
         <div className="flex items-center justify-between">
           <input
             value={search}
@@ -299,11 +300,11 @@ export default function EmployeesPage() {
                 <th className="p-3.5">Nhân sự</th>
                 <th className="p-3.5">Vai trò</th>
                 <th className="p-3.5">User</th>
-                <th className="p-3.5 text-center">Job xong</th>
-                <th className="p-3.5 text-right">Lương phát sinh</th>
+                <th className="p-3.5 text-center">Job xong / Tổng</th>
+                <th className="p-3.5 text-right">Lương phát sinh (Tất cả Job)</th>
                 <th className="p-3.5 text-right">Đã ứng</th>
                 <th className="p-3.5 text-right">Đã thanh toán</th>
-                <th className="p-3.5 text-right">Còn phải trả</th>
+                <th className="p-3.5 text-right">Còn phải trả (Đã xong)</th>
                 <th className="p-3.5 text-center">Thao tác</th>
               </tr>
             </thead>
@@ -328,10 +329,11 @@ export default function EmployeesPage() {
                   <td className="p-3.5 font-medium">{emp.role}</td>
                   <td className="p-3.5 text-slate-500">{emp.username}</td>
                   <td className="p-3.5 text-center font-semibold text-blue-600">
-                    {emp.doneJobsCount}
+                    {emp.doneJobsCount} / {emp.totalJobsCount}
                   </td>
+                  {/* LƯƠNG PHÁT SINH = TỔNG TOÀN BỘ JOB CHƯA THANH TOÁN VÀ TƯƠNG LAI */}
                   <td className="p-3.5 text-right font-bold text-slate-800">
-                    {formatMoney(emp.earnedSalary)}
+                    {formatMoney(emp.assignedSalary)}
                   </td>
                   <td className="p-3.5 text-right font-medium text-amber-600">
                     {emp.totalAdvance > 0 ? "-" + formatMoney(emp.totalAdvance) : "0 đ"}
@@ -339,6 +341,7 @@ export default function EmployeesPage() {
                   <td className="p-3.5 text-right font-medium text-emerald-600">
                     {formatMoney(emp.totalPaid)}
                   </td>
+                  {/* CÒN PHẢI TRẢ = CHỈ TÍNH JOB ĐÃ HOÀN THÀNH THỰC TẾ */}
                   <td className="p-3.5 text-right font-black">
                     {emp.remain > 0 ? (
                       <span className="text-rose-600">{formatMoney(emp.remain)}</span>
@@ -373,7 +376,7 @@ export default function EmployeesPage() {
           </table>
         </div>
 
-        {/* Danh sách thẻ - Mobile (Tối ưu chống tràn) */}
+        {/* Danh sách thẻ - Mobile (Chống tràn, chuẩn UX) */}
         <div className="space-y-3 lg:hidden">
           {filteredRows.map((emp) => (
             <div key={emp.id} className="rounded-2xl border bg-white p-4 shadow-sm text-xs">
@@ -392,7 +395,7 @@ export default function EmployeesPage() {
                   </div>
                 </div>
                 <div className="text-right">
-                  <span className="text-[10px] text-slate-400 block">Còn phải trả</span>
+                  <span className="text-[10px] text-slate-400 block">Còn phải trả (Đã xong)</span>
                   <span className={`font-black text-sm ${emp.remain > 0 ? "text-rose-600" : "text-slate-500"}`}>
                     {emp.remain > 0 ? formatMoney(emp.remain) : "0 đ"}
                   </span>
@@ -401,12 +404,12 @@ export default function EmployeesPage() {
 
               <div className="mt-3 grid grid-cols-3 gap-2 border-t pt-2.5 text-center">
                 <div className="bg-slate-50 p-2 rounded-lg">
-                  <span className="text-[10px] text-slate-400 block">Job đã xong</span>
-                  <b className="text-blue-600 font-bold">{emp.doneJobsCount}</b>
+                  <span className="text-[10px] text-slate-400 block">Job xong / Tổng</span>
+                  <b className="text-blue-600 font-bold">{emp.doneJobsCount}/{emp.totalJobsCount}</b>
                 </div>
                 <div className="bg-slate-50 p-2 rounded-lg">
                   <span className="text-[10px] text-slate-400 block">Lương phát sinh</span>
-                  <b className="text-slate-700">{formatMoney(emp.earnedSalary)}</b>
+                  <b className="text-slate-700">{formatMoney(emp.assignedSalary)}</b>
                 </div>
                 <div className="bg-slate-50 p-2 rounded-lg">
                   <span className="text-[10px] text-slate-400 block">Đã ứng</span>
@@ -433,12 +436,10 @@ export default function EmployeesPage() {
         </div>
       </div>
 
-      {/* MODAL THÊM / SỬA NHÂN SỰ & THAY ẢNH ĐẠI DIỆN (CÓ NÚT X DÍNH TRÊN ĐẦU) */}
+      {/* Modal Sửa/Thêm có nút X dính trên đầu */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-4 backdrop-blur-sm overflow-y-auto">
           <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
-            
-            {/* Header dính trên đầu có nút X đóng nhanh */}
             <div className="sticky top-0 z-20 flex items-center justify-between bg-white px-5 py-4 border-b rounded-t-2xl">
               <div>
                 <h3 className="text-base sm:text-lg font-bold text-slate-800">
@@ -455,10 +456,7 @@ export default function EmployeesPage() {
               </button>
             </div>
 
-            {/* Nội dung form nhập */}
             <form onSubmit={handleSave} className="p-5 overflow-y-auto space-y-4 text-xs text-slate-700 flex-1">
-              
-              {/* Tải ảnh đại diện từ điện thoại hoặc máy tính */}
               <div className="flex items-center gap-4 border p-3 rounded-xl bg-slate-50">
                 <div className="h-16 w-16 overflow-hidden rounded-full border bg-white flex items-center justify-center font-bold text-slate-400 text-sm">
                   {avatarFile ? (
@@ -477,7 +475,7 @@ export default function EmployeesPage() {
                     onChange={handleAvatarChange}
                     className="text-xs text-slate-500 file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
                   />
-                  <p className="text-[10px] text-slate-400 mt-1">Hỗ trợ chọn ảnh nét từ máy tính hoặc điện thoại</p>
+                  <p className="text-[10px] text-slate-400 mt-1">Hỗ trợ chọn ảnh từ máy tính hoặc điện thoại</p>
                 </div>
               </div>
 
