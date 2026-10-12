@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import MainLayout from "../components/layout/MainLayout";
 import EmployeePicker from "../components/EmployeePicker";
 import { supabase } from "@/lib/supabase";
-import { CalendarDays, Clock3, Plus, Trash2, Users, AlertCircle, CheckCircle2, X } from "lucide-react";
+import { CalendarDays, Clock3, Plus, Trash2, Users, CheckCircle2, X } from "lucide-react";
 import { requireEditPin } from "@/lib/admin-pin";
 import Time24Input from "../components/Time24Input";
 
@@ -76,7 +76,6 @@ export default function ReserveWorkersPage() {
       return !j?.deleted_at && j?.status !== "Đã hủy" && j?.status !== "Hủy";
     });
 
-    // Tự động kiểm tra đối soát an toàn kiểu dữ liệu
     const toUpdate: { id: string; assigned_job_id: string }[] = [];
     currentRows.forEach((r: any) => {
       if (r.status === "reserved") {
@@ -235,16 +234,8 @@ export default function ReserveWorkersPage() {
         <div>
           <h1 className="text-2xl font-bold sm:text-3xl text-slate-800">Thợ dự phòng</h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Quản lý và giữ lịch thợ dự phòng theo ngày. Khi thợ được xếp vào Job trùng lịch, hệ thống sẽ tự động chuyển sang "Đã xếp Job" và cảnh báo giữ lịch cho thợ.
+            Quản lý và giữ lịch thợ dự phòng theo ngày. Khi thợ được xếp vào Job trùng lịch, hệ thống sẽ tự động chuyển sang "Đã xếp Job".
           </p>
-        </div>
-
-        {/* Khung cảnh báo giữ lịch chung */}
-        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 shadow-sm flex items-start gap-3">
-          <AlertCircle className="text-amber-600 shrink-0 mt-0.5" size={20} />
-          <div className="text-xs sm:text-sm text-amber-900 leading-relaxed">
-            <b>CẢNH BÁO GIỮ LỊCH:</b> Thợ nằm trong danh sách <b>"Đang dự phòng"</b> phải giữ lịch trong ngày/khung giờ đã chốt và không được nhận Job ngoài. Khi thợ được xếp vào Job chính thức, hệ thống sẽ tự động gỡ khỏi danh sách dự phòng.
-          </div>
         </div>
 
         {/* Form thêm thợ dự phòng */}
@@ -470,7 +461,7 @@ export default function ReserveWorkersPage() {
           )}
         </div>
 
-        {/* MODAL CHI TIẾT THỢ DỰ PHÒNG (CÓ NÚT X DÍNH TRÊN ĐẦU) */}
+        {/* MODAL CHI TIẾT THỢ DỰ PHÒNG */}
         {selectedReserve && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm overflow-y-auto">
             <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col">
