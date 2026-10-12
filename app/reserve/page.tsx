@@ -71,9 +71,12 @@ export default function ReserveWorkersPage() {
     }
 
     const currentRows = res || [];
-    const validDays = (dayData || []).filter((d: any) => !d.jobs?.deleted_at && d.jobs?.status !== "Đã hủy" && d.jobs?.status !== "Hủy");
+    const validDays = (dayData || []).filter((d: any) => {
+      const j = Array.isArray(d.jobs) ? d.jobs[0] : d.jobs;
+      return !j?.deleted_at && j?.status !== "Đã hủy" && j?.status !== "Hủy";
+    });
 
-    // Tự động kiểm tra đối soát: nếu thợ đang ở trạng thái 'reserved' nhưng đã được xếp Job trùng ngày thì tự động chuyển sang 'used'
+    // Tự động kiểm tra đối soát an toàn kiểu dữ liệu
     const toUpdate: { id: string; assigned_job_id: string }[] = [];
     currentRows.forEach((r: any) => {
       if (r.status === "reserved") {
@@ -82,20 +85,24 @@ export default function ReserveWorkersPage() {
           return (d.job_assignments || []).some((a: any) => String(a.employee_id) === String(r.employee_id));
         });
         if (matchedDay) {
-          toUpdate.push({ id: r.id, assigned_job_id: matchedDay.jobs?.id });
+          const matchedJob = Array.isArray(matchedDay.jobs) ? matchedDay.jobs[0] : matchedDay.jobs;
+          const assignedId = matchedJob?.id || "";
+          toUpdate.push({ id: r.id, assigned_job_id: assignedId });
           r.status = "used";
-          r.assigned_job_id = matchedDay.jobs?.id;
+          r.assigned_job_id = assignedId;
         }
       }
     });
 
     if (toUpdate.length > 0) {
       for (const item of toUpdate) {
-        await supabase.from("reserve_workers").update({
-          status: "used",
-          assigned_job_id: item.assigned_job_id,
-          assigned_at: new Date().toISOString()
-        }).eq("id", item.id);
+        if (item.assigned_job_id) {
+          await supabase.from("reserve_workers").update({
+            status: "used",
+            assigned_job_id: item.assigned_job_id,
+            assigned_at: new Date().toISOString()
+          }).eq("id", item.id);
+        }
       }
     }
 
@@ -131,8 +138,10 @@ export default function ReserveWorkersPage() {
   }
 
   const selectedConflicts = reserveConflicts(employeeId);
-  const conflictText = (d: any) =>
-    `${formatTime(d.start_time) || "Chưa rõ giờ"}${d.end_time ? `–${formatTime(d.end_time)}` : ""} • ${d.jobs?.event_name || d.jobs?.customer_name || "Job"}`;
+  const conflictText = (d: any) => {
+    const j = Array.isArray(d.jobs) ? d.jobs[0] : d.jobs;
+    return `${formatTime(d.start_time) || "Chưa rõ giờ"}${d.end_time ? `–${formatTime(d.end_time)}` : ""} • ${j?.event_name || j?.customer_name || "Job"}`;
+  };
 
   async function save() {
     if (!reserveDate) return alert("Vui lòng chọn ngày dự phòng");
@@ -465,7 +474,6 @@ export default function ReserveWorkersPage() {
         {selectedReserve && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm overflow-y-auto">
             <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col">
-              {/* Header dính trên đầu có nút X */}
               <div className="sticky top-0 z-20 flex items-center justify-between border-b bg-white px-5 py-4">
                 <div>
                   <h3 className="font-bold text-base text-slate-800">Chi tiết thợ dự phòng</h3>
