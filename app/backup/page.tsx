@@ -22,6 +22,27 @@ const pad = (n: number) => String(n).padStart(2, "0");
 const today = new Date();
 const defaultMonth = `${today.getFullYear()}-${pad(today.getMonth() + 1)}`;
 
+// Hàm định dạng chuẩn: Ngày / Tháng / Năm
+function formatVNDate(isoDate?: string | null) {
+  if (!isoDate) return "";
+  const d = new Date(isoDate);
+  if (isNaN(d.getTime())) {
+    // Trường hợp chuỗi YYYY-MM-DD
+    const parts = String(isoDate).split("-");
+    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    return isoDate;
+  }
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+}
+
+// Hàm định dạng Giờ:Phút Ngày/Tháng/Năm
+function formatVNDateTime(isoDate?: string | null) {
+  if (!isoDate) return "";
+  const d = new Date(isoDate);
+  if (isNaN(d.getTime())) return isoDate;
+  return `${pad(d.getHours())}:${pad(d.getMinutes())} ${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+}
+
 const humanTable: Record<string, string> = {
   customers: "Khách hàng",
   employees: "Nhân sự",
@@ -97,10 +118,13 @@ export default function BackupPage() {
   const [trash, setTrash] = useState<any[]>([]);
   const [trashReady, setTrashReady] = useState(true);
 
-  const filenameBase = useMemo(
-    () => `BEEN_MEDIA_BACKUP_${scope === "all" ? "TOAN_BO" : month}`,
-    [month, scope]
-  );
+  const filenameBase = useMemo(() => {
+    if (scope === "all") {
+      return `BEEN_MEDIA_BACKUP_TOAN_BO_${pad(today.getDate())}_${pad(today.getMonth() + 1)}_${today.getFullYear()}`;
+    }
+    const [y, m] = month.split("-");
+    return `BEEN_MEDIA_BACKUP_THANG_${m}_${y}`;
+  }, [month, scope]);
 
   async function loadTableCounts() {
     setLoadingCounts(true);
@@ -165,11 +189,12 @@ export default function BackupPage() {
         selected[spec.table] = stripFields(rows, "omit" in spec ? spec.omit : []);
       }
 
+      const [curY, curM] = month.split("-");
       const meta = [
         {
           studio: "BEEN MEDIA",
-          exported_at: new Date().toLocaleString("vi-VN"),
-          scope: scope === "all" ? "Toàn bộ dữ liệu" : `Theo tháng ${month}`,
+          exported_at: formatVNDateTime(new Date().toISOString()),
+          scope: scope === "all" ? "Toàn bộ dữ liệu" : `Tháng ${curM}/${curY}`,
           customers: selected.customers?.length || 0,
           employees: selected.employees?.length || 0,
           jobs: selected.jobs?.length || 0,
@@ -213,41 +238,49 @@ export default function BackupPage() {
       assignmentsByJob.get(jobId)!.push(a);
     }
 
-    const jobRows = jobs.map((job: any) => {
-      const jobId = String(job.id || "");
-      const jobDays = (daysByJob.get(jobId) || [])
-        .slice()
-        .sort((a: any, b: any) =>
-          String(a.shooting_date || "").localeCompare(String(b.shooting_date || ""))
-        );
-      const ass = assignmentsByJob.get(jobId) || [];
-      const namesFor = (kind: string) =>
-        Array.from(
-          new Set(
-            ass
-              .filter((a: any) => {
-                const r = String(a.role || "").toLowerCase();
-                return kind === "photo" ? r.includes("chụp") : r.includes("quay") && !r.includes("fly");
-              })
-              .map((a: any) => String(employeeName.get(String(a.employee_id)) || "Nhân sự"))
-          )
-        ).join(", ");
-      const total = Number(job.total_price || 0);
-      const paid = Number(job.deposit || 0);
-      const debt = Math.max(Number(job.debt ?? total - paid), 0);
-      const salary = ass.reduce((sum: number, a: any) => sum + Number(a.salary_amount || 0), 0);
-      return {
-        "Ngày Job": Array.from(new Set(jobDays.map((d: any) => String(d.shooting_date || "")).filter(Boolean))).join(" / "),
-        "Khách / Job": job.event_name || job.customer_name || "Job",
-        "Tổng tiền": total,
-        "Đã cọc / đã thu": paid,
-        "Còn nợ": debt,
-        "Thợ chụp": namesFor("photo"),
-        "Thợ quay": namesFor("video"),
-        "Lương ekip": salary,
-        "Lãi dự kiến Job": total - salary,
-      };
-    });
+    // Sắp xếp Job theo ngày chụp từ sớm đến muộn
+    const jobRows = jobs
+      .map((job: any) => {
+        const jobId = String(job.id || "");
+        const jobDays = (daysByJob.get(jobId) || [])
+          .slice()
+          .sort((a: any, b: any) =>
+            String(a.shooting_date || "").localeCompare(String(b.shooting_date || ""))
+          );
+        const earliestDate = jobDays[0]?.shooting_date || "";
+        const ass = assignmentsByJob.get(jobId) || [];
+        const namesFor = (kind: string) =>
+          Array.from(
+            new Set(
+              ass
+                .filter((a: any) => {
+                  const r = String(a.role || "").toLowerCase();
+                  return kind === "photo" ? r.includes("chụp") : r.includes("quay") && !r.includes("fly");
+                })
+                .map((a: any) => String(employeeName.get(String(a.employee_id)) || "Nhân sự"))
+            )
+          ).join(", ");
+        const total = Number(job.total_price || 0);
+        const paid = Number(job.deposit || 0);
+        const debt = Math.max(Number(job.debt ?? total - paid), 0);
+        const salary = ass.reduce((sum: number, a: any) => sum + Number(a.salary_amount || 0), 0);
+        return {
+          _rawDate: earliestDate,
+          "Ngày chụp (Ngày/Tháng/Năm)": Array.from(
+            new Set(jobDays.map((d: any) => formatVNDate(d.shooting_date)).filter(Boolean))
+          ).join(" / "),
+          "Khách / Job": job.event_name || job.customer_name || "Job",
+          "Tổng tiền": total,
+          "Đã cọc / đã thu": paid,
+          "Còn nợ": debt,
+          "Thợ chụp": namesFor("photo"),
+          "Thợ quay": namesFor("video"),
+          "Lương ekip": salary,
+          "Lãi dự kiến Job": total - salary,
+        };
+      })
+      .sort((a, b) => String(a._rawDate).localeCompare(String(b._rawDate)))
+      .map(({ _rawDate, ...rest }) => rest);
 
     const incoming = payments.reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0);
     const outgoing = tx
@@ -261,9 +294,12 @@ export default function BackupPage() {
       0
     );
     const totalSalary = assignments.reduce((sum: number, a: any) => sum + Number(a.salary_amount || 0), 0);
+
+    const [curY, curM] = month.split("-");
     const summary = [
       {
-        "Kỳ sao lưu": scope === "all" ? "Toàn bộ" : month,
+        "Kỳ sao lưu": scope === "all" ? "Toàn bộ hệ thống" : `Tháng ${curM}/${curY}`,
+        "Thời điểm xuất": formatVNDateTime(new Date().toISOString()),
         "Số Job": jobs.length,
         "Tổng giá trị Job": totalJobValue,
         "Tổng đã cọc / đã thu": totalDeposits,
@@ -333,7 +369,6 @@ export default function BackupPage() {
     });
   }
 
-  // Đọc file JSON để chuẩn bị Restore
   function handleSelectJsonFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -353,7 +388,6 @@ export default function BackupPage() {
     reader.readAsText(file);
   }
 
-  // Thực hiện Restore vào Supabase
   async function executeRestore() {
     if (!restoreData?.data) return;
     if (
@@ -396,7 +430,11 @@ export default function BackupPage() {
       return;
     }
     setTrashReady(true);
-    setTrash(data || []);
+    // Sắp xếp thùng rác theo thứ tự ngày xóa mới nhất lên trước
+    const sorted = (data || []).sort(
+      (a: any, b: any) => new Date(b.deleted_at).getTime() - new Date(a.deleted_at).getTime()
+    );
+    setTrash(sorted);
   }
 
   useEffect(() => {
@@ -423,7 +461,7 @@ export default function BackupPage() {
         <div>
           <h1 className="text-2xl font-bold sm:text-3xl text-slate-800">SAO LƯU & PHỤC HỒI DỮ LIỆU</h1>
           <p className="mt-1 text-xs sm:text-sm text-slate-500">
-            Tải dữ liệu an toàn về máy tính hoặc khôi phục lại khi cần thiết. Độc lập hoàn toàn với máy chủ.
+            Tải dữ liệu an toàn về máy tính hoặc khôi phục lại khi cần thiết. Định dạng ngày tháng chuẩn Việt Nam (Ngày/Tháng/Năm).
           </p>
         </div>
 
@@ -467,7 +505,7 @@ export default function BackupPage() {
             <div>
               <h2 className="text-lg sm:text-xl font-bold text-slate-800">1. Xuất bản sao lưu về máy tính</h2>
               <p className="text-xs sm:text-sm text-slate-500">
-                Excel chứa các bảng tổng hợp và báo cáo nhanh. JSON là bản sao lưu kỹ thuật đầy đủ để phục hồi.
+                Dữ liệu xuất ra được sắp xếp chuẩn ngày/tháng/năm. Excel để xem nhanh, JSON dùng để phục hồi hệ thống.
               </p>
             </div>
           </div>
@@ -540,7 +578,7 @@ export default function BackupPage() {
               <div className="mt-5 rounded-2xl border bg-slate-50 p-4 text-left">
                 <div className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-800">
                   <CheckCircle2 size={18} className="text-emerald-600" />
-                  Đã đọc file sao lưu hợp lệ (Phiên bản: {restoreData.version || "8.x"} • Ngày xuất: {restoreData.exported_at ? new Date(restoreData.exported_at).toLocaleString("vi-VN") : "Không rõ"})
+                  Đã đọc file sao lưu hợp lệ (Phiên bản: {restoreData.version || "8.x"} • Ngày xuất: {formatVNDateTime(restoreData.exported_at)})
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 sm:grid-cols-4">
@@ -584,7 +622,7 @@ export default function BackupPage() {
               <div>
                 <h2 className="text-lg sm:text-xl font-bold text-slate-800">3. THÙNG RÁC 30 NGÀY</h2>
                 <p className="text-xs sm:text-sm text-slate-500">
-                  Khách hàng, nhân sự và Job đã xóa sẽ được lưu giữ tạm thời 30 ngày trước khi xóa vĩnh viễn.
+                  Mục xóa mới nhất sẽ hiển thị lên đầu. Tự động dọn dẹp sau 30 ngày.
                 </p>
               </div>
             </div>
@@ -613,8 +651,8 @@ export default function BackupPage() {
                   <tr className="border-b bg-slate-50 text-slate-600 font-semibold">
                     <th className="p-3 text-left">Phân loại</th>
                     <th className="p-3 text-left">Tên mục</th>
-                    <th className="p-3 text-left">Thời điểm xóa</th>
-                    <th className="p-3 text-left">Người thực hiện</th>
+                    <th className="p-3 text-left">Thời điểm xóa (Giờ - Ngày/Tháng/Năm)</th>
+                    <th className="p-3 text-left">Người xóa</th>
                     <th className="p-3 text-left">Thời hạn còn lại</th>
                     <th className="p-3 text-right">Thao tác</th>
                   </tr>
@@ -647,7 +685,7 @@ export default function BackupPage() {
                             </span>
                           </td>
                           <td className="p-3 font-semibold text-slate-900">{item.name || item.id}</td>
-                          <td className="p-3 text-slate-500">{del.toLocaleString("vi-VN")}</td>
+                          <td className="p-3 text-slate-600 font-medium">{formatVNDateTime(item.deleted_at)}</td>
                           <td className="p-3 text-slate-600">{item.deleted_by || "Admin"}</td>
                           <td className="p-3 font-bold text-amber-600">{days} ngày</td>
                           <td className="p-3 text-right">
