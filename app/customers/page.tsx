@@ -10,6 +10,62 @@ import { getOfflineCache, setOfflineCache } from "@/lib/offline-db";
 const money = (value: number | null | undefined) =>
   Number(value || 0).toLocaleString("vi-VN");
 
+// Hàm chuẩn hóa hiển thị nhãn và màu sắc trạng thái giống hệt bên Job
+function renderCustomerJobStatus(customer: any) {
+  // Lấy danh sách jobs của khách hàng này (nếu có)
+  const jobList = Array.isArray(customer.jobs) ? customer.jobs : [];
+  const primaryJob = jobList[0]; // Lấy job gần nhất
+
+  const debt = Number(customer.debt ?? primaryJob?.debt ?? 0);
+  const rawStatus = (primaryJob?.status || customer.status || "").toLowerCase();
+
+  // 1. Trường hợp đã xong job
+  if (
+    rawStatus.includes("xong") ||
+    rawStatus.includes("hoàn thành") ||
+    rawStatus.includes("done") ||
+    rawStatus.includes("completed")
+  ) {
+    if (debt <= 0) {
+      return (
+        <span className="inline-flex items-center rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800">
+          Đã xong & Đã thanh toán
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-900 border border-amber-300">
+        Đã xong Job (Chưa TT hết)
+      </span>
+    );
+  }
+
+  // 2. Trường hợp đang thực hiện
+  if (rawStatus.includes("đang") || rawStatus.includes("chụp") || rawStatus.includes("quay")) {
+    return (
+      <span className="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-800">
+        Đang thực hiện
+      </span>
+    );
+  }
+
+  // 3. Trường hợp mới cọc / chờ chụp
+  if (rawStatus.includes("cọc") || rawStatus.includes("chờ") || rawStatus.includes("pending")) {
+    return (
+      <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
+        Đã đặt cọc (Chờ đi làm)
+      </span>
+    );
+  }
+
+  // Mặc định hiển thị theo status có sẵn
+  return (
+    <span className="inline-flex items-center rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-700">
+      {customer.status || "Đã đặt cọc"}
+    </span>
+  );
+}
+
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<any[]>([]);
   const [openForm, setOpenForm] = useState(false);
@@ -19,35 +75,45 @@ export default function CustomersPage() {
 
   const loadCustomers = async () => {
     setLoading(true);
+    // Truy vấn kèm jobs liên kết để lấy trạng thái thực tế
     const { data, error } = await supabase
       .from("customers")
-      .select("*")
+      .select("*, jobs:jobs(id, status, total_price, deposit, debt)")
       .order("created_at", { ascending: false });
 
     setLoading(false);
 
     if (error) {
-      try { const cached=await getOfflineCache<any[]>("customers-data"); if(cached?.data){setCustomers(cached.data);return;} } catch {}
-      if(typeof navigator==="undefined"||navigator.onLine) alert(error.message);
+      try {
+        const cached = await getOfflineCache<any[]>("customers-data");
+        if (cached?.data) {
+          setCustomers(cached.data);
+          return;
+        }
+      } catch {}
+      if (typeof navigator === "undefined" || navigator.onLine) alert(error.message);
       return;
     }
 
     setCustomers(data || []);
-    setOfflineCache("customers-data",data||[]).catch(()=>{});
+    setOfflineCache("customers-data", data || []).catch(() => {});
   };
 
   useEffect(() => {
     loadCustomers();
-    const synced=()=>loadCustomers();
-    window.addEventListener("been:offline-sync-complete",synced);
-    return()=>window.removeEventListener("been:offline-sync-complete",synced);
+    const synced = () => loadCustomers();
+    window.addEventListener("been:offline-sync-complete", synced);
+    return () => window.removeEventListener("been:offline-sync-complete", synced);
   }, []);
 
   const deleteCustomer = async (id: string) => {
-    if(!(await requireEditPin("xóa khách hàng"))) return;
+    if (!(await requireEditPin("xóa khách hàng"))) return;
     if (!confirm("Chuyển khách hàng này vào Thùng rác 30 ngày?")) return;
 
-    const { error } = await supabase.from("customers").update({ deleted_at: new Date().toISOString(), deleted_by: "Admin ERP" }).eq("id", id);
+    const { error } = await supabase
+      .from("customers")
+      .update({ deleted_at: new Date().toISOString(), deleted_by: "Admin ERP" })
+      .eq("id", id);
 
     if (error) {
       alert(error.message);
@@ -97,7 +163,7 @@ export default function CustomersPage() {
             setEditingCustomer(null);
             setOpenForm(true);
           }}
-          className="bg-blue-600 text-white px-5 py-3 rounded-lg hover:bg-blue-700"
+          className="bg-blue-600 text-white px-5 py-3 rounded-lg hover:bg-blue-700 font-semibold"
         >
           + Thêm khách hàng
         </button>
@@ -180,10 +246,8 @@ export default function CustomersPage() {
                   <td className="p-3">{money(customer.total_price)}</td>
                   <td className="p-3 text-green-700">{money(customer.deposit)}</td>
                   <td className="p-3 text-red-600">{money(customer.debt)}</td>
-                  <td className="p-3">
-                    <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-sm">
-                      {customer.status || "Đang xử lý"}
-                    </span>
+                  <td className="p-3 whitespace-nowrap">
+                    {renderCustomerJobStatus(customer)}
                   </td>
                   <td className="p-3 whitespace-nowrap">
                     <button
@@ -191,14 +255,14 @@ export default function CustomersPage() {
                         setEditingCustomer(customer);
                         setOpenForm(true);
                       }}
-                      className="bg-yellow-500 text-white px-3 py-1 rounded mr-2 hover:bg-yellow-600"
+                      className="bg-yellow-500 text-white px-3 py-1 rounded mr-2 hover:bg-yellow-600 text-sm font-semibold"
                     >
                       Sửa
                     </button>
 
                     <button
                       onClick={() => deleteCustomer(customer.id)}
-                      className="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700"
+                      className="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 text-sm font-semibold"
                     >
                       Xóa
                     </button>
