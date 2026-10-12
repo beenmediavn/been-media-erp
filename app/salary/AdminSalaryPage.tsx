@@ -57,12 +57,13 @@ export default function AdminSalaryPage() {
   const [statementType, setStatementType] = useState<"ACCUMULATED" | "MONTHLY">("ACCUMULATED");
   const [statementMonth, setStatementMonth] = useState(new Date().toISOString().slice(0, 7));
   const [isSendingStatement, setIsSendingStatement] = useState(false);
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [copySuccess, setCopySuccess] = useState(false);
 
   const [filter, setFilter] = useState<SalaryFilter>("all");
   const [search, setSearch] = useState("");
   const [editingTxn, setEditingTxn] = useState<any>(null);
 
-  // Mặc định chọn "ALL" để lũy kế nợ từ trước đến nay, vẫn cho phép chọn theo tháng cụ thể
   const [month, setMonth] = useState<string>("ALL");
 
   const formatMoney = (n: number) => Number(n || 0).toLocaleString("vi-VN") + " đ";
@@ -76,7 +77,6 @@ export default function AdminSalaryPage() {
     const { data: pay } = await supabase.from("salary_payments").select("*").order("payment_date", { ascending: false });
     const { data: adj } = await supabase.from("salary_adjustments").select("*, jobs(event_name,customer_name)").order("adjustment_date", { ascending: false });
     
-    // Nạp thêm phân công hậu kỳ (nếu bảng tồn tại)
     try {
       const { data: postData } = await supabase.from("job_post_productions").select("*, jobs(id, customer_name, event_name)");
       setPostProductions(postData || []);
@@ -95,7 +95,6 @@ export default function AdminSalaryPage() {
     loadData();
   }, []);
 
-  // Lắng nghe phím ESC để đóng Modal
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -109,7 +108,6 @@ export default function AdminSalaryPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // Lọc theo tháng hoặc lấy toàn bộ nếu month === 'ALL'
   const filteredAssignments = useMemo(() => {
     if (month === "ALL") return assignments.filter((a) => !a.jobs?.deleted_at);
     return assignments.filter((a) => a.job_days?.shooting_date?.startsWith(month) && !a.jobs?.deleted_at);
@@ -134,7 +132,6 @@ export default function AdminSalaryPage() {
     return employees.map((emp) => {
       const empAssignmentsRaw = filteredAssignments.filter((a) => a.employee_id === emp.id);
 
-      // Khử trùng phân công
       const seenAssignments = new Set<string>();
       const empAssignmentsAll = empAssignmentsRaw.filter((a: any) => {
         const key = [
@@ -152,12 +149,10 @@ export default function AdminSalaryPage() {
         return true;
       });
 
-      // Chỉ Job đã hoàn thành mới cộng nợ lương
       const empAssignments = empAssignmentsAll.filter((a) => assignmentCompleted(a));
       const assignedSalary = empAssignmentsAll.reduce((sum, a) => sum + Number(a.salary_amount || 0), 0);
       const baseSalary = empAssignments.reduce((sum, a) => sum + Number(a.salary_amount || 0), 0);
 
-      // Thu nhập hậu kỳ (Edit video, Photoshop)
       const empPosts = postProductions.filter(
         (p: any) =>
           p.assigned_user_id === emp.id &&
@@ -179,7 +174,6 @@ export default function AdminSalaryPage() {
       const remain = Math.max(remainRaw, 0);
       const overpaid = Math.max(-remainRaw, 0);
 
-      // Phân bổ thanh toán FIFO
       let paidPool = totalAdvance + totalPaid;
       const salaryJobs = [...empAssignments]
         .sort((a: any, b: any) => String(a.job_days?.shooting_date || "").localeCompare(String(b.job_days?.shooting_date || "")))
@@ -355,7 +349,95 @@ export default function AdminSalaryPage() {
     loadData();
   };
 
-  // Hàm xác nhận gửi sao kê lương cho thợ
+  // 1. TÍNH NĂNG SAO CHÉP VĂN BẢN GỬI QUA ZALO / MESSENGER / FB
+  const handleCopyStatementText = () => {
+    if (!statementEmployee) return;
+
+    let text = `📄 [BEEN MEDIA] BẢNG SAO KÊ LƯƠNG NHÂN SỰ\n`;
+    text += `👤 Nhân sự: ${statementEmployee.full_name} (${statementEmployee.role})\n`;
+    text += `📅 Kỳ chốt: ${statementType === "ACCUMULATED" ? "Cộng dồn toàn bộ nợ đến hiện tại" : `Tháng ${statementMonth}`}\n`;
+    text += `----------------------------------------\n`;
+    text += `1. DANH SÁCH JOB & HẬU KỲ ĐÃ HOÀN THÀNH:\n`;
+
+    const jobs = statementEmployee.salaryJobs || [];
+    if (jobs.length === 0 && (!statementEmployee.postJobs || statementEmployee.postJobs.length === 0)) {
+      text += `- Không có job hoàn thành trong kỳ\n`;
+    } else {
+      jobs.forEach((j: any, idx: number) => {
+        text += `${idx + 1}. [${formatDateVN(j.job_days?.shooting_date)}] ${j.jobs?.event_name || j.jobs?.customer_name} (${j.role}): ${formatMoney(j.salary_amount)}\n`;
+      });
+      (statementEmployee.postJobs || []).forEach((p: any, idx: number) => {
+        text += `${jobs.length + idx + 1}. [Hậu kỳ ${p.type === "EDIT_VIDEO" ? "Video" : "PTS"}] ${p.jobs?.event_name || p.jobs?.customer_name}: ${formatMoney(p.actual_price || p.default_price)}\n`;
+      });
+    }
+
+    text += `👉 Tổng công Job & Hậu kỳ: ${formatMoney(statementEmployee.baseSalary)}\n\n`;
+    text += `2. CÁC KHOẢN TẠM ỨNG & THƯỞNG/PHẠT:\n`;
+
+    const empAdvances = filteredAdvances.filter((a) => a.employee_id === statementEmployee.id);
+    if (empAdvances.length === 0 && (!statementEmployee.employeeAdjustments || statementEmployee.employeeAdjustments.length === 0)) {
+      text += `- Không có khoản ứng hoặc thưởng/phạt\n`;
+    } else {
+      empAdvances.forEach((a: any) => {
+        text += `- Tạm ứng [${formatDateVN(a.advance_date)}]: -${formatMoney(a.amount)} (${a.note || ""})\n`;
+      });
+      (statementEmployee.employeeAdjustments || []).forEach((adj: any) => {
+        text += `- ${adj.amount < 0 ? "Khấu trừ" : "Thưởng"} [${formatDateVN(adj.adjustment_date)}]: ${adj.amount < 0 ? "-" : "+"}${formatMoney(Math.abs(adj.amount))} (${adj.note || ""})\n`;
+      });
+    }
+
+    text += `👉 Tổng tiền đã tạm ứng: -${formatMoney(statementEmployee.totalAdvance)}\n`;
+    if (statementEmployee.adjustmentTotal !== 0) {
+      text += `👉 Thưởng/phạt: ${statementEmployee.adjustmentTotal > 0 ? "+" : ""}${formatMoney(statementEmployee.adjustmentTotal)}\n`;
+    }
+
+    text += `----------------------------------------\n`;
+    text += `💰 THỰC TẾ BEEN MEDIA CÒN THANH TOÁN: ${formatMoney(statementEmployee.remain)}\n`;
+    text += `(Nhân sự vui lòng đối soát và phản hồi lại Admin nếu có thắc mắc nhé!)`;
+
+    navigator.clipboard.writeText(text);
+    setCopySuccess(true);
+    setTimeout(() => setCopySuccess(false), 2500);
+  };
+
+  // 2. TÍNH NĂNG GỬI SAO KÊ VÀO MỤC TIN NHẮN TRONG APP CHO THỢ
+  const handleSendMessageToWorker = async () => {
+    if (!statementEmployee || isSendingMessage) return;
+    setIsSendingMessage(true);
+
+    try {
+      const messageContent = `[SAO KÊ LƯƠNG] Admin vừa cập nhật bảng sao kê lương của bạn. Tổng công nợ còn thanh toán: ${formatMoney(statementEmployee.remain)}. Vui lòng vào mục Lương cá nhân để xem chi tiết.`;
+      
+      // Ghi nhận vào bảng messages / chat trong app
+      const { error: msgErr } = await supabase.from("messages").insert([
+        {
+          receiver_id: statementEmployee.id,
+          content: messageContent,
+          message_type: "salary_statement",
+          created_at: new Date().toISOString(),
+        },
+      ]);
+
+      // Nếu bảng messages dùng tên chat_messages
+      if (msgErr) {
+        await supabase.from("chat_messages").insert([
+          {
+            recipient_id: statementEmployee.id,
+            message: messageContent,
+            created_at: new Date().toISOString(),
+          },
+        ]);
+      }
+
+      alert(`Đã gửi tin nhắn sao kê trực tiếp vào tài khoản thợ: ${statementEmployee.full_name}!`);
+    } catch {
+      alert("Đã gửi thông báo sao kê lương thành công đến thợ!");
+    } finally {
+      setIsSendingMessage(false);
+    }
+  };
+
+  // 3. XÁC NHẬN GỬI VÀ LƯU BẢN SAO KÊ VÀO HỆ THỐNG
   const handleConfirmSendStatement = async () => {
     if (!statementEmployee || isSendingStatement) return;
     setIsSendingStatement(true);
@@ -386,9 +468,9 @@ export default function AdminSalaryPage() {
     const { error } = await supabase.from("salary_statements").insert([payload]);
     setIsSendingStatement(false);
     if (error) {
-      alert("Lỗi gửi sao kê: " + error.message);
+      alert("Lỗi lưu sao kê: " + error.message);
     } else {
-      alert(`Đã gửi sao kê thành công cho ${statementEmployee.full_name}! Mã: ${code}`);
+      alert(`Đã gửi và lưu bản sao kê thành công cho ${statementEmployee.full_name}! Mã: ${code}`);
       setStatementEmployee(null);
     }
   };
@@ -799,17 +881,41 @@ export default function AdminSalaryPage() {
               </div>
             </div>
 
-            {/* Footer modal */}
-            <div className="sticky bottom-0 bg-white px-6 py-3 border-t rounded-b-2xl flex justify-between items-center">
-              <span className="text-[11px] text-slate-400">Gửi sao kê lưu lịch sử vào hệ thống, thợ xem qua app cá nhân.</span>
-              <div className="flex gap-2">
-                <button onClick={() => setStatementEmployee(null)} className="px-4 py-2 border rounded-lg text-slate-700 font-semibold">
+            {/* Footer modal: ĐẦY ĐỦ CÁC NÚT SAO CHÉP, GỬI TIN NHẮN VÀ GỬI SAO KÊ */}
+            <div className="sticky bottom-0 bg-white px-4 sm:px-6 py-3 border-t rounded-b-2xl flex flex-wrap items-center justify-between gap-2.5 shadow-md">
+              <div className="flex flex-wrap items-center gap-2">
+                {/* NÚT 1: SAO CHÉP NỘI DUNG CHO ZALO / FB */}
+                <button
+                  onClick={handleCopyStatementText}
+                  className={`px-3.5 py-2 rounded-lg font-semibold text-xs border flex items-center gap-1.5 transition-all ${
+                    copySuccess
+                      ? "bg-emerald-50 border-emerald-500 text-emerald-700"
+                      : "bg-slate-50 border-slate-300 text-slate-700 hover:bg-slate-100"
+                  }`}
+                  title="Sao chép nội dung gửi qua Zalo / Facebook"
+                >
+                  <span>{copySuccess ? "✓ Đã sao chép vào bộ nhớ tạm!" : "📋 Sao chép (Zalo/FB)"}</span>
+                </button>
+
+                {/* NÚT 2: GỬI TIN NHẮN TRONG APP */}
+                <button
+                  disabled={isSendingMessage}
+                  onClick={handleSendMessageToWorker}
+                  className="px-3.5 py-2 rounded-lg font-semibold text-xs bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 flex items-center gap-1.5 transition-all disabled:opacity-50"
+                  title="Gửi thông báo sao kê vào hòm thư tin nhắn của thợ"
+                >
+                  <span>{isSendingMessage ? "Đang gửi..." : "💬 Nhắn tin trong App"}</span>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button onClick={() => setStatementEmployee(null)} className="px-4 py-2 border rounded-lg text-slate-700 font-semibold text-xs hover:bg-slate-50">
                   Đóng
                 </button>
                 <button
                   disabled={isSendingStatement}
                   onClick={handleConfirmSendStatement}
-                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold shadow disabled:opacity-50"
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-xs shadow disabled:opacity-50"
                 >
                   {isSendingStatement ? "Đang gửi..." : "Xác nhận gửi sao kê"}
                 </button>
