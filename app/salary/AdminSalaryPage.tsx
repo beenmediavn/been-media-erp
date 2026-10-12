@@ -76,7 +76,7 @@ export default function AdminSalaryPage() {
     const { data: adv } = await supabase.from("salary_advances").select("*").order("advance_date", { ascending: false });
     const { data: pay } = await supabase.from("salary_payments").select("*").order("payment_date", { ascending: false });
     const { data: adj } = await supabase.from("salary_adjustments").select("*, jobs(event_name,customer_name)").order("adjustment_date", { ascending: false });
-    
+
     try {
       const { data: postData } = await supabase.from("job_post_productions").select("*, jobs(id, customer_name, event_name)");
       setPostProductions(postData || []);
@@ -169,7 +169,7 @@ export default function AdminSalaryPage() {
       const totalSalary = baseSalary + postSalary + adjustmentTotal;
       const totalAdvance = filteredAdvances.filter((a) => a.employee_id === emp.id).reduce((sum, a) => sum + Number(a.amount || 0), 0);
       const totalPaid = filteredPayments.filter((p) => p.employee_id === emp.id).reduce((sum, p) => sum + Number(p.amount || 0), 0);
-      
+
       const remainRaw = totalSalary - totalAdvance - totalPaid;
       const remain = Math.max(remainRaw, 0);
       const overpaid = Math.max(-remainRaw, 0);
@@ -205,6 +205,14 @@ export default function AdminSalaryPage() {
       };
     });
   }, [employees, filteredAssignments, postProductions, filteredAdvances, filteredPayments, filteredAdjustments, month]);
+
+  // Cập nhật lại thông tin selectedEmployee nếu state rows thay đổi
+  useEffect(() => {
+    if (selectedEmployee) {
+      const refreshed = rows.find((r) => r.id === selectedEmployee.id);
+      if (refreshed) setSelectedEmployee(refreshed);
+    }
+  }, [rows]);
 
   const filteredRows = useMemo(() => {
     const keyword = search.trim().toLowerCase();
@@ -252,7 +260,7 @@ export default function AdminSalaryPage() {
         },
       ]);
     }
-    loadData();
+    await loadData();
   };
 
   const addPayment = async (employeeId: string, maxAmount?: number) => {
@@ -280,7 +288,7 @@ export default function AdminSalaryPage() {
         },
       ]);
     }
-    loadData();
+    await loadData();
   };
 
   const openTxnEdit = (type: "advance" | "payment", row: any) => setEditingTxn({ type, ...row });
@@ -303,7 +311,7 @@ export default function AdminSalaryPage() {
       .eq("source_type", editingTxn.type === "advance" ? "salary_advance" : "salary_payment")
       .eq("source_id", editingTxn.id);
     setEditingTxn(null);
-    loadData();
+    await loadData();
   };
 
   const deleteTxn = async (type: "advance" | "payment", row: any) => {
@@ -317,7 +325,7 @@ export default function AdminSalaryPage() {
       .delete()
       .eq("source_type", type === "advance" ? "salary_advance" : "salary_payment")
       .eq("source_id", row.id);
-    loadData();
+    await loadData();
   };
 
   const openPenalty = (employeeId: string) => {
@@ -327,6 +335,14 @@ export default function AdminSalaryPage() {
   const openBonus = (employeeId: string) => {
     setPenaltyForm({ employee_id: employeeId, amount: 0, note: "", adjustment_date: new Date().toISOString().slice(0, 10), adjustment_type: "bonus" });
     setShowPenalty(true);
+  };
+  const openAdjustment = (employeeId: string) => {
+    const isBonus = confirm("Nhấn 'OK' để Thêm Thưởng, nhấn 'Cancel/Hủy' để Khấu trừ/Phạt:");
+    if (isBonus) {
+      openBonus(employeeId);
+    } else {
+      openPenalty(employeeId);
+    }
   };
 
   const savePenalty = async () => {
@@ -346,7 +362,7 @@ export default function AdminSalaryPage() {
     ]);
     if (error) return alert(error.message);
     setShowPenalty(false);
-    loadData();
+    await loadData();
   };
 
   // 1. TÍNH NĂNG SAO CHÉP VĂN BẢN GỬI QUA ZALO / MESSENGER / FB
@@ -407,8 +423,7 @@ export default function AdminSalaryPage() {
 
     try {
       const messageContent = `[SAO KÊ LƯƠNG] Admin vừa cập nhật bảng sao kê lương của bạn. Tổng công nợ còn thanh toán: ${formatMoney(statementEmployee.remain)}. Vui lòng vào mục Lương cá nhân để xem chi tiết.`;
-      
-      // Ghi nhận vào bảng messages / chat trong app
+
       const { error: msgErr } = await supabase.from("messages").insert([
         {
           receiver_id: statementEmployee.id,
@@ -418,7 +433,6 @@ export default function AdminSalaryPage() {
         },
       ]);
 
-      // Nếu bảng messages dùng tên chat_messages
       if (msgErr) {
         await supabase.from("chat_messages").insert([
           {
@@ -546,43 +560,52 @@ export default function AdminSalaryPage() {
         ))}
       </div>
 
+      {/* DANH SÁCH THẺ THỢ CÒN NỢ LƯƠNG - BẤM VÀO THẺ MỞ NGAY POPUP THAO TÁC */}
       {debtRows.length > 0 && (
         <div className="mb-6 rounded-2xl bg-red-50 p-4 shadow-sm border border-red-100">
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-bold text-red-700">Danh sách còn nợ lương ({debtRows.length} người)</h2>
-            <span className="text-xs text-red-500 font-medium">Lũy kế cộng dồn các job chưa trả</span>
+            <span className="text-xs text-red-500 font-medium">Bấm vào thẻ thợ để mở nhanh menu trả lương, ứng lương, thưởng/phạt</span>
           </div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {debtRows.slice(0, 9).map((emp) => (
-              <div key={emp.id} className="rounded-xl bg-white p-3 border shadow-sm flex flex-col justify-between">
+              <div
+                key={emp.id}
+                onClick={() => setSelectedEmployee(emp)}
+                className="group relative cursor-pointer rounded-xl bg-white p-3.5 border border-red-200/70 shadow-sm transition-all hover:border-blue-500 hover:shadow-md flex flex-col justify-between"
+              >
                 <div>
                   <div className="flex justify-between items-start">
                     <div>
-                      <p className="font-semibold text-slate-800">{emp.full_name}</p>
+                      <p className="font-bold text-slate-800 group-hover:text-blue-600 transition-colors flex items-center gap-1.5">
+                        {emp.full_name}
+                        <span className="text-[10px] text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity">⚡ Chi tiết</span>
+                      </p>
                       <p className="text-xs text-slate-500">{emp.role}</p>
                     </div>
                     <span className="text-[10px] px-2 py-0.5 rounded bg-rose-50 text-rose-600 font-semibold border border-rose-200">
                       Nợ lũy kế
                     </span>
                   </div>
-                  <p className="mt-2 text-red-600 font-bold text-base">Còn nợ: {formatMoney(emp.remain)}</p>
+                  <p className="mt-2 text-red-600 font-black text-lg">Còn nợ: {formatMoney(emp.remain)}</p>
                   {emp.totalAdvance > 0 && (
                     <p className="text-xs text-amber-600 font-medium">Đã ứng: {formatMoney(emp.totalAdvance)}</p>
                   )}
                 </div>
-                <div className="mt-3 flex gap-2 pt-2 border-t border-slate-100">
+
+                <div className="mt-3 flex gap-2 pt-2 border-t border-slate-100" onClick={(e) => e.stopPropagation()}>
                   <button
                     onClick={() => {
                       setStatementEmployee(emp);
                       setStatementType("ACCUMULATED");
                     }}
-                    className="flex-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+                    className="flex-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 shadow-sm transition-colors"
                   >
                     Sao kê lương
                   </button>
                   <button
                     onClick={() => addPayment(emp.id, emp.remain)}
-                    className="rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700"
+                    className="rounded-lg bg-green-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-green-700 shadow-sm transition-colors"
                   >
                     Trả lương
                   </button>
@@ -630,7 +653,13 @@ export default function AdminSalaryPage() {
 
                 return (
                   <tr key={emp.id} className="border-b hover:bg-slate-50/75">
-                    <td className="p-3 font-bold text-slate-800">{emp.full_name}</td>
+                    <td
+                      onClick={() => setSelectedEmployee(emp)}
+                      className="p-3 font-bold text-slate-800 cursor-pointer hover:text-blue-600 transition-colors"
+                      title="Bấm để xem & thực hiện thanh toán, ứng lương, thưởng/phạt"
+                    >
+                      {emp.full_name}
+                    </td>
                     <td className="p-3 text-slate-500">{emp.role}</td>
                     <td className="p-3 text-center">{emp.completedJobs.length}</td>
                     <td className="p-3 text-right font-bold">{formatMoney(emp.baseSalary)}</td>
@@ -688,7 +717,10 @@ export default function AdminSalaryPage() {
         <div className="space-y-3 lg:hidden">
           {filteredRows.map((emp) => (
             <div key={emp.id} className="rounded-2xl border p-4 text-xs">
-              <div className="flex items-start justify-between gap-3">
+              <div
+                onClick={() => setSelectedEmployee(emp)}
+                className="flex items-start justify-between gap-3 cursor-pointer"
+              >
                 <div>
                   <p className="font-bold text-sm text-slate-800">{emp.full_name}</p>
                   <p className="text-slate-500">{emp.role} • {emp.completedJobs.length} job đã xong</p>
@@ -714,7 +746,7 @@ export default function AdminSalaryPage() {
                   Sao kê
                 </button>
                 <button onClick={() => setSelectedEmployee(emp)} className="rounded-lg bg-slate-100 p-2 text-slate-700 border">
-                  Xem Job
+                  Thao tác
                 </button>
                 <button onClick={() => addAdvance(emp.id)} className="rounded-lg bg-amber-500 p-2 text-white">
                   Ứng
@@ -728,11 +760,183 @@ export default function AdminSalaryPage() {
         </div>
       </div>
 
+      {/* POPUP CHI TIẾT & BẢNG ĐIỀU KHIỂN NHANH KHI BẤM VÀO THỢ */}
+      {selectedEmployee && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-5 sm:p-6 w-full max-w-4xl max-h-[90vh] flex flex-col">
+            {/* Header popup */}
+            <div className="flex items-center justify-between pb-3 border-b">
+              <div>
+                <h2 className="text-xl sm:text-2xl font-bold text-slate-900 flex items-center gap-2">
+                  <span>{selectedEmployee.full_name}</span>
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-200">
+                    {selectedEmployee.role}
+                  </span>
+                </h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Mã NV: {selectedEmployee.id.slice(0, 8)} • {month === "ALL" ? "Toàn bộ thời gian (Cộng dồn nợ)" : `Tháng ${month}`}
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedEmployee(null)}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                title="Đóng (Esc)"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* BẢNG ĐIỀU KHIỂN THAO TÁC TRỰC TIẾP (THANH TOÁN, ỨNG, THƯỞNG, PHẠT, PHÁT SINH, SAO KÊ) */}
+            <div className="my-4 p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">⚡ Thao tác tài chính nhanh:</span>
+                <span className="text-xs font-semibold text-red-600">
+                  Còn nợ: <b>{formatMoney(selectedEmployee.remain)}</b>
+                </span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+                <button
+                  onClick={() => addPayment(selectedEmployee.id, selectedEmployee.remain)}
+                  className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-3 rounded-lg text-xs shadow-sm flex items-center justify-center gap-1 transition-all"
+                >
+                  💵 Trả lương
+                </button>
+                <button
+                  onClick={() => addAdvance(selectedEmployee.id)}
+                  className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-2 px-3 rounded-lg text-xs shadow-sm flex items-center justify-center gap-1 transition-all"
+                >
+                  💳 Ứng lương
+                </button>
+                <button
+                  onClick={() => openBonus(selectedEmployee.id)}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-3 rounded-lg text-xs shadow-sm flex items-center justify-center gap-1 transition-all"
+                >
+                  🎁 Thưởng
+                </button>
+                <button
+                  onClick={() => openPenalty(selectedEmployee.id)}
+                  className="bg-rose-600 hover:bg-rose-700 text-white font-bold py-2 px-3 rounded-lg text-xs shadow-sm flex items-center justify-center gap-1 transition-all"
+                >
+                  ⚠️ Phạt trừ
+                </button>
+                <button
+                  onClick={() => openAdjustment(selectedEmployee.id)}
+                  className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-3 rounded-lg text-xs shadow-sm flex items-center justify-center gap-1 transition-all"
+                >
+                  ➕ Phát sinh
+                </button>
+                <button
+                  onClick={() => {
+                    setStatementEmployee(selectedEmployee);
+                    setStatementType("ACCUMULATED");
+                  }}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-lg text-xs shadow-sm flex items-center justify-center gap-1 transition-all"
+                >
+                  📄 Sao kê
+                </button>
+              </div>
+            </div>
+
+            {/* Thống kê 6 chỉ số */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-4">
+              <div className="border rounded-lg p-2.5 bg-slate-50/50">
+                <p className="text-[11px] text-gray-500">Lương Job</p>
+                <b className="text-xs text-slate-800">{formatMoney(selectedEmployee.baseSalary)}</b>
+              </div>
+              <div className="border rounded-lg p-2.5 bg-slate-50/50">
+                <p className="text-[11px] text-gray-500">Phát sinh +/-</p>
+                <b className={`text-xs ${selectedEmployee.adjustmentTotal < 0 ? "text-red-600" : "text-emerald-700"}`}>
+                  {selectedEmployee.adjustmentTotal >= 0 ? "+" : ""}{formatMoney(selectedEmployee.adjustmentTotal)}
+                </b>
+              </div>
+              <div className="border rounded-lg p-2.5 bg-slate-50/50">
+                <p className="text-[11px] text-gray-500">Lương tổng</p>
+                <b className="text-xs text-slate-800">{formatMoney(selectedEmployee.totalSalary)}</b>
+              </div>
+              <div className="border rounded-lg p-2.5 bg-slate-50/50">
+                <p className="text-[11px] text-gray-500">Đã ứng</p>
+                <b className="text-xs text-orange-600">{formatMoney(selectedEmployee.totalAdvance)}</b>
+              </div>
+              <div className="border rounded-lg p-2.5 bg-slate-50/50">
+                <p className="text-[11px] text-gray-500">Đã trả</p>
+                <b className="text-xs text-green-600">{formatMoney(selectedEmployee.totalPaid)}</b>
+              </div>
+              <div className="border border-rose-200 bg-rose-50/50 rounded-lg p-2.5">
+                <p className="text-[11px] text-rose-600 font-semibold">Còn phải trả</p>
+                <b className="text-xs text-red-600">{formatMoney(selectedEmployee.remain)}</b>
+              </div>
+            </div>
+
+            {/* Danh sách Job đã đi làm & Hậu kỳ */}
+            <div className="overflow-auto flex-1 border rounded-xl">
+              <table className="w-full min-w-[700px] text-xs">
+                <thead>
+                  <tr className="border-b bg-gray-50 text-slate-600 sticky top-0">
+                    <th className="text-left p-2.5">Ngày</th>
+                    <th className="text-left p-2.5">Khách / sự kiện</th>
+                    <th className="text-left p-2.5">Vai trò</th>
+                    <th className="text-left p-2.5">Trạng thái</th>
+                    <th className="text-left p-2.5">Địa điểm</th>
+                    <th className="text-right p-2.5">Lương</th>
+                    <th className="text-right p-2.5">Còn nợ Job</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {[...(selectedEmployee.salaryJobs || []), ...selectedEmployee.jobs.filter((j: any) => !assignmentCompleted(j))].map((job: any) => (
+                    <tr key={job.id} className="hover:bg-slate-50">
+                      <td className="p-2.5">{formatDateVN(job.job_days?.shooting_date)}</td>
+                      <td className="p-2.5 font-medium">{job.jobs?.event_name || job.jobs?.customer_name}</td>
+                      <td className="p-2.5">{job.role}</td>
+                      <td className="p-2.5">
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${assignmentCompleted(job) ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
+                          {assignmentCompleted(job) ? "Đã xong" : (job.jobs?.status || "Chưa xong")}
+                        </span>
+                      </td>
+                      <td className="p-2.5 text-slate-500">{job.work_location_name}</td>
+                      <td className="p-2.5 text-right font-bold">{formatMoney(job.salary_amount)}</td>
+                      <td className="p-2.5 text-right">
+                        {assignmentCompleted(job) ? (
+                          <b className={Number(job.jobRemain || 0) > 0 ? "text-red-600" : "text-emerald-700"}>
+                            {Number(job.jobRemain || 0) > 0 ? formatMoney(job.jobRemain) : "ĐÃ TRẢ ĐỦ"}
+                          </b>
+                        ) : (
+                          <span className="text-slate-400">Job tương lai</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {selectedEmployee.postJobs?.map((p: any) => (
+                    <tr key={p.id} className="bg-purple-50/30 hover:bg-purple-50/60">
+                      <td className="p-2.5">{formatDateVN(p.completed_at?.slice(0, 10))}</td>
+                      <td className="p-2.5 font-medium">{p.jobs?.event_name || p.jobs?.customer_name}</td>
+                      <td className="p-2.5 text-purple-700 font-semibold">{p.type === "EDIT_VIDEO" ? "Hậu kỳ Video" : "Hậu kỳ PTS"}</td>
+                      <td className="p-2.5"><span className="rounded-full px-2 py-0.5 text-[10px] font-bold bg-purple-100 text-purple-700">Đã xong</span></td>
+                      <td className="p-2.5 text-slate-500">Tại studio</td>
+                      <td className="p-2.5 text-right font-bold text-purple-700">{formatMoney(p.actual_price || p.default_price)}</td>
+                      <td className="p-2.5 text-right text-emerald-700 font-semibold">-</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Nút đóng modal */}
+            <div className="flex justify-end pt-3 mt-3 border-t">
+              <button
+                onClick={() => setSelectedEmployee(null)}
+                className="border px-5 py-2 rounded-xl text-slate-700 font-semibold text-xs hover:bg-slate-50 transition-colors"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL SAO KÊ LƯƠNG ĐỐI SOÁT */}
       {statementEmployee && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 sm:p-4 backdrop-blur-sm overflow-y-auto">
           <div className="relative w-full max-w-4xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[92vh]">
-            {/* Header dính trên cùng */}
             <div className="sticky top-0 z-20 flex items-center justify-between bg-white px-5 sm:px-6 py-4 border-b rounded-t-2xl">
               <div>
                 <h3 className="text-base sm:text-lg font-bold text-slate-800">
@@ -749,7 +953,6 @@ export default function AdminSalaryPage() {
               </button>
             </div>
 
-            {/* Nội dung sao kê */}
             <div className="p-4 sm:p-6 overflow-y-auto space-y-5 text-xs text-slate-700 flex-1">
               <div className="bg-slate-50 p-3.5 rounded-xl border flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-4">
@@ -782,7 +985,6 @@ export default function AdminSalaryPage() {
                 )}
               </div>
 
-              {/* Bảng Job & Hậu kỳ */}
               <div>
                 <h4 className="font-bold text-slate-800 mb-2 uppercase">1. Job & Hậu kỳ hoàn thành (Đủ điều kiện thanh toán)</h4>
                 <div className="border rounded-xl overflow-x-auto">
@@ -826,7 +1028,6 @@ export default function AdminSalaryPage() {
                 </div>
               </div>
 
-              {/* Bảng ứng lương & Thưởng phạt */}
               <div>
                 <h4 className="font-bold text-slate-800 mb-2 uppercase">2. Khoản đã tạm ứng & Thưởng / Khấu trừ</h4>
                 <div className="border rounded-xl overflow-x-auto">
@@ -867,7 +1068,6 @@ export default function AdminSalaryPage() {
                 </div>
               </div>
 
-              {/* Khung tổng kết số dư */}
               <div className="bg-slate-900 text-white p-4 rounded-xl flex flex-col sm:flex-row justify-between items-center gap-3">
                 <div className="space-y-1 text-xs">
                   <p>(+) Tổng công Job & Hậu kỳ: <b>{formatMoney(statementEmployee.baseSalary)}</b></p>
@@ -881,10 +1081,8 @@ export default function AdminSalaryPage() {
               </div>
             </div>
 
-            {/* Footer modal: ĐẦY ĐỦ CÁC NÚT SAO CHÉP, GỬI TIN NHẮN VÀ GỬI SAO KÊ */}
             <div className="sticky bottom-0 bg-white px-4 sm:px-6 py-3 border-t rounded-b-2xl flex flex-wrap items-center justify-between gap-2.5 shadow-md">
               <div className="flex flex-wrap items-center gap-2">
-                {/* NÚT 1: SAO CHÉP NỘI DUNG CHO ZALO / FB */}
                 <button
                   onClick={handleCopyStatementText}
                   className={`px-3.5 py-2 rounded-lg font-semibold text-xs border flex items-center gap-1.5 transition-all ${
@@ -897,7 +1095,6 @@ export default function AdminSalaryPage() {
                   <span>{copySuccess ? "✓ Đã sao chép vào bộ nhớ tạm!" : "📋 Sao chép (Zalo/FB)"}</span>
                 </button>
 
-                {/* NÚT 2: GỬI TIN NHẮN TRONG APP */}
                 <button
                   disabled={isSendingMessage}
                   onClick={handleSendMessageToWorker}
@@ -1004,72 +1201,6 @@ export default function AdminSalaryPage() {
               </button>
               <button onClick={savePenalty} className={`rounded-xl px-4 py-2 text-white ${penaltyForm.adjustment_type === "bonus" ? "bg-emerald-600" : "bg-red-600"}`}>
                 {penaltyForm.adjustment_type === "bonus" ? "Lưu thưởng" : "Lưu khấu trừ"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal chi tiết cũ */}
-      {selectedEmployee && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl p-5 sm:p-6 w-full max-w-4xl max-h-[85vh] overflow-auto">
-            <h2 className="text-2xl font-bold mb-2">Chi tiết công việc: {selectedEmployee.full_name}</h2>
-            <p className="mb-4 text-gray-500">{month === "ALL" ? "Tất cả thời gian (Lũy kế)" : `Tháng ${month}`}</p>
-
-            <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 mb-5">
-              <div className="border rounded p-3"><p className="text-xs text-gray-500">Lương Job</p><b>{formatMoney(selectedEmployee.baseSalary)}</b></div>
-              <div className="border rounded p-3"><p className="text-xs text-gray-500">Phát sinh +/-</p><b className={selectedEmployee.adjustmentTotal < 0 ? "text-red-600" : "text-emerald-700"}>{selectedEmployee.adjustmentTotal >= 0 ? "+" : ""}{formatMoney(selectedEmployee.adjustmentTotal)}</b></div>
-              <div className="border rounded p-3"><p className="text-xs text-gray-500">Lương sau phát sinh</p><b>{formatMoney(selectedEmployee.totalSalary)}</b></div>
-              <div className="border rounded p-3"><p className="text-xs text-gray-500">Đã ứng</p><b className="text-orange-600">{formatMoney(selectedEmployee.totalAdvance)}</b></div>
-              <div className="border rounded p-3"><p className="text-xs text-gray-500">Đã thanh toán</p><b className="text-green-600">{formatMoney(selectedEmployee.totalPaid)}</b></div>
-              <div className="border rounded p-3"><p className="text-xs text-gray-500">Còn phải trả</p><b className="text-red-600">{formatMoney(selectedEmployee.remain)}</b></div>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[800px] text-xs">
-                <thead>
-                  <tr className="border-b bg-gray-50 text-slate-600">
-                    <th className="text-left p-2">Ngày</th>
-                    <th className="text-left p-2">Khách / sự kiện</th>
-                    <th className="text-left p-2">Vai trò</th>
-                    <th className="text-left p-2">Trạng thái</th>
-                    <th className="text-left p-2">Địa điểm</th>
-                    <th className="text-left p-2 text-right">Lương</th>
-                    <th className="text-left p-2 text-right">Còn nợ Job</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[...(selectedEmployee.salaryJobs || []), ...selectedEmployee.jobs.filter((j: any) => !assignmentCompleted(j))].map((job: any) => (
-                    <tr key={job.id} className="border-b">
-                      <td className="p-2">{formatDateVN(job.job_days?.shooting_date)}</td>
-                      <td className="p-2 font-medium">{job.jobs?.event_name || job.jobs?.customer_name}</td>
-                      <td className="p-2">{job.role}</td>
-                      <td className="p-2">
-                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${assignmentCompleted(job) ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
-                          {assignmentCompleted(job) ? "Đã xong" : (job.jobs?.status || "Chưa hoàn thành")}
-                        </span>
-                      </td>
-                      <td className="p-2">{job.work_location_name}</td>
-                      <td className="p-2 text-right font-bold">{formatMoney(job.salary_amount)}</td>
-                      <td className="p-2 text-right">
-                        {assignmentCompleted(job) ? (
-                          <b className={Number(job.jobRemain || 0) > 0 ? "text-red-600" : "text-emerald-700"}>
-                            {Number(job.jobRemain || 0) > 0 ? formatMoney(job.jobRemain) : "ĐÃ TRẢ ĐỦ"}
-                          </b>
-                        ) : (
-                          <span className="text-slate-400">Job tương lai</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="flex justify-end mt-6">
-              <button onClick={() => setSelectedEmployee(null)} className="border px-5 py-2 rounded text-slate-700 font-semibold hover:bg-slate-50">
-                Đóng
               </button>
             </div>
           </div>
