@@ -61,6 +61,13 @@ const makeDay = () => ({
   locations: [makeLocation("Nhà trai"), makeLocation("Nhà gái")],
 });
 
+const timeToMinutes = (value: any) => {
+  const m = String(value || "00:00").match(/^(\d{1,2}):(\d{2})/);
+  return m ? Number(m[1]) * 60 + Number(m[2]) : 0;
+};
+const timeOverlaps = (aStart: any, aEnd: any, bStart: any, bEnd: any) =>
+  timeToMinutes(aStart) < timeToMinutes(bEnd) && timeToMinutes(aEnd) > timeToMinutes(bStart);
+
 export const isJobDoneActual = (job: any) => {
   const s = String(job?.status || "").trim().toLowerCase();
   if (s.includes("hoàn thành") || s.includes("đã bàn giao")) return true;
@@ -188,6 +195,36 @@ export default function AdminJobPage() {
   useEffect(() => {
     loadData();
   }, []);
+
+  const getEmployeeConflict = (employeeId: string, dayIndex: number, locationIndex: number, assignmentIndex: number) => {
+    if (!employeeId) return null;
+    const currentDay = days[dayIndex];
+    if (!currentDay?.shooting_date) return null;
+
+    for (const job of jobs) {
+      if (editingJob?.id && job.id === editingJob.id) continue;
+      for (const jd of job.job_days || []) {
+        if (jd.shooting_date !== currentDay.shooting_date) continue;
+        if (!timeOverlaps(currentDay.start_time, currentDay.end_time, jd.start_time, jd.end_time)) continue;
+        const hit = (jd.job_assignments || []).find((a: any) => a.employee_id === employeeId);
+        if (hit) return { job: job.event_name || job.customer_name || "Job khác", start: jd.start_time, end: jd.end_time };
+      }
+    }
+
+    for (let di = 0; di < days.length; di++) {
+      const d = days[di];
+      if (d.shooting_date !== currentDay.shooting_date || !timeOverlaps(currentDay.start_time, currentDay.end_time, d.start_time, d.end_time)) continue;
+      for (let li = 0; li < (d.locations || []).length; li++) {
+        for (let ai = 0; ai < (d.locations[li].assignments || []).length; ai++) {
+          if (di === dayIndex && li === locationIndex && ai === assignmentIndex) continue;
+          if (d.locations[li].assignments[ai].employee_id === employeeId) {
+            return { job: "Phân công khác trong Job này", start: d.start_time, end: d.end_time };
+          }
+        }
+      }
+    }
+    return null;
+  };
 
   const buildDaysFromJob = (job: any) => {
     const jobDays = job.job_days || [];
@@ -404,7 +441,6 @@ export default function AdminJobPage() {
     );
   };
 
-  // HÀM GÁN NHANH THỢ DỰ PHÒNG VÀO NGÀY CHỤP
   const addReservedWorkerToDay = (dayIndex: number, reserve: any) => {
     const currentDay = days[dayIndex];
     if (!currentDay.locations || currentDay.locations.length === 0) return;
@@ -842,6 +878,7 @@ export default function AdminJobPage() {
           addAssignment={addAssignment}
           removeAssignment={removeAssignment}
           addReservedWorkerToDay={addReservedWorkerToDay}
+          getEmployeeConflict={getEmployeeConflict}
           editingJob={editingJob}
           saving={saving}
           onClose={() => { setOpenForm(false); setEditingJob(null); }}
@@ -884,6 +921,7 @@ function JobForm(props: any) {
     addAssignment,
     removeAssignment,
     addReservedWorkerToDay,
+    getEmployeeConflict,
     editingJob,
     saving,
     onClose,
@@ -1164,7 +1202,6 @@ function JobForm(props: any) {
             </div>
           )}
 
-          {/* Mục 3: Ngày chụp → Địa điểm → Phân công thợ */}
           <div className="space-y-4 pt-2">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-sm text-blue-700 uppercase">3. Ngày chụp → Địa điểm → Phân công thợ</h3>
@@ -1372,6 +1409,7 @@ function JobForm(props: any) {
                                   <EmployeePicker
                                     employees={employees}
                                     value={assignment.employee_id}
+                                    getConflict={(id: string) => getEmployeeConflict(id, dayIndex, locIndex, assIndex)}
                                     onChange={(id: string) => {
                                       const matchedReserve = reservesForThisDay.find((r: any) => r.employee_id === id);
                                       updateAssignment(dayIndex, locIndex, assIndex, "employee_id", id);
