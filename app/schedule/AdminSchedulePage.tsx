@@ -78,7 +78,7 @@ export default function AdminSchedulePage() {
   const [quick, setQuick] = useState<any>(() => initialQuick(selected));
   const [offlineDrafts, setOfflineDrafts] = useState<Record<string, any>>({});
 
-  // STATE ĐỂ BẬT MODAL XEM CHI TIẾT JOB TRỰC TIẾP TẠI TRANG LỊCH
+  // STATE XEM CHI TIẾT JOB & MỞ THẲNG TRANG SỬA
   const [viewingJob, setViewingJob] = useState<any>(null);
 
   const year = cursor.getFullYear(),
@@ -90,7 +90,7 @@ export default function AdminSchedulePage() {
       await Promise.all([
         supabase
           .from("job_days")
-          .select("*, jobs(*, customers(*), job_days(*, job_assignments(*, employees(*)))), job_assignments(*, employees(*))")
+          .select("*, jobs(*, customers(*), job_days(*, job_locations(*), job_assignments(*, employees(*)))), job_assignments(*, employees(*))")
           .order("shooting_date", { ascending: true }),
         supabase.from("reserve_workers").select("*, employees(*)").eq("status", "reserved").order("reserve_date", { ascending: true }),
         supabase.from("customers").select("*").order("full_name"),
@@ -396,32 +396,40 @@ export default function AdminSchedulePage() {
   const monthRevenue = uniqueMonthJobs.reduce((s: any, j: any) => s + Number(j?.total_price || 0), 0);
   const activeDates = new Set(monthRows.map((r) => r.shooting_date)).size;
 
-  // Sao chép nhanh toàn bộ job
-  const handleCopyJobDetail = (job: any) => {
-    const lines = [
-      `📸 [BEEN MEDIA] - THÔNG TIN JOB`,
-      `Sự kiện: ${job.event_name || job.customer_name || ""}`,
-      `Mã Job: ${job.job_code || ""}`,
-      `Dịch vụ: ${job.service || ""}`,
-      `Khách hàng: ${job.customers?.full_name || job.customer_name || ""}`,
-      `SĐT Nhà trai: ${job.customers?.phone || job.customer_phone || "Chưa có"}`,
-      `SĐT Nhà gái: ${job.customers?.secondary_phone || job.secondary_phone || "Chưa có"}`,
-      `Tổng tiền: ${money(job.total_price)} | Đã cọc: ${money(job.deposit)} | Còn nợ: ${money(job.debt)}`,
-      `----------------------------------------`,
-    ];
+  // HÀM MỞ / ĐÓNG SĐT CHO THỢ TRỰC TIẾP
+  const toggleContactVisible = async (assignmentId: string, currentVal: boolean) => {
+    const nextVal = !currentVal;
+    const { error } = await supabase
+      .from("job_assignments")
+      .update({ contact_visible: nextVal })
+      .eq("id", assignmentId);
 
-    (job.job_days || []).forEach((d: any, idx: number) => {
-      lines.push(
-        `\n📅 Ngày ${idx + 1}${d.note ? ` (${d.note})` : ""}: ${formatDateVN(d.shooting_date)} • ${d.start_time?.slice(0, 5)} - ${d.end_time?.slice(0, 5)}`,
-        `📍 Địa điểm: ${d.location || "Chưa nhập"}`
-      );
-      (d.job_assignments || []).forEach((a: any) => {
-        lines.push(`- ${a.role}: ${a.employees?.full_name || "Chưa chọn"} | Lương: ${money(a.salary_amount)}`);
-      });
+    if (error) {
+      alert("Lỗi khi cập nhật SĐT: " + error.message);
+      return;
+    }
+    await load();
+  };
+
+  // SAO CHÉP LỊCH TỪNG NGÀY CHUẨN CŨ
+  const copySingleDay = (day: any, dayIdx: number) => {
+    const locGroom = (day.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("trai")) || {};
+    const locBride = (day.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("gái")) || {};
+
+    let text = `Ngày ${dayIdx + 1}${day.note ? ` – ${day.note}` : ""}: ${formatDateVN(day.shooting_date)} • ${day.start_time?.slice(0, 5)} - ${day.end_time?.slice(0, 5)}\n`;
+    text += `Địa điểm: Nhà trai: ${locGroom.address || "Chưa có"} | Nhà gái: ${locBride.address || "Chưa có"}\n`;
+
+    (day.job_assignments || []).forEach((a: any) => {
+      text += `- ${a.role || "Thợ"}: ${a.employees?.full_name || "Chưa chọn"} | Lương: ${money(a.salary_amount)}\n`;
     });
 
-    navigator.clipboard.writeText(lines.join("\n"));
-    alert("Đã sao chép toàn bộ thông tin Job!");
+    navigator.clipboard.writeText(text);
+    alert(`Đã sao chép lịch Ngày ${dayIdx + 1}!`);
+  };
+
+  // CHUYỂN THẲNG SANG FORM SỬA JOB (KHÔNG BỊ MẤT DỮ LIỆU)
+  const handleGoToEditJob = (jobId: string) => {
+    window.location.href = `/job?open=${jobId}&edit=1`;
   };
 
   return (
@@ -499,7 +507,7 @@ export default function AdminSchedulePage() {
           )}
         </div>
 
-        {/* PHẦN HIỂN THỊ DANH SÁCH JOB TRONG NGÀY ĐANG CHỌN */}
+        {/* DANH SÁCH JOB TRONG NGÀY ĐANG CHỌN */}
         <div className="mt-5">
           <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
             <div>
@@ -512,47 +520,6 @@ export default function AdminSchedulePage() {
               + {selectedJobs.length ? "Thêm Job trong ngày này" : "Tạo Job ngày này"}
             </button>
           </div>
-
-          {offlineDrafts[selected] && (
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-blue-200 bg-blue-50 p-4">
-              <div>
-                <b className="text-blue-700">Có bản nháp chưa đồng bộ</b>
-                <p className="text-sm text-slate-600">Job đã nhập trên thiết bị này nhưng chưa lưu lên hệ thống.</p>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={startQuick} className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white">
-                  Mở bản nháp
-                </button>
-                <button
-                  onClick={async () => {
-                    if (!(await requireEditPin("xóa bản nháp"))) return;
-                    if (confirm("Xóa bản nháp này?")) clearDraft(selected);
-                  }}
-                  className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold"
-                >
-                  Xóa nháp
-                </button>
-              </div>
-            </div>
-          )}
-
-          {selectedReserves.length > 0 && (
-            <div className="mb-4 rounded-2xl border border-slate-200 bg-amber-50 p-4">
-              <div className="mb-2 flex justify-between">
-                <b className="bm-gold">Thợ dự phòng đã chốt</b>
-                <Link href="/reserve" className="text-sm bm-gold">
-                  Quản lý →
-                </Link>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {selectedReserves.map((r: any) => (
-                  <span key={r.id} className="bm-chip rounded-full px-3 py-1 text-sm">
-                    {r.employees?.full_name || "Nhân sự"} • {r.role}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
 
           <div className="space-y-3">
             {selectedJobs.map((r: any) => {
@@ -602,23 +569,6 @@ export default function AdminSchedulePage() {
                     </p>
                   </div>
 
-                  {(r.job_assignments || []).length > 0 && (
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {r.job_assignments.map((a: any) => (
-                        <span
-                          key={a.id}
-                          className={`rounded-full px-3 py-1 text-xs ${
-                            a.client_requested ? "bg-red-500/10 font-bold text-red-600" : "bm-chip"
-                          }`}
-                        >
-                          {a.client_requested ? "⭐ " : ""}
-                          {a.employees?.full_name || "Chưa rõ"} • {a.role}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* NÚT XEM / SỬA JOB → BẬT MODAL NGAY TẠI CHỖ */}
                   <div className="mt-4 flex justify-end" onClick={(e) => e.stopPropagation()}>
                     <button
                       type="button"
@@ -639,10 +589,10 @@ export default function AdminSchedulePage() {
           </div>
         </div>
 
-        {/* MODAL XEM CHI TIẾT JOB HIỂN THỊ ĐẦY ĐỦ THÔNG TIN VÀ CÓ NÚT SỬA JOB NHẢY VÀO TRANG SỬA */}
+        {/* MODAL XEM CHI TIẾT JOB: CHUẨN 100% GIAO DIỆN CŨ (BẢNG 7 CỘT + NÚT MỞ SỚM + NÚT SỬA JOB CHUYỂN THẲNG FORM) */}
         {viewingJob && (
           <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 p-3 sm:p-4 backdrop-blur-sm overflow-y-auto">
-            <div className="relative w-full max-w-4xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[92vh]">
+            <div className="relative w-full max-w-5xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[92vh]">
               {/* Header Popup */}
               <div className="sticky top-0 z-20 flex items-center justify-between border-b bg-white px-6 py-4 rounded-t-2xl">
                 <div>
@@ -670,7 +620,7 @@ export default function AdminSchedulePage() {
                 </button>
               </div>
 
-              {/* Nội dung chi tiết Job */}
+              {/* Nội dung chi tiết Job: Bảng 7 cột chuẩn cũ */}
               <div className="p-6 overflow-y-auto space-y-4 text-xs text-slate-700 flex-1">
                 {/* 4 Thẻ tài chính */}
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -692,77 +642,101 @@ export default function AdminSchedulePage() {
                   </div>
                 </div>
 
-                {/* Danh sách từng ngày & Buổi chụp, ai đi làm */}
+                {/* Danh sách từng ngày & Bảng 7 cột y như ảnh cũ */}
                 <div className="space-y-4">
-                  {(viewingJob.job_days || []).map((day: any, idx: number) => (
-                    <div key={day.id || idx} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
-                      <div className="flex items-center justify-between border-b pb-2">
-                        <h3 className="font-bold text-slate-800 text-sm">
-                          Ngày {idx + 1}{day.note ? ` (${day.note})` : ""}: {formatDateVN(day.shooting_date)} • {day.start_time?.slice(0, 5)} - {day.end_time?.slice(0, 5)}
-                        </h3>
-                        <span className="text-xs text-blue-600 font-semibold bg-blue-50 px-2 py-0.5 rounded">
-                          {(day.job_assignments || []).length} thợ đi làm
-                        </span>
-                      </div>
+                  {(viewingJob.job_days || []).map((day: any, idx: number) => {
+                    const locGroom = (day.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("trai")) || {};
+                    const locBride = (day.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("gái")) || {};
 
-                      <p className="text-xs text-slate-600">
-                        <span className="font-semibold text-slate-800">Địa điểm: </span>
-                        {day.location || viewingJob.location || "Chưa nhập địa chỉ"}
-                      </p>
+                    const groomAddr = locGroom.address || viewingJob.customers?.address || "";
+                    const brideAddr = locBride.address || "";
 
-                      {/* Bảng thợ đi làm trong ngày này */}
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left text-xs min-w-[650px] border rounded-xl overflow-hidden">
-                          <thead className="border-b bg-slate-50 text-slate-600 font-semibold">
-                            <tr>
-                              <th className="p-2.5">Địa điểm làm việc</th>
-                              <th className="p-2.5">Vai trò</th>
-                              <th className="p-2.5">Thợ phụ trách</th>
-                              <th className="p-2.5">Tiền công</th>
-                              <th className="p-2.5">Ghi chú</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y text-slate-700 bg-white">
-                            {(day.job_assignments || []).length > 0 ? (
-                              (day.job_assignments || []).map((a: any) => (
-                                <tr key={a.id} className="hover:bg-slate-50/70">
-                                  <td className="p-2.5 font-bold text-slate-800">
-                                    {a.work_location_name || "Tại điểm"}
-                                    {a.work_location_address && <div className="text-[11px] font-normal text-slate-500">{a.work_location_address}</div>}
-                                  </td>
-                                  <td className="p-2.5 text-slate-600">{a.role}</td>
-                                  <td className="p-2.5 font-bold text-slate-900">
-                                    {a.client_requested ? "⭐ " : ""}
-                                    {a.employees?.full_name || "Chưa xếp thợ"}
-                                  </td>
-                                  <td className="p-2.5 font-bold text-slate-800">{money(a.salary_amount)}</td>
-                                  <td className="p-2.5 text-slate-500">{a.note || "-"}</td>
-                                </tr>
-                              ))
-                            ) : (
+                    return (
+                      <div key={day.id || idx} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
+                        <div className="flex items-center justify-between border-b pb-2">
+                          <h3 className="font-bold text-slate-800 text-sm">
+                            Ngày {idx + 1}{day.note ? ` – ${day.note}` : ""}: {formatDateVN(day.shooting_date)} • {day.start_time?.slice(0, 5)} - {day.end_time?.slice(0, 5)}
+                          </h3>
+                          <button
+                            type="button"
+                            onClick={() => copySingleDay(day, idx)}
+                            className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1 font-semibold text-blue-600 hover:bg-blue-100 transition-colors"
+                          >
+                            📋 Sao chép ngày này
+                          </button>
+                        </div>
+
+                        <p className="text-xs text-slate-500">
+                          <span className="font-semibold text-slate-700">Địa điểm: </span>
+                          Nhà trai: {groomAddr || "Chưa cập nhật"} | Nhà gái: {brideAddr || "Chưa cập nhật"}
+                        </p>
+
+                        {/* BẢNG 7 CỘT CHI TIẾT */}
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left text-xs min-w-[750px] border rounded-xl overflow-hidden">
+                            <thead className="border-b bg-slate-50 text-slate-600 font-semibold">
                               <tr>
-                                <td colSpan={5} className="p-3 text-center text-slate-400 italic">
-                                  Chưa phân công thợ cho ca này.
-                                </td>
+                                <th className="p-2.5">Địa điểm</th>
+                                <th className="p-2.5">Địa chỉ / SĐT</th>
+                                <th className="p-2.5">Vai trò</th>
+                                <th className="p-2.5">Thợ</th>
+                                <th className="p-2.5">Lương</th>
+                                <th className="p-2.5 text-center">SĐT cho thợ</th>
+                                <th className="p-2.5">Ghi chú</th>
                               </tr>
-                            )}
-                          </tbody>
-                        </table>
+                            </thead>
+                            <tbody className="divide-y text-slate-700 bg-white">
+                              {(day.job_assignments || []).map((a: any) => {
+                                const isGroom = String(a.work_location_name || "").toLowerCase().includes("trai");
+                                const address = isGroom ? (groomAddr || a.work_location_address) : (brideAddr || a.work_location_address);
+                                const phone = isGroom ? (viewingJob.customers?.phone || viewingJob.customer_phone) : (viewingJob.customers?.secondary_phone || viewingJob.secondary_phone);
+
+                                return (
+                                  <tr key={a.id} className="hover:bg-slate-50/70">
+                                    <td className="p-2.5 font-bold text-slate-800">{a.work_location_name || (isGroom ? "Nhà trai" : "Nhà gái")}</td>
+                                    <td className="p-2.5">
+                                      <div className="font-medium text-slate-800">{address || "Chưa nhập địa chỉ"}</div>
+                                      {phone && <div className="text-[11px] text-slate-500 font-mono mt-0.5">{phone}</div>}
+                                    </td>
+                                    <td className="p-2.5 text-slate-600">{a.role}</td>
+                                    <td className="p-2.5 font-bold text-slate-900">{a.employees?.full_name || "Chưa xếp thợ"}</td>
+                                    <td className="p-2.5 font-bold text-slate-800">{money(a.salary_amount)}</td>
+                                    <td className="p-2.5 text-center">
+                                      {a.contact_visible ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleContactVisible(a.id, true)}
+                                          className="rounded bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
+                                          title="Bấm để ẩn SĐT"
+                                        >
+                                          Đang mở
+                                        </button>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleContactVisible(a.id, false)}
+                                          className="rounded bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-700 border hover:bg-slate-200"
+                                          title="Bấm để mở SĐT cho thợ xem ngay"
+                                        >
+                                          Mở sớm
+                                        </button>
+                                      )}
+                                    </td>
+                                    <td className="p-2.5 text-slate-500">{a.note || "-"}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
-              {/* Footer popup có nút Sửa Job tự động mở sang form sửa */}
+              {/* FOOTER: BẤM SỬA JOB LÀ MỞ THẲNG VÀO FORM SỬA JOB NÀY */}
               <div className="sticky bottom-0 z-20 flex justify-end gap-2.5 border-t bg-white px-6 py-4 rounded-b-2xl">
-                <button
-                  type="button"
-                  onClick={() => handleCopyJobDetail(viewingJob)}
-                  className="rounded-xl bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 shadow-sm text-xs"
-                >
-                  📋 Sao chép Job
-                </button>
                 <button
                   type="button"
                   onClick={() => setViewingJob(null)}
@@ -770,12 +744,13 @@ export default function AdminSchedulePage() {
                 >
                   Đóng
                 </button>
-                <Link
-                  href={`/job?open=${viewingJob.id}&edit=1`}
-                  className="rounded-xl bg-amber-500 px-5 py-2 font-bold text-white hover:bg-amber-600 shadow-sm text-xs flex items-center gap-1"
+                <button
+                  type="button"
+                  onClick={() => handleGoToEditJob(viewingJob.id)}
+                  className="rounded-xl bg-amber-500 px-5 py-2 font-bold text-white hover:bg-amber-600 shadow-sm text-xs flex items-center gap-1.5"
                 >
                   ✏️ Sửa job này
-                </Link>
+                </button>
               </div>
             </div>
           </div>
