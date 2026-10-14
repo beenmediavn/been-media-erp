@@ -21,7 +21,7 @@ const emptyCustomer = {
   facebook: "",
 };
 
-// SỐ LƯỢNG THỢ YÊU CẦU MẶC ĐỊNH ĐỂ TRỐNG
+// MẶC ĐỊNH SỐ LƯỢNG THỢ VÀ HẬU KỲ ĐỂ TRỐNG (KHÔNG BẮT BUỘC)
 const emptyJob = {
   event_name: "",
   booking_date: new Date().toISOString().slice(0, 10),
@@ -33,6 +33,10 @@ const emptyJob = {
   note: "",
   required_photo_count: "",
   required_video_count: "",
+  video_editor_id: "",
+  video_editor_salary: 0,
+  photo_editor_id: "",
+  photo_editor_salary: 0,
 };
 
 const makeAssignment = (role = "Thợ chụp") => ({
@@ -178,14 +182,6 @@ export default function AdminJobPage() {
     loadData();
   }, []);
 
-  const openCreate = () => {
-    setEditingJob(null);
-    setCustomerForm({ ...emptyCustomer });
-    setJobForm({ ...emptyJob, required_photo_count: "", required_video_count: "" });
-    setDays([makeDay()]);
-    setOpenForm(true);
-  };
-
   const buildDaysFromJob = (job: any) => {
     const jobDays = job.job_days || [];
     if (jobDays.length === 0) return [makeDay()];
@@ -236,8 +232,7 @@ export default function AdminJobPage() {
     });
   };
 
-  const openEdit = async (job: any) => {
-    if (!(await requestPin("sửa Job"))) return;
+  const openEdit = (job: any) => {
     setEditingJob(job);
 
     setCustomerForm({
@@ -261,9 +256,40 @@ export default function AdminJobPage() {
       note: job.note || "",
       required_photo_count: job.required_photo_count !== null && job.required_photo_count !== undefined ? String(job.required_photo_count) : "",
       required_video_count: job.required_video_count !== null && job.required_video_count !== undefined ? String(job.required_video_count) : "",
+      video_editor_id: job.video_editor_id || "",
+      video_editor_salary: Number(job.video_editor_salary || 0),
+      photo_editor_id: job.photo_editor_id || "",
+      photo_editor_salary: Number(job.photo_editor_salary || 0),
     });
 
     setDays(buildDaysFromJob(job));
+    setOpenForm(true);
+  };
+
+  // TỰ ĐỘNG BẬT FORM SỬA JOB KHI ĐƯỢC CHUYỂN TỪ TRANG LỊCH SANG
+  useEffect(() => {
+    if (!jobs.length || typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const openId = params.get("open");
+    const isEdit = params.get("edit") === "1";
+
+    if (openId) {
+      const targetJob = jobs.find((j: any) => String(j.id) === String(openId));
+      if (targetJob) {
+        if (isEdit) {
+          openEdit(targetJob);
+        } else {
+          setSelectedJob(targetJob);
+        }
+      }
+    }
+  }, [jobs]);
+
+  const openCreate = () => {
+    setEditingJob(null);
+    setCustomerForm({ ...emptyCustomer });
+    setJobForm({ ...emptyJob, required_photo_count: "", required_video_count: "" });
+    setDays([makeDay()]);
     setOpenForm(true);
   };
 
@@ -495,6 +521,10 @@ export default function AdminJobPage() {
         location: jobForm.location,
         required_photo_count: jobForm.required_photo_count === "" ? null : Number(jobForm.required_photo_count),
         required_video_count: jobForm.required_video_count === "" ? null : Number(jobForm.required_video_count),
+        video_editor_id: jobForm.video_editor_id || null,
+        video_editor_salary: Number(jobForm.video_editor_salary || 0),
+        photo_editor_id: jobForm.photo_editor_id || null,
+        photo_editor_salary: Number(jobForm.photo_editor_salary || 0),
         note: jobForm.note,
       };
 
@@ -831,7 +861,7 @@ export default function AdminJobPage() {
   );
 }
 
-// FORM TẠO / SỬA JOB: MÀU CHỮ GỢI Ý MỜ MẢNH, CHỮ GHI CHÚ RÕ RÀNG
+// FORM TẠO / SỬA JOB ĐẦY ĐỦ CÓ THÊM PHẦN HẬU KỲ ƯU TIÊN THỢ ĐI LÀM
 function JobForm(props: any) {
   const {
     customers,
@@ -871,10 +901,18 @@ function JobForm(props: any) {
   const missingPhoto = Math.max(reqPhoto - currentPhoto, 0);
   const missingVideo = Math.max(reqVideo - currentVideo, 0);
 
+  // DANH SÁCH THỢ ĐÃ ĐƯỢC PHÂN CÔNG ĐI LÀM TRONG JOB NÀY (ĐỂ ƯU TIÊN CHO EDIT)
+  const assignedWorkersInThisJob = Array.from(
+    new Map(
+      allAssignments
+        .filter((a: any) => a.employee_id)
+        .map((a: any) => [a.employee_id, employees.find((e: any) => e.id === a.employee_id)])
+    ).values()
+  ).filter(Boolean);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-4 backdrop-blur-sm overflow-y-auto">
       <div className="relative w-full max-w-7xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[94vh]">
-        {/* Header dính */}
         <div className="sticky top-0 z-20 flex items-center justify-between border-b bg-white px-6 py-4 rounded-t-2xl">
           <div>
             <h2 className="text-lg sm:text-xl font-bold text-slate-800">
@@ -891,10 +929,8 @@ function JobForm(props: any) {
           </button>
         </div>
 
-        {/* Nội dung Form */}
         <div className="p-6 overflow-y-auto space-y-6 text-xs text-slate-700 flex-1">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Cột 1: Khách hàng */}
             <div className="border rounded-2xl p-4 space-y-3 bg-white">
               <h3 className="font-bold text-sm text-blue-700 uppercase">1. Thông tin Khách hàng</h3>
               <label className="block font-medium">
@@ -978,7 +1014,6 @@ function JobForm(props: any) {
               </div>
             </div>
 
-            {/* Cột 2: Booking & Hợp đồng */}
             <div className="border rounded-2xl p-4 space-y-3 bg-white">
               <h3 className="font-bold text-sm text-blue-700 uppercase">2. Chi tiết Booking & Hợp đồng</h3>
               <input
@@ -1022,7 +1057,6 @@ function JobForm(props: any) {
                 onChange={(e) => setJobForm({ ...jobForm, service: e.target.value })}
               />
 
-              {/* Ô NHẬP SỐ LƯỢNG THỢ YÊU CẦU: CHỮ GỢI Ý MỜ MẢNH */}
               <div className="grid grid-cols-2 gap-3 bg-blue-50/40 p-2.5 rounded-xl border border-blue-100">
                 <label className="font-semibold text-blue-900 text-xs">
                   📸 Số lượng thợ chụp yêu cầu:
@@ -1084,7 +1118,6 @@ function JobForm(props: any) {
             </div>
           </div>
 
-          {/* CẢNH BÁO THIẾU THỢ */}
           {hasInputReq && (missingPhoto > 0 || missingVideo > 0) && (
             <div className="rounded-xl border border-red-300 bg-red-50 p-3 text-xs text-red-700 font-semibold flex items-center justify-between">
               <span>
@@ -1119,7 +1152,6 @@ function JobForm(props: any) {
 
               return (
                 <div key={dayIndex} className="border rounded-2xl p-4 bg-slate-50 space-y-4 shadow-xs">
-                  {/* Header ngày */}
                   <div className="flex items-center justify-between border-b pb-2">
                     <span className="font-bold text-slate-800 text-sm">Ngày chụp {dayIndex + 1}</span>
                     <div className="flex gap-2">
@@ -1179,7 +1211,6 @@ function JobForm(props: any) {
                     </label>
                   </div>
 
-                  {/* KHỐI ƯU TIÊN: GỢI Ý THỢ DỰ PHÒNG TRÙNG NGÀY NÀY */}
                   {day.shooting_date && reservesForThisDay.length > 0 && (
                     <div className="rounded-xl border border-amber-300 bg-amber-50/80 p-3 flex flex-wrap items-center justify-between gap-2">
                       <div className="text-xs">
@@ -1201,7 +1232,6 @@ function JobForm(props: any) {
                     </div>
                   )}
 
-                  {/* Các địa điểm trong ngày này */}
                   <div className="space-y-4 pt-1">
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-slate-700 text-xs uppercase">Các địa điểm trong ngày này</span>
@@ -1256,7 +1286,6 @@ function JobForm(props: any) {
                           </div>
                         </div>
 
-                        {/* NÚT THÊM NHANH 4 VAI TRÒ */}
                         <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-100">
                           <button
                             type="button"
@@ -1288,7 +1317,6 @@ function JobForm(props: any) {
                           </button>
                         </div>
 
-                        {/* KHUNG PHÂN CÔNG TỪNG THỢ */}
                         <div className="space-y-3 pt-2">
                           {loc.assignments.map((assignment: any, assIndex: number) => (
                             <div key={assIndex} className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2">
@@ -1372,7 +1400,6 @@ function JobForm(props: any) {
                                 </div>
                               </div>
 
-                              {/* 2 CHECKBOX: CHỈ ĐỊNH ĐÍCH DANH & MỞ SĐT CHO THỢ */}
                               <div className="pt-2 border-t border-slate-200/60 space-y-1.5">
                                 <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-amber-700">
                                   <input
@@ -1409,9 +1436,94 @@ function JobForm(props: any) {
               );
             })}
           </div>
+
+          {/* MỤC 4: HẬU KỲ (EDIT VIDEO & CHỈNH ẢNH) - TÙY CHỌN, ƯU TIÊN THỢ ĐÃ ĐI LÀM TRONG JOB */}
+          <div className="border rounded-2xl p-4 bg-purple-50/40 border-purple-200 space-y-3">
+            <div className="border-b border-purple-200 pb-2">
+              <h3 className="font-bold text-sm text-purple-900 uppercase">4. Phân công hậu kỳ (Tùy chọn)</h3>
+              <p className="text-[11px] text-purple-600">Ưu tiên thợ đã đi chụp/quay trong Job nhận làm hoặc chỉ định thợ ngoài (để trống nếu không cần)</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* EDIT VIDEO */}
+              <div className="bg-white p-3.5 rounded-xl border border-purple-100 shadow-xs space-y-2">
+                <span className="font-bold text-slate-800 text-xs block">🎬 Thợ Edit Video:</span>
+                <select
+                  className="w-full border p-2 rounded-lg text-xs bg-white font-medium text-slate-800"
+                  value={jobForm.video_editor_id || ""}
+                  onChange={(e) => setJobForm({ ...jobForm, video_editor_id: e.target.value })}
+                >
+                  <option value="">-- Để trống nếu không phân công --</option>
+                  {assignedWorkersInThisJob.length > 0 && (
+                    <optgroup label="⭐ Thợ đi làm trong Job này (Ưu tiên)">
+                      {assignedWorkersInThisJob.map((emp: any) => (
+                        <option key={emp.id} value={emp.id}>
+                          ⭐ {emp.full_name} (Thợ trong Job)
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  <optgroup label="Tất cả nhân sự">
+                    {employees.map((emp: any) => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.full_name} ({emp.role || "Nhân sự"})
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-500 text-xs whitespace-nowrap">Tiền công Edit:</span>
+                  <MoneyInput
+                    className="border p-1.5 rounded-lg w-full bg-white font-bold text-purple-700"
+                    value={jobForm.video_editor_salary}
+                    onChange={(v: number) => setJobForm({ ...jobForm, video_editor_salary: v })}
+                    placeholder="Tiền công video"
+                  />
+                </div>
+              </div>
+
+              {/* CHỈNH ẢNH PTS */}
+              <div className="bg-white p-3.5 rounded-xl border border-purple-100 shadow-xs space-y-2">
+                <span className="font-bold text-slate-800 text-xs block">🎨 Thợ chỉnh sửa ảnh (Photoshop):</span>
+                <select
+                  className="w-full border p-2 rounded-lg text-xs bg-white font-medium text-slate-800"
+                  value={jobForm.photo_editor_id || ""}
+                  onChange={(e) => setJobForm({ ...jobForm, photo_editor_id: e.target.value })}
+                >
+                  <option value="">-- Để trống nếu không phân công --</option>
+                  {assignedWorkersInThisJob.length > 0 && (
+                    <optgroup label="⭐ Thợ đi làm trong Job này (Ưu tiên)">
+                      {assignedWorkersInThisJob.map((emp: any) => (
+                        <option key={emp.id} value={emp.id}>
+                          ⭐ {emp.full_name} (Thợ trong Job)
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  <optgroup label="Tất cả nhân sự">
+                    {employees.map((emp: any) => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.full_name} ({emp.role || "Nhân sự"})
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-500 text-xs whitespace-nowrap">Tiền công PTS:</span>
+                  <MoneyInput
+                    className="border p-1.5 rounded-lg w-full bg-white font-bold text-blue-700"
+                    value={jobForm.photo_editor_salary}
+                    onChange={(v: number) => setJobForm({ ...jobForm, photo_editor_salary: v })}
+                    placeholder="Tiền công PTS"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* Footer cố định */}
         <div className="sticky bottom-0 z-20 flex justify-end gap-2 border-t bg-white px-6 py-4 rounded-b-2xl">
           <button
             type="button"
@@ -1434,7 +1546,6 @@ function JobForm(props: any) {
   );
 }
 
-// MODAL CHI TIẾT JOB: BẢNG 7 CỘT + SAO CHÉP TỪNG NGÀY + NÚT MỞ SỚM
 function JobDetail({ job, onClose, onEdit, onDelete }: any) {
   const days = job.job_days || [];
   const statusInfo = getJobDetailedStatus(job);
