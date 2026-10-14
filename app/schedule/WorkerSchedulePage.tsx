@@ -7,7 +7,7 @@ import { getOfflineCache, setOfflineCache } from "@/lib/offline-db";
 import type { AppUser } from "@/lib/auth";
 import { formatVNDate, workerStatus } from "@/lib/workerAccess";
 import { lunarShortFromISO } from "@/lib/lunar";
-import { CalendarCheck, Clock3, MapPin, Users, Wallet, X, Copy, ChevronRight } from "lucide-react";
+import { CalendarCheck, Clock3, MapPin, Users, Wallet, X, Copy, ChevronRight, PhoneCall } from "lucide-react";
 import { formatDateVN } from "@/lib/date-vn";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -21,7 +21,7 @@ export default function WorkerSchedulePage({ user }: { user: AppUser }) {
   const [selected, setSelected] = useState(`${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`);
   const [loading, setLoading] = useState(true);
 
-  // STATE XEM CHI TIẾT JOB DÀNH CHO THỢ (GIỐNG GIAO DIỆN CHUẨN)
+  // STATE XEM CHI TIẾT JOB DÀNH CHO THỢ
   const [viewingAssignment, setViewingAssignment] = useState<any>(null);
 
   async function load() {
@@ -75,7 +75,6 @@ export default function WorkerSchedulePage({ user }: { user: AppUser }) {
       const d = r.job_days?.shooting_date;
       if (d) (x[d] ??= []).push(r);
     }
-    // SẮP XẾP CÁC JOB TRONG NGÀY THEO THỜI GIAN (GIỜ BẮT ĐẦU SỚM LÊN TRƯỚC)
     for (const dateKey of Object.keys(x)) {
       x[dateKey].sort((a: any, b: any) => {
         const timeA = String(a.job_days?.start_time || "00:00");
@@ -241,7 +240,7 @@ export default function WorkerSchedulePage({ user }: { user: AppUser }) {
             </div>
           )}
 
-          {/* Danh sách Job đã phân công - Bấm vào mở đúng giao diện chi tiết chuẩn của thợ */}
+          {/* Danh sách Job đã phân công */}
           {loading ? (
             <p className="text-xs text-slate-400">Đang tải lịch...</p>
           ) : (
@@ -288,7 +287,7 @@ export default function WorkerSchedulePage({ user }: { user: AppUser }) {
         </div>
       </div>
 
-      {/* MODAL GIAO DIỆN CHI TIẾT CHUẨN DÀNH CHO THỢ KHI BẤM VÀO JOB */}
+      {/* MODAL CHI TIẾT DÀNH CHO THỢ: HIỂN THỊ ĐẦY ĐỦ NHÀ TRAI, NHÀ GÁI VÀ NHẤN MẠNH ĐỊA ĐIỂM LÀM VIỆC */}
       {viewingAssignment && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 p-3 sm:p-4 backdrop-blur-sm overflow-y-auto">
           <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl flex flex-col max-h-[92vh]">
@@ -317,39 +316,81 @@ export default function WorkerSchedulePage({ user }: { user: AppUser }) {
                 <p>• Tiền công dự kiến: <b className="text-emerald-600">{money(viewingAssignment.salary_amount)}</b></p>
               </div>
 
-              {/* BẢNG ĐỊA ĐIỂM TRONG JOB */}
+              {/* KHU VỰC HIỂN THỊ TẤT CẢ ĐỊA ĐIỂM TRONG JOB (NHÀ TRAI & NHÀ GÁI) VÀ NHẤN MẠNH CHỖ THỢ LÀM */}
               <div className="rounded-2xl border border-blue-200 bg-blue-50/40 p-4 space-y-3">
                 <p className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
                   <MapPin size={16} className="text-blue-600" /> Địa điểm trong Job
                 </p>
-                
-                <div className="rounded-xl bg-white p-3 border shadow-2xs space-y-1">
-                  <p className="font-semibold text-slate-800">Phân công của bạn:</p>
-                  <p className="text-xs text-slate-600">
-                    {viewingAssignment.role} • {viewingAssignment.work_location_name || "Địa điểm"} — {viewingAssignment.work_location_address || viewingAssignment.job_days?.location || "Chưa có địa chỉ"}
-                  </p>
-                </div>
 
-                {/* Hiển thị danh sách các địa điểm ngày chụp */}
-                {((viewingAssignment.jobs?.job_days || []).find((d: any) => d.id === viewingAssignment.job_day_id)?.job_locations || []).map((loc: any, idx: number) => {
-                  const isMyLocation = String(loc.location_name || "").toLowerCase().includes(String(viewingAssignment.work_location_name || "").toLowerCase());
-                  return (
-                    <div key={loc.id || idx} className={`rounded-xl p-3 border bg-white space-y-1 relative ${isMyLocation ? "ring-2 ring-blue-500 border-blue-300" : ""}`}>
-                      {isMyLocation && (
-                        <span className="absolute top-2.5 right-2.5 rounded-full bg-blue-600 text-white text-[10px] font-bold px-2 py-0.5">
-                          ✓ BẠN LÀM TẠI ĐÂY
-                        </span>
-                      )}
-                      <p className="font-bold text-slate-800 flex items-center gap-1">
-                        📍 {loc.location_name || "Địa điểm"}
-                      </p>
-                      <p className="text-xs text-slate-600">{loc.address || "Chưa có địa chỉ"}</p>
-                      <p className="text-xs text-slate-500 italic pt-1">
-                        📞 SĐT: {viewingAssignment.contact_visible ? (loc.phone || viewingAssignment.jobs?.customers?.phone || "Chưa có") : "SĐT được mở trước 48 giờ hoặc khi Admin mở sớm"}
-                      </p>
-                    </div>
-                  );
-                })}
+                {(() => {
+                  const currentDay = (viewingAssignment.jobs?.job_days || []).find(
+                    (d: any) => d.id === viewingAssignment.job_day_id || d.shooting_date === viewingAssignment.job_days?.shooting_date
+                  ) || viewingAssignment.job_days;
+
+                  const locations = currentDay?.job_locations || [];
+                  const cust = viewingAssignment.jobs?.customers || {};
+
+                  // Lấy thông tin số điện thoại đã mở (hoặc hiển thị thông báo nếu chưa mở)
+                  const isContactOpen = Boolean(viewingAssignment.contact_visible);
+                  const mainPhone = cust.phone || viewingAssignment.jobs?.customer_phone || "";
+                  const subPhone = cust.secondary_phone || viewingAssignment.jobs?.secondary_phone || "";
+
+                  if (locations.length === 0) {
+                    return (
+                      <div className="rounded-xl bg-white p-3 border shadow-2xs space-y-1">
+                        <p className="font-semibold text-slate-800">Phân công của bạn:</p>
+                        <p className="text-xs text-slate-600">
+                          {viewingAssignment.role} • {viewingAssignment.work_location_name || "Địa điểm"} — {viewingAssignment.work_location_address || currentDay?.location || "Chưa có địa chỉ"}
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  return locations.map((loc: any, idx: number) => {
+                    const locNameLower = String(loc.location_name || "").toLowerCase();
+                    const workNameLower = String(viewingAssignment.work_location_name || "").toLowerCase();
+                    const isMyLocation = locNameLower.includes(workNameLower) || workNameLower.includes(locNameLower) || (locations.length === 1);
+
+                    const isGroom = locNameLower.includes("trai");
+                    const phoneToDisplay = isGroom ? mainPhone : subPhone;
+
+                    return (
+                      <div
+                        key={loc.id || idx}
+                        className={`rounded-xl p-3.5 border bg-white space-y-2 relative transition-all ${
+                          isMyLocation ? "ring-2 ring-blue-500 border-blue-300 bg-blue-50/10 shadow-sm" : "border-slate-200"
+                        }`}
+                      >
+                        {isMyLocation && (
+                          <span className="absolute top-2.5 right-2.5 rounded-full bg-blue-600 text-white text-[10px] font-extrabold px-2.5 py-1 shadow-xs">
+                            ✓ BẠN LÀM TẠI ĐÂY
+                          </span>
+                        )}
+                        <p className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+                          📍 {loc.location_name || (isGroom ? "Nhà trai" : "Nhà gái")}
+                        </p>
+                        <p className="text-xs text-slate-700 font-medium">{loc.address || "Chưa có địa chỉ"}</p>
+                        
+                        <div className="pt-1 text-xs border-t border-slate-100 flex items-center justify-between">
+                          <span className="text-slate-500">SĐT liên hệ:</span>
+                          {isContactOpen ? (
+                            phoneToDisplay ? (
+                              <a href={`tel:${phoneToDisplay}`} className="font-bold text-emerald-600 flex items-center gap-1 underline">
+                                <PhoneCall size={13} /> {phoneToDisplay}
+                              </a>
+                            ) : (
+                              <span className="text-slate-400 italic">Chưa có số điện thoại</span>
+                            )
+                          ) : (
+                            <span className="text-amber-600 font-medium italic bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                              🔒 SĐT được mở trước 48 giờ hoặc khi Admin mở sớm
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
               </div>
             </div>
 
