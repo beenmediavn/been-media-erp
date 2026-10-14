@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import MoneyInput from "../components/MoneyInput";
 import { formatDateVN } from "@/lib/date-vn";
 import Time24Input from "@/app/components/Time24Input";
+import EmployeePicker from "@/app/components/EmployeePicker";
 import { requireEditPin } from "@/lib/admin-pin";
 
 const money = (value: number | string | null | undefined) =>
@@ -881,7 +882,6 @@ function JobForm(props: any) {
     updateAssignment,
     addAssignment,
     removeAssignment,
-    addReservedWorkerToDay,
     editingJob,
     saving,
     onClose,
@@ -1367,13 +1367,12 @@ function JobForm(props: any) {
 
                                 <div className="md:col-span-4">
                                   <label className="text-[11px] text-slate-500 font-medium block mb-1">Nhân sự được phân công</label>
-                                  <EmployeeCustomSelect
-                                    value={assignment.employee_id}
+                                  <EmployeePicker
                                     employees={employees}
-                                    reserveList={reservesForThisDay}
-                                    onChange={(empId) => {
-                                      const matchedReserve = reservesForThisDay.find((r: any) => r.employee_id === empId);
-                                      updateAssignment(dayIndex, locIndex, assIndex, "employee_id", empId);
+                                    value={assignment.employee_id}
+                                    onChange={(id: string) => {
+                                      const matchedReserve = reservesForThisDay.find((r: any) => r.employee_id === id);
+                                      updateAssignment(dayIndex, locIndex, assIndex, "employee_id", id);
                                       if (matchedReserve) {
                                         updateAssignment(dayIndex, locIndex, assIndex, "reserve_worker_id", matchedReserve.id);
                                       }
