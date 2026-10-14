@@ -21,6 +21,7 @@ const emptyCustomer = {
   facebook: "",
 };
 
+// SỐ LƯỢNG THỢ YÊU CẦU MẶC ĐỊNH ĐỂ TRỐNG
 const emptyJob = {
   event_name: "",
   booking_date: new Date().toISOString().slice(0, 10),
@@ -30,8 +31,8 @@ const emptyJob = {
   status: "Đã đặt cọc",
   location: "",
   note: "",
-  required_photo_count: 2,
-  required_video_count: 1,
+  required_photo_count: "",
+  required_video_count: "",
 };
 
 const makeAssignment = (role = "Thợ chụp") => ({
@@ -180,7 +181,7 @@ export default function AdminJobPage() {
   const openCreate = () => {
     setEditingJob(null);
     setCustomerForm({ ...emptyCustomer });
-    setJobForm({ ...emptyJob });
+    setJobForm({ ...emptyJob, required_photo_count: "", required_video_count: "" });
     setDays([makeDay()]);
     setOpenForm(true);
   };
@@ -258,8 +259,8 @@ export default function AdminJobPage() {
       status: job.status || "Đã đặt cọc",
       location: job.location || "",
       note: job.note || "",
-      required_photo_count: Number(job.required_photo_count || 0),
-      required_video_count: Number(job.required_video_count || 0),
+      required_photo_count: job.required_photo_count !== null && job.required_photo_count !== undefined ? String(job.required_photo_count) : "",
+      required_video_count: job.required_video_count !== null && job.required_video_count !== undefined ? String(job.required_video_count) : "",
     });
 
     setDays(buildDaysFromJob(job));
@@ -492,8 +493,8 @@ export default function AdminJobPage() {
         debt,
         status: jobForm.status,
         location: jobForm.location,
-        required_photo_count: Number(jobForm.required_photo_count || 0),
-        required_video_count: Number(jobForm.required_video_count || 0),
+        required_photo_count: jobForm.required_photo_count === "" ? null : Number(jobForm.required_photo_count),
+        required_video_count: jobForm.required_video_count === "" ? null : Number(jobForm.required_video_count),
         note: jobForm.note,
       };
 
@@ -594,7 +595,7 @@ export default function AdminJobPage() {
       setOpenForm(false);
       setEditingJob(null);
       await loadData();
-      alert("Đã lưu Job và tự động cập nhật danh sách thợ dự phòng thành công!");
+      alert("Đã lưu Job thành công!");
     } catch (error: any) {
       alert(error.message || "Lỗi lưu Job");
     } finally {
@@ -664,7 +665,7 @@ export default function AdminJobPage() {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-xl border p-2.5 text-xs sm:text-sm"
+            className="w-full rounded-xl border p-2.5 text-xs sm:text-sm placeholder:text-slate-300 placeholder:font-normal placeholder:italic"
             placeholder="Tìm tên khách, sự kiện, thợ..."
           />
           <select
@@ -830,7 +831,7 @@ export default function AdminJobPage() {
   );
 }
 
-// FORM TẠO / SỬA JOB - ĐẦY ĐỦ CẢNH BÁO, ƯU TIÊN DỰ PHÒNG & NÚT CHỈ ĐỊNH ĐÍCH DANH, MỞ SĐT
+// FORM TẠO / SỬA JOB: MÀU CHỮ GỢI Ý MỜ MẢNH, CHỮ GHI CHÚ RÕ RÀNG
 function JobForm(props: any) {
   const {
     customers,
@@ -863,22 +864,23 @@ function JobForm(props: any) {
   const currentPhoto = allAssignments.filter((a: any) => a.employee_id && a.role?.toLowerCase().includes("chụp")).length;
   const currentVideo = allAssignments.filter((a: any) => a.employee_id && a.role?.toLowerCase().includes("quay")).length;
 
-  const reqPhoto = Number(jobForm.required_photo_count || 0);
-  const reqVideo = Number(jobForm.required_video_count || 0);
+  const reqPhoto = jobForm.required_photo_count !== "" && jobForm.required_photo_count !== null ? Number(jobForm.required_photo_count) : 0;
+  const reqVideo = jobForm.required_video_count !== "" && jobForm.required_video_count !== null ? Number(jobForm.required_video_count) : 0;
 
+  const hasInputReq = (jobForm.required_photo_count !== "" && reqPhoto > 0) || (jobForm.required_video_count !== "" && reqVideo > 0);
   const missingPhoto = Math.max(reqPhoto - currentPhoto, 0);
   const missingVideo = Math.max(reqVideo - currentVideo, 0);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-4 backdrop-blur-sm overflow-y-auto">
       <div className="relative w-full max-w-7xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[94vh]">
-        {/* Header dính trên đầu */}
+        {/* Header dính */}
         <div className="sticky top-0 z-20 flex items-center justify-between border-b bg-white px-6 py-4 rounded-t-2xl">
           <div>
             <h2 className="text-lg sm:text-xl font-bold text-slate-800">
               {editingJob ? "Sửa Job & Phân công" : "Tạo mới Job & Phân công"}
             </h2>
-            <p className="text-xs text-slate-400">Thiết lập chi tiết dâu rể, phân chia thợ từng địa điểm</p>
+            <p className="text-xs text-slate-400 font-normal">Thiết lập chi tiết dâu rể, phân chia thợ từng địa điểm</p>
           </div>
           <button
             onClick={onClose}
@@ -889,16 +891,16 @@ function JobForm(props: any) {
           </button>
         </div>
 
-        {/* Nội dung Form cuộn */}
+        {/* Nội dung Form */}
         <div className="p-6 overflow-y-auto space-y-6 text-xs text-slate-700 flex-1">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Cột 1: Khách hàng */}
             <div className="border rounded-2xl p-4 space-y-3 bg-white">
               <h3 className="font-bold text-sm text-blue-700 uppercase">1. Thông tin Khách hàng</h3>
               <label className="block font-medium">
-                Chọn khách hàng CRM
+                <span className="text-slate-600">Chọn khách hàng CRM</span>
                 <select
-                  className="mt-1 border p-2.5 rounded-xl w-full"
+                  className="mt-1 border p-2.5 rounded-xl w-full font-medium text-slate-800"
                   value={customerForm.customer_id}
                   onChange={(e) => {
                     const customer = customers.find((c: any) => c.id === e.target.value);
@@ -923,9 +925,9 @@ function JobForm(props: any) {
               </label>
 
               <label className="block font-medium">
-                Tên khách đại diện / người book *
+                <span className="text-slate-600">Tên khách đại diện / người book *</span>
                 <input
-                  className="mt-1 border p-2.5 rounded-xl w-full"
+                  className="mt-1 border p-2.5 rounded-xl w-full font-semibold text-slate-900 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
                   placeholder="Ví dụ: Nguyễn Văn A"
                   value={customerForm.full_name}
                   onChange={(e) => setCustomerForm({ ...customerForm, full_name: e.target.value })}
@@ -934,9 +936,9 @@ function JobForm(props: any) {
 
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_1fr] sm:items-end">
                 <label className="font-medium">
-                  SĐT chú rể / nhà trai *
+                  <span className="text-slate-600">SĐT chú rể / nhà trai *</span>
                   <input
-                    className="mt-1 border p-2.5 rounded-xl w-full"
+                    className="mt-1 border p-2.5 rounded-xl w-full font-mono text-slate-900 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
                     placeholder="0912..."
                     value={customerForm.phone}
                     onChange={(e) => setCustomerForm({ ...customerForm, phone: e.target.value })}
@@ -950,9 +952,9 @@ function JobForm(props: any) {
                   ⇄ Đổi SĐT
                 </button>
                 <label className="font-medium">
-                  SĐT cô dâu / nhà gái
+                  <span className="text-slate-600">SĐT cô dâu / nhà gái</span>
                   <input
-                    className="mt-1 border p-2.5 rounded-xl w-full"
+                    className="mt-1 border p-2.5 rounded-xl w-full font-mono text-slate-900 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
                     placeholder="SĐT phụ..."
                     value={customerForm.secondary_phone}
                     onChange={(e) => setCustomerForm({ ...customerForm, secondary_phone: e.target.value })}
@@ -962,13 +964,13 @@ function JobForm(props: any) {
 
               <div className="grid grid-cols-2 gap-3">
                 <input
-                  className="border p-2.5 rounded-xl"
+                  className="border p-2.5 rounded-xl text-slate-800 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
                   placeholder="Email..."
                   value={customerForm.email}
                   onChange={(e) => setCustomerForm({ ...customerForm, email: e.target.value })}
                 />
                 <input
-                  className="border p-2.5 rounded-xl"
+                  className="border p-2.5 rounded-xl text-slate-800 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
                   placeholder="Facebook / Zalo..."
                   value={customerForm.facebook}
                   onChange={(e) => setCustomerForm({ ...customerForm, facebook: e.target.value })}
@@ -976,11 +978,11 @@ function JobForm(props: any) {
               </div>
             </div>
 
-            {/* Cột 2: Booking & Hợp đồng (CÓ Ô NHẬP SỐ LƯỢNG THỢ ĐỂ CẢNH BÁO) */}
+            {/* Cột 2: Booking & Hợp đồng */}
             <div className="border rounded-2xl p-4 space-y-3 bg-white">
               <h3 className="font-bold text-sm text-blue-700 uppercase">2. Chi tiết Booking & Hợp đồng</h3>
               <input
-                className="border p-2.5 rounded-xl w-full"
+                className="border p-2.5 rounded-xl w-full font-semibold text-slate-900 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
                 placeholder="Tên sự kiện / tên dâu rể (VD: TUẤN BEEN & THU THỦY)"
                 value={jobForm.event_name}
                 onChange={(e) => setJobForm({ ...jobForm, event_name: e.target.value })}
@@ -991,7 +993,7 @@ function JobForm(props: any) {
                   Ngày đặt lịch
                   <input
                     type="date"
-                    className="border p-2 rounded-xl w-full mt-1"
+                    className="border p-2 rounded-xl w-full mt-1 font-semibold text-slate-800"
                     value={jobForm.booking_date}
                     onChange={(e) => setJobForm({ ...jobForm, booking_date: e.target.value })}
                   />
@@ -999,7 +1001,7 @@ function JobForm(props: any) {
                 <label className="text-slate-600 font-medium">
                   Trạng thái
                   <select
-                    className="border p-2 rounded-xl w-full mt-1 font-semibold"
+                    className="border p-2 rounded-xl w-full mt-1 font-semibold text-slate-800"
                     value={jobForm.status}
                     onChange={(e) => setJobForm({ ...jobForm, status: e.target.value })}
                   >
@@ -1014,22 +1016,23 @@ function JobForm(props: any) {
               </div>
 
               <input
-                className="border p-2.5 rounded-xl w-full"
+                className="border p-2.5 rounded-xl w-full font-medium text-slate-800 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
                 placeholder="Gói dịch vụ (VD: Combo VIP - 2 chụp 1 quay)"
                 value={jobForm.service}
                 onChange={(e) => setJobForm({ ...jobForm, service: e.target.value })}
               />
 
-              {/* Ô NHẬP SỐ LƯỢNG THỢ CHỤP / QUAY YÊU CẦU */}
-              <div className="grid grid-cols-2 gap-3 bg-blue-50/50 p-2.5 rounded-xl border border-blue-100">
+              {/* Ô NHẬP SỐ LƯỢNG THỢ YÊU CẦU: CHỮ GỢI Ý MỜ MẢNH */}
+              <div className="grid grid-cols-2 gap-3 bg-blue-50/40 p-2.5 rounded-xl border border-blue-100">
                 <label className="font-semibold text-blue-900 text-xs">
                   📸 Số lượng thợ chụp yêu cầu:
                   <input
                     type="number"
                     min={0}
-                    className="border p-2 rounded-lg w-full mt-1 bg-white font-bold text-center"
-                    value={jobForm.required_photo_count ?? 0}
-                    onChange={(e) => setJobForm({ ...jobForm, required_photo_count: Number(e.target.value) })}
+                    className="border p-2 rounded-lg w-full mt-1 bg-white font-bold text-center text-slate-900 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
+                    value={jobForm.required_photo_count}
+                    onChange={(e) => setJobForm({ ...jobForm, required_photo_count: e.target.value })}
+                    placeholder="Để trống hoặc điền số"
                   />
                 </label>
                 <label className="font-semibold text-blue-900 text-xs">
@@ -1037,9 +1040,10 @@ function JobForm(props: any) {
                   <input
                     type="number"
                     min={0}
-                    className="border p-2 rounded-lg w-full mt-1 bg-white font-bold text-center"
-                    value={jobForm.required_video_count ?? 0}
-                    onChange={(e) => setJobForm({ ...jobForm, required_video_count: Number(e.target.value) })}
+                    className="border p-2 rounded-lg w-full mt-1 bg-white font-bold text-center text-slate-900 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
+                    value={jobForm.required_video_count}
+                    onChange={(e) => setJobForm({ ...jobForm, required_video_count: e.target.value })}
+                    placeholder="Để trống hoặc điền số"
                   />
                 </label>
               </div>
@@ -1048,9 +1052,9 @@ function JobForm(props: any) {
                 <label className="font-medium text-slate-700">
                   Tổng tiền
                   <MoneyInput
-                    className="border p-2 rounded-xl w-full mt-1 font-bold"
+                    className="border p-2 rounded-xl w-full mt-1 font-bold text-slate-900"
                     value={jobForm.total_price}
-                    onChange={(v) => setJobForm({ ...jobForm, total_price: v })}
+                    onChange={(v: number) => setJobForm({ ...jobForm, total_price: v })}
                   />
                 </label>
                 <label className="font-medium text-slate-700">
@@ -1058,7 +1062,7 @@ function JobForm(props: any) {
                   <MoneyInput
                     className="border p-2 rounded-xl w-full mt-1 font-bold text-emerald-600"
                     value={jobForm.deposit}
-                    onChange={(v) => setJobForm({ ...jobForm, deposit: v })}
+                    onChange={(v: number) => setJobForm({ ...jobForm, deposit: v })}
                   />
                 </label>
                 <label className="font-medium text-slate-700">
@@ -1072,7 +1076,7 @@ function JobForm(props: any) {
               </div>
 
               <textarea
-                className="border p-2.5 rounded-xl w-full"
+                className="border p-2.5 rounded-xl w-full text-slate-800 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
                 placeholder="Ghi chú thêm về Job..."
                 value={jobForm.note}
                 onChange={(e) => setJobForm({ ...jobForm, note: e.target.value })}
@@ -1080,8 +1084,8 @@ function JobForm(props: any) {
             </div>
           </div>
 
-          {/* CẢNH BÁO THIẾU THỢ THEO YÊU CẦU */}
-          {(missingPhoto > 0 || missingVideo > 0) && (
+          {/* CẢNH BÁO THIẾU THỢ */}
+          {hasInputReq && (missingPhoto > 0 || missingVideo > 0) && (
             <div className="rounded-xl border border-red-300 bg-red-50 p-3 text-xs text-red-700 font-semibold flex items-center justify-between">
               <span>
                 ⚠️ CẢNH BÁO THIẾU THỢ: 
@@ -1143,7 +1147,7 @@ function JobForm(props: any) {
                       Ngày thực hiện
                       <input
                         type="date"
-                        className="border p-2 rounded-xl w-full mt-1 bg-white font-semibold"
+                        className="border p-2 rounded-xl w-full mt-1 bg-white font-semibold text-slate-800"
                         value={day.shooting_date}
                         onChange={(e) => updateDay(dayIndex, "shooting_date", e.target.value)}
                       />
@@ -1151,7 +1155,7 @@ function JobForm(props: any) {
                     <label className="font-medium text-slate-600">
                       Từ giờ
                       <Time24Input
-                        className="border p-2 rounded-xl w-full mt-1 bg-white"
+                        className="border p-2 rounded-xl w-full mt-1 bg-white font-semibold text-slate-800"
                         value={day.start_time}
                         onChange={(v) => updateDay(dayIndex, "start_time", v)}
                       />
@@ -1159,7 +1163,7 @@ function JobForm(props: any) {
                     <label className="font-medium text-slate-600">
                       Đến giờ
                       <Time24Input
-                        className="border p-2 rounded-xl w-full mt-1 bg-white"
+                        className="border p-2 rounded-xl w-full mt-1 bg-white font-semibold text-slate-800"
                         value={day.end_time}
                         onChange={(v) => updateDay(dayIndex, "end_time", v)}
                       />
@@ -1167,7 +1171,7 @@ function JobForm(props: any) {
                     <label className="font-medium text-slate-600">
                       Ghi chú ngày
                       <input
-                        className="border p-2 rounded-xl w-full mt-1 bg-white"
+                        className="border p-2 rounded-xl w-full mt-1 bg-white font-medium text-slate-800 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
                         value={day.note}
                         onChange={(e) => updateDay(dayIndex, "note", e.target.value)}
                         placeholder="Ăn hỏi / tiệc / lưu ý timeline..."
@@ -1216,7 +1220,7 @@ function JobForm(props: any) {
                           <div className="md:col-span-3">
                             <label className="text-[11px] font-semibold text-slate-500 block mb-1">Tên địa điểm / nhà</label>
                             <input
-                              className="border p-2 rounded-xl w-full font-bold text-slate-800"
+                              className="border p-2 rounded-xl w-full font-bold text-slate-800 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
                               value={loc.location_name}
                               onChange={(e) => updateLocation(dayIndex, locIndex, "location_name", e.target.value)}
                               placeholder="Nhà trai / Nhà gái"
@@ -1225,7 +1229,7 @@ function JobForm(props: any) {
                           <div className="md:col-span-5">
                             <label className="text-[11px] font-semibold text-slate-500 block mb-1">Địa chỉ</label>
                             <input
-                              className="border p-2 rounded-xl w-full"
+                              className="border p-2 rounded-xl w-full font-medium text-slate-800 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
                               value={loc.address}
                               onChange={(e) => updateLocation(dayIndex, locIndex, "address", e.target.value)}
                               placeholder="Xóm 1 Hoàng Xá / Giáp Long..."
@@ -1234,7 +1238,7 @@ function JobForm(props: any) {
                           <div className="md:col-span-3">
                             <label className="text-[11px] font-semibold text-slate-500 block mb-1">SĐT tại địa điểm</label>
                             <input
-                              className="border p-2 rounded-xl w-full font-mono"
+                              className="border p-2 rounded-xl w-full font-mono text-slate-800 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
                               value={loc.phone}
                               onChange={(e) => updateLocation(dayIndex, locIndex, "phone", e.target.value)}
                               placeholder="0585557555"
@@ -1252,7 +1256,7 @@ function JobForm(props: any) {
                           </div>
                         </div>
 
-                        {/* NÚT THÊM NHANH 4 VAI TRÒ (+ Chụp, + Quay, + Flycam, + Editor) */}
+                        {/* NÚT THÊM NHANH 4 VAI TRÒ */}
                         <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-100">
                           <button
                             type="button"
@@ -1292,7 +1296,7 @@ function JobForm(props: any) {
                                 <div className="md:col-span-2">
                                   <label className="text-[11px] text-slate-500 font-medium block mb-1">Vai trò</label>
                                   <select
-                                    className="border p-2 rounded-lg font-medium text-xs bg-white w-full"
+                                    className="border p-2 rounded-lg font-medium text-xs bg-white w-full text-slate-800"
                                     value={assignment.role}
                                     onChange={(e) => updateAssignment(dayIndex, locIndex, assIndex, "role", e.target.value)}
                                   >
@@ -1306,7 +1310,7 @@ function JobForm(props: any) {
                                 <div className="md:col-span-4">
                                   <label className="text-[11px] text-slate-500 font-medium block mb-1">Nhân sự được phân công</label>
                                   <select
-                                    className="border p-2 rounded-lg font-medium text-xs bg-white w-full"
+                                    className="border p-2 rounded-lg font-medium text-xs bg-white w-full text-slate-800"
                                     value={assignment.employee_id || ""}
                                     onChange={(e) => {
                                       const empId = e.target.value;
@@ -1350,7 +1354,7 @@ function JobForm(props: any) {
                                 <div className="md:col-span-3">
                                   <label className="text-[11px] text-slate-500 font-medium block mb-1">Ghi chú riêng cho thợ</label>
                                   <input
-                                    className="border p-2 rounded-lg w-full bg-white text-xs"
+                                    className="border p-2 rounded-lg w-full bg-white text-xs font-medium text-slate-800 placeholder:text-slate-300 placeholder:font-normal placeholder:italic"
                                     value={assignment.note}
                                     onChange={(e) => updateAssignment(dayIndex, locIndex, assIndex, "note", e.target.value)}
                                     placeholder="Lưu ý riêng..."
@@ -1389,7 +1393,7 @@ function JobForm(props: any) {
                                   />
                                   <div>
                                     <span>📞 Mở SĐT cho thợ xem ngay</span>
-                                    <p className="text-[11px] font-normal text-slate-500">
+                                    <p className="text-[11px] font-normal text-slate-400 italic">
                                       Nếu không bật, hệ thống tự mở SĐT trước giờ làm 48 giờ.
                                     </p>
                                   </div>
