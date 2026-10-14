@@ -545,6 +545,14 @@ export default function AdminJobPage() {
         customerId = createdCustomer.id;
       }
 
+      // XỬ LÝ KHÔNG GỬI NULL VÀO CỘT NOT NULL (TỰ CHUYỂN SANG 0)
+      const parsedPhotoCount = jobForm.required_photo_count === "" || jobForm.required_photo_count === null 
+        ? 0 
+        : Number(jobForm.required_photo_count);
+      const parsedVideoCount = jobForm.required_video_count === "" || jobForm.required_video_count === null 
+        ? 0 
+        : Number(jobForm.required_video_count);
+
       const jobPayload = {
         customer_id: customerId,
         customer_name: customerForm.full_name,
@@ -558,8 +566,8 @@ export default function AdminJobPage() {
         debt,
         status: jobForm.status,
         location: jobForm.location,
-        required_photo_count: jobForm.required_photo_count === "" ? null : Number(jobForm.required_photo_count),
-        required_video_count: jobForm.required_video_count === "" ? null : Number(jobForm.required_video_count),
+        required_photo_count: parsedPhotoCount,
+        required_video_count: parsedVideoCount,
         note: jobForm.note,
       };
 
@@ -1202,6 +1210,7 @@ function JobForm(props: any) {
             </div>
           )}
 
+          {/* Mục 3: Ngày chụp → Địa điểm → Phân công thợ */}
           <div className="space-y-4 pt-2">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-sm text-blue-700 uppercase">3. Ngày chụp → Địa điểm → Phân công thợ</h3>
