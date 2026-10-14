@@ -6,10 +6,7 @@ import { supabase } from "@/lib/supabase";
 import MoneyInput from "../components/MoneyInput";
 import { formatDateVN } from "@/lib/date-vn";
 import Time24Input from "@/app/components/Time24Input";
-import EmployeePicker from "@/app/components/EmployeePicker";
 import { requireEditPin } from "@/lib/admin-pin";
-import { getOfflineCache, getOfflineCount, setOfflineCache, subscribeOfflineQueue } from "@/lib/offline-db";
-import { makeOfflineJobBundle, queueOfflineJob } from "@/lib/offline-job";
 
 const money = (value: number | string | null | undefined) =>
   Number(value || 0).toLocaleString("vi-VN") + " đ";
@@ -44,6 +41,7 @@ const makeAssignment = (role = "Thợ chụp") => ({
   note: "",
   client_requested: false,
   contact_visible: false,
+  reserve_worker_id: "",
 });
 
 const makeLocation = (name = "Nhà trai") => ({
@@ -61,13 +59,6 @@ const makeDay = () => ({
   note: "",
   locations: [makeLocation("Nhà trai"), makeLocation("Nhà gái")],
 });
-
-const normalizePhone = (value: string | null | undefined) =>
-  String(value || "").replace(/\D/g, "");
-
-const getMainCustomer = (job: any) => job.customers || {};
-
-const getFirstJobDay = (job: any) => (job.job_days || [])[0] || {};
 
 export const isJobDoneActual = (job: any) => {
   const s = String(job?.status || "").trim().toLowerCase();
@@ -122,9 +113,6 @@ export const getJobDetailedStatus = (job: any) => {
     isCompleted: false,
   };
 };
-
-const timeToMinutes = (value: any) => { const m = String(value || "00:00").match(/^(\d{1,2}):(\d{2})/); return m ? Number(m[1]) * 60 + Number(m[2]) : 0; };
-const timeOverlaps = (aStart: any, aEnd: any, bStart: any, bEnd: any) => timeToMinutes(aStart) < timeToMinutes(bEnd) && timeToMinutes(aEnd) > timeToMinutes(bStart);
 
 export default function AdminJobPage() {
   const [jobs, setJobs] = useState<any[]>([]);
@@ -217,6 +205,7 @@ export default function AdminJobPage() {
           note: assignment.note || "",
           client_requested: Boolean(assignment.client_requested),
           contact_visible: Boolean(assignment.contact_visible),
+          reserve_worker_id: "",
         }))
       }));
       if (!locations.length) {
@@ -230,7 +219,8 @@ export default function AdminJobPage() {
             salary_amount: Number(assignment.salary_amount || 0),
             note: assignment.note || "",
             client_requested: Boolean(assignment.client_requested),
-            contact_visible: Boolean(assignment.contact_visible)
+            contact_visible: Boolean(assignment.contact_visible),
+            reserve_worker_id: "",
           });
         });
         locations.push(...Object.values(groups));
@@ -385,6 +375,61 @@ export default function AdminJobPage() {
     );
   };
 
+  const addReservedWorkerToDay = (dayIndex: number, reserve: any) => {
+    const currentDay = days[dayIndex];
+    if (!currentDay.locations || currentDay.locations.length === 0) return;
+    const targetLocIndex = 0;
+    const emp = reserve.employees;
+    const role = reserve.role || "Thợ chụp";
+
+    setDays((prev) =>
+      prev.map((day, dIdx) => {
+        if (dIdx !== dayIndex) return day;
+        return {
+          ...day,
+          locations: day.locations.map((loc: any, lIdx: number) => {
+            if (lIdx !== targetLocIndex) return loc;
+            return {
+              ...loc,
+              assignments: [
+                ...loc.assignments,
+                {
+                  employee_id: reserve.employee_id,
+                  role: role,
+                  salary_amount: Number(emp?.base_fee || (role.includes("quay") ? 900000 : 700000)),
+                  note: "Thêm từ dự phòng",
+                  client_requested: false,
+                  contact_visible: false,
+                  reserve_worker_id: reserve.id,
+                },
+              ],
+            };
+          }),
+        };
+      })
+    );
+  };
+
+  async function markUsedReserveWorkers(jobId: string, usedReserveIds: string[], usedEmployeeIds: string[], shootingDates: string[]) {
+    try {
+      if (usedReserveIds.length > 0) {
+        await supabase
+          .from("reserve_workers")
+          .update({ status: "used", assigned_job_id: jobId, assigned_at: new Date().toISOString() })
+          .in("id", usedReserveIds);
+      }
+      if (usedEmployeeIds.length > 0 && shootingDates.length > 0) {
+        await supabase
+          .from("reserve_workers")
+          .update({ status: "used", assigned_job_id: jobId, assigned_at: new Date().toISOString() })
+          .in("employee_id", usedEmployeeIds)
+          .in("reserve_date", shootingDates);
+      }
+    } catch (e) {
+      console.error("Lỗi cập nhật thợ dự phòng:", e);
+    }
+  }
+
   async function saveJob() {
     if (saving) return;
 
@@ -475,7 +520,13 @@ export default function AdminJobPage() {
         }
       }
 
+      const usedReserveIds: string[] = [];
+      const usedEmployeeIds: string[] = [];
+      const shootingDates: string[] = [];
+
       for (const day of days) {
+        if (day.shooting_date) shootingDates.push(day.shooting_date);
+
         const locationSummary = day.locations
           .map((loc: any) => `${loc.location_name}:${loc.address}`)
           .join(" | ");
@@ -512,19 +563,24 @@ export default function AdminJobPage() {
         const assignmentRows = day.locations.flatMap((location: any) =>
           location.assignments
             .filter((assignment: any) => assignment.employee_id)
-            .map((assignment: any) => ({
-              job_id: jobId,
-              job_day_id: createdDay.id,
-              employee_id: assignment.employee_id,
-              role: assignment.role,
-              salary_amount: Number(assignment.salary_amount || 0),
-              note: assignment.note,
-              client_requested: Boolean(assignment.client_requested),
-              contact_visible: Boolean(assignment.contact_visible),
-              work_location_name: location.location_name,
-              work_location_address: location.address,
-              work_location_phone: location.phone,
-            }))
+            .map((assignment: any) => {
+              if (assignment.reserve_worker_id) usedReserveIds.push(assignment.reserve_worker_id);
+              if (assignment.employee_id) usedEmployeeIds.push(assignment.employee_id);
+
+              return {
+                job_id: jobId,
+                job_day_id: createdDay.id,
+                employee_id: assignment.employee_id,
+                role: assignment.role,
+                salary_amount: Number(assignment.salary_amount || 0),
+                note: assignment.note,
+                client_requested: Boolean(assignment.client_requested),
+                contact_visible: Boolean(assignment.contact_visible),
+                work_location_name: location.location_name,
+                work_location_address: location.address,
+                work_location_phone: location.phone,
+              };
+            })
         );
 
         if (assignmentRows.length > 0) {
@@ -533,10 +589,12 @@ export default function AdminJobPage() {
         }
       }
 
+      await markUsedReserveWorkers(jobId, usedReserveIds, usedEmployeeIds, shootingDates);
+
       setOpenForm(false);
       setEditingJob(null);
       await loadData();
-      alert("Đã lưu Job & phân công thành công!");
+      alert("Đã lưu Job và tự động cập nhật danh sách thợ dự phòng thành công!");
     } catch (error: any) {
       alert(error.message || "Lỗi lưu Job");
     } finally {
@@ -735,6 +793,7 @@ export default function AdminJobPage() {
         <JobForm
           customers={customers}
           employees={employees}
+          reserveWorkers={reserveWorkers}
           customerForm={customerForm}
           setCustomerForm={setCustomerForm}
           swapBrideGroomPhones={swapBrideGroomPhones}
@@ -751,6 +810,7 @@ export default function AdminJobPage() {
           updateAssignment={updateAssignment}
           addAssignment={addAssignment}
           removeAssignment={removeAssignment}
+          addReservedWorkerToDay={addReservedWorkerToDay}
           editingJob={editingJob}
           saving={saving}
           onClose={() => { setOpenForm(false); setEditingJob(null); }}
@@ -770,11 +830,12 @@ export default function AdminJobPage() {
   );
 }
 
-// FORM TẠO / SỬA JOB - ĐÚNG CHUẨN GIAO DIỆN CŨ (CÓ CHECKBOX CHỈ ĐỊNH ĐÍCH DANH & MỞ SĐT)
+// FORM TẠO / SỬA JOB - ĐẦY ĐỦ CẢNH BÁO, ƯU TIÊN DỰ PHÒNG & NÚT CHỈ ĐỊNH ĐÍCH DANH, MỞ SĐT
 function JobForm(props: any) {
   const {
     customers,
     employees,
+    reserveWorkers,
     customerForm,
     setCustomerForm,
     swapBrideGroomPhones,
@@ -791,13 +852,13 @@ function JobForm(props: any) {
     updateAssignment,
     addAssignment,
     removeAssignment,
+    addReservedWorkerToDay,
     editingJob,
     saving,
     onClose,
     onSave,
   } = props;
 
-  // Tính toán cảnh báo thiếu thợ
   const allAssignments = days.flatMap((d: any) => d.locations || []).flatMap((l: any) => l.assignments || []);
   const currentPhoto = allAssignments.filter((a: any) => a.employee_id && a.role?.toLowerCase().includes("chụp")).length;
   const currentVideo = allAssignments.filter((a: any) => a.employee_id && a.role?.toLowerCase().includes("quay")).length;
@@ -915,7 +976,7 @@ function JobForm(props: any) {
               </div>
             </div>
 
-            {/* Cột 2: Booking & Hợp đồng (CÓ Ô CHỌN SỐ LƯỢNG THỢ ĐỂ CẢNH BÁO) */}
+            {/* Cột 2: Booking & Hợp đồng (CÓ Ô NHẬP SỐ LƯỢNG THỢ ĐỂ CẢNH BÁO) */}
             <div className="border rounded-2xl p-4 space-y-3 bg-white">
               <h3 className="font-bold text-sm text-blue-700 uppercase">2. Chi tiết Booking & Hợp đồng</h3>
               <input
@@ -1034,7 +1095,7 @@ function JobForm(props: any) {
             </div>
           )}
 
-          {/* Mục 3: Ngày chụp → Địa điểm → Phân công thợ (CHUẨN GIAO DIỆN CŨ) */}
+          {/* Mục 3: Ngày chụp → Địa điểm → Phân công thợ */}
           <div className="space-y-4 pt-2">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-sm text-blue-700 uppercase">3. Ngày chụp → Địa điểm → Phân công thợ</h3>
@@ -1047,125 +1108,550 @@ function JobForm(props: any) {
               </button>
             </div>
 
-            {days.map((day: any, dayIndex: number) => (
-              <div key={dayIndex} className="border rounded-2xl p-4 bg-slate-50 space-y-4 shadow-xs">
-                {/* Header ngày */}
-                <div className="flex items-center justify-between border-b pb-2">
-                  <span className="font-bold text-slate-800 text-sm">Ngày chụp {dayIndex + 1}</span>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => duplicateDay(dayIndex)}
-                      className="rounded-lg border bg-white px-2.5 py-1 font-semibold text-blue-700 shadow-xs"
-                    >
-                      📋 Nhân đôi ngày
-                    </button>
-                    {days.length > 1 && (
+            {days.map((day: any, dayIndex: number) => {
+              const reservesForThisDay = reserveWorkers.filter(
+                (r: any) => r.reserve_date === day.shooting_date && r.status === "reserved"
+              );
+
+              return (
+                <div key={dayIndex} className="border rounded-2xl p-4 bg-slate-50 space-y-4 shadow-xs">
+                  {/* Header ngày */}
+                  <div className="flex items-center justify-between border-b pb-2">
+                    <span className="font-bold text-slate-800 text-sm">Ngày chụp {dayIndex + 1}</span>
+                    <div className="flex gap-2">
                       <button
                         type="button"
-                        onClick={() => removeDay(dayIndex)}
-                        className="rounded-lg border bg-white px-2.5 py-1 font-semibold text-rose-600"
+                        onClick={() => duplicateDay(dayIndex)}
+                        className="rounded-lg border bg-white px-2.5 py-1 font-semibold text-blue-700 shadow-xs"
                       >
-                        Xóa ngày
+                        📋 Nhân đôi ngày
                       </button>
-                    )}
+                      {days.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeDay(dayIndex)}
+                          className="rounded-lg border bg-white px-2.5 py-1 font-semibold text-rose-600"
+                        >
+                          Xóa ngày
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <label className="font-medium text-slate-600">
+                      Ngày thực hiện
+                      <input
+                        type="date"
+                        className="border p-2 rounded-xl w-full mt-1 bg-white font-semibold"
+                        value={day.shooting_date}
+                        onChange={(e) => updateDay(dayIndex, "shooting_date", e.target.value)}
+                      />
+                    </label>
+                    <label className="font-medium text-slate-600">
+                      Từ giờ
+                      <Time24Input
+                        className="border p-2 rounded-xl w-full mt-1 bg-white"
+                        value={day.start_time}
+                        onChange={(v) => updateDay(dayIndex, "start_time", v)}
+                      />
+                    </label>
+                    <label className="font-medium text-slate-600">
+                      Đến giờ
+                      <Time24Input
+                        className="border p-2 rounded-xl w-full mt-1 bg-white"
+                        value={day.end_time}
+                        onChange={(v) => updateDay(dayIndex, "end_time", v)}
+                      />
+                    </label>
+                    <label className="font-medium text-slate-600">
+                      Ghi chú ngày
+                      <input
+                        className="border p-2 rounded-xl w-full mt-1 bg-white"
+                        value={day.note}
+                        onChange={(e) => updateDay(dayIndex, "note", e.target.value)}
+                        placeholder="Ăn hỏi / tiệc / lưu ý timeline..."
+                      />
+                    </label>
+                  </div>
+
+                  {/* KHỐI ƯU TIÊN: GỢI Ý THỢ DỰ PHÒNG TRÙNG NGÀY NÀY */}
+                  {day.shooting_date && reservesForThisDay.length > 0 && (
+                    <div className="rounded-xl border border-amber-300 bg-amber-50/80 p-3 flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-xs">
+                        <span className="font-bold text-amber-900">⭐ Có {reservesForThisDay.length} thợ dự phòng trùng ngày ({formatDateVN(day.shooting_date)}): </span>
+                        <span className="text-amber-800">Bấm thêm nhanh để gán vào job, sau khi lưu sẽ tự động xóa khỏi danh sách chờ:</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {reservesForThisDay.map((r: any) => (
+                          <button
+                            key={r.id}
+                            type="button"
+                            onClick={() => addReservedWorkerToDay(dayIndex, r)}
+                            className="bg-white border border-amber-300 text-amber-900 hover:bg-amber-100 px-2.5 py-1 rounded-lg text-xs font-bold shadow-xs transition"
+                          >
+                            + {r.employees?.full_name} ({r.role})
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Các địa điểm trong ngày này */}
+                  <div className="space-y-4 pt-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-700 text-xs uppercase">Các địa điểm trong ngày này</span>
+                      <button
+                        type="button"
+                        onClick={() => addLocation(dayIndex, "Nhà gái")}
+                        className="rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700 shadow-sm"
+                      >
+                        + Thêm địa chỉ / nhà gái
+                      </button>
+                    </div>
+
+                    {day.locations.map((loc: any, locIndex: number) => (
+                      <div key={locIndex} className="rounded-2xl border bg-white p-4 space-y-3 shadow-xs">
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                          <div className="md:col-span-3">
+                            <label className="text-[11px] font-semibold text-slate-500 block mb-1">Tên địa điểm / nhà</label>
+                            <input
+                              className="border p-2 rounded-xl w-full font-bold text-slate-800"
+                              value={loc.location_name}
+                              onChange={(e) => updateLocation(dayIndex, locIndex, "location_name", e.target.value)}
+                              placeholder="Nhà trai / Nhà gái"
+                            />
+                          </div>
+                          <div className="md:col-span-5">
+                            <label className="text-[11px] font-semibold text-slate-500 block mb-1">Địa chỉ</label>
+                            <input
+                              className="border p-2 rounded-xl w-full"
+                              value={loc.address}
+                              onChange={(e) => updateLocation(dayIndex, locIndex, "address", e.target.value)}
+                              placeholder="Xóm 1 Hoàng Xá / Giáp Long..."
+                            />
+                          </div>
+                          <div className="md:col-span-3">
+                            <label className="text-[11px] font-semibold text-slate-500 block mb-1">SĐT tại địa điểm</label>
+                            <input
+                              className="border p-2 rounded-xl w-full font-mono"
+                              value={loc.phone}
+                              onChange={(e) => updateLocation(dayIndex, locIndex, "phone", e.target.value)}
+                              placeholder="0585557555"
+                            />
+                          </div>
+                          <div className="md:col-span-1 flex justify-center pb-2">
+                            <button
+                              type="button"
+                              onClick={() => removeLocation(dayIndex, locIndex)}
+                              className="text-rose-600 font-bold text-base hover:text-rose-800"
+                              title="Xóa địa điểm này"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* NÚT THÊM NHANH 4 VAI TRÒ (+ Chụp, + Quay, + Flycam, + Editor) */}
+                        <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-100">
+                          <button
+                            type="button"
+                            onClick={() => addAssignment(dayIndex, locIndex, "Thợ chụp")}
+                            className="rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700"
+                          >
+                            + Chụp
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => addAssignment(dayIndex, locIndex, "Thợ quay")}
+                            className="rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700"
+                          >
+                            + Quay
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => addAssignment(dayIndex, locIndex, "Flycam")}
+                            className="rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700"
+                          >
+                            + Flycam
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => addAssignment(dayIndex, locIndex, "Editor")}
+                            className="rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700"
+                          >
+                            + Editor
+                          </button>
+                        </div>
+
+                        {/* KHUNG PHÂN CÔNG TỪNG THỢ */}
+                        <div className="space-y-3 pt-2">
+                          {loc.assignments.map((assignment: any, assIndex: number) => (
+                            <div key={assIndex} className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2">
+                              <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-end">
+                                <div className="md:col-span-2">
+                                  <label className="text-[11px] text-slate-500 font-medium block mb-1">Vai trò</label>
+                                  <select
+                                    className="border p-2 rounded-lg font-medium text-xs bg-white w-full"
+                                    value={assignment.role}
+                                    onChange={(e) => updateAssignment(dayIndex, locIndex, assIndex, "role", e.target.value)}
+                                  >
+                                    <option>Thợ chụp</option>
+                                    <option>Thợ quay</option>
+                                    <option>Flycam</option>
+                                    <option>Editor</option>
+                                  </select>
+                                </div>
+
+                                <div className="md:col-span-4">
+                                  <label className="text-[11px] text-slate-500 font-medium block mb-1">Nhân sự được phân công</label>
+                                  <select
+                                    className="border p-2 rounded-lg font-medium text-xs bg-white w-full"
+                                    value={assignment.employee_id || ""}
+                                    onChange={(e) => {
+                                      const empId = e.target.value;
+                                      const matchedReserve = reservesForThisDay.find((r: any) => r.employee_id === empId);
+                                      updateAssignment(dayIndex, locIndex, assIndex, "employee_id", empId);
+                                      if (matchedReserve) {
+                                        updateAssignment(dayIndex, locIndex, assIndex, "reserve_worker_id", matchedReserve.id);
+                                      }
+                                    }}
+                                  >
+                                    <option value="">-- Gõ tên để tìm thợ... --</option>
+                                    {reservesForThisDay.length > 0 && (
+                                      <optgroup label="⭐ Thợ dự phòng ngày này (Ưu tiên)">
+                                        {reservesForThisDay.map((r: any) => (
+                                          <option key={r.id} value={r.employee_id}>
+                                            ⭐ {r.employees?.full_name} ({r.role || "Dự phòng"})
+                                          </option>
+                                        ))}
+                                      </optgroup>
+                                    )}
+                                    <optgroup label="Tất cả nhân sự">
+                                      {employees.map((e: any) => (
+                                        <option key={e.id} value={e.id}>
+                                          {e.full_name} ({e.role || "Thợ"})
+                                        </option>
+                                      ))}
+                                    </optgroup>
+                                  </select>
+                                </div>
+
+                                <div className="md:col-span-2">
+                                  <label className="text-[11px] text-slate-500 font-medium block mb-1">Tiền công thợ</label>
+                                  <MoneyInput
+                                    className="border p-2 rounded-lg w-full bg-white font-bold text-slate-800"
+                                    value={assignment.salary_amount}
+                                    onChange={(v: number) => updateAssignment(dayIndex, locIndex, assIndex, "salary_amount", v)}
+                                    placeholder="Tiền công"
+                                  />
+                                </div>
+
+                                <div className="md:col-span-3">
+                                  <label className="text-[11px] text-slate-500 font-medium block mb-1">Ghi chú riêng cho thợ</label>
+                                  <input
+                                    className="border p-2 rounded-lg w-full bg-white text-xs"
+                                    value={assignment.note}
+                                    onChange={(e) => updateAssignment(dayIndex, locIndex, assIndex, "note", e.target.value)}
+                                    placeholder="Lưu ý riêng..."
+                                  />
+                                </div>
+
+                                <div className="md:col-span-1 flex justify-end">
+                                  <button
+                                    type="button"
+                                    onClick={() => removeAssignment(dayIndex, locIndex, assIndex)}
+                                    className="border border-rose-300 text-rose-600 hover:bg-rose-50 px-3 py-2 rounded-lg font-semibold text-xs w-full text-center"
+                                  >
+                                    Xóa
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* 2 CHECKBOX: CHỈ ĐỊNH ĐÍCH DANH & MỞ SĐT CHO THỢ */}
+                              <div className="pt-2 border-t border-slate-200/60 space-y-1.5">
+                                <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-amber-700">
+                                  <input
+                                    type="checkbox"
+                                    checked={Boolean(assignment.client_requested)}
+                                    onChange={(e) => updateAssignment(dayIndex, locIndex, assIndex, "client_requested", e.target.checked)}
+                                    className="rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                                  />
+                                  <span>⭐ Khách chỉ định đích danh thợ này</span>
+                                </label>
+
+                                <label className="flex items-start gap-2 cursor-pointer text-xs font-semibold text-blue-700">
+                                  <input
+                                    type="checkbox"
+                                    checked={Boolean(assignment.contact_visible)}
+                                    onChange={(e) => updateAssignment(dayIndex, locIndex, assIndex, "contact_visible", e.target.checked)}
+                                    className="rounded border-blue-300 text-blue-600 focus:ring-blue-500 mt-0.5"
+                                  />
+                                  <div>
+                                    <span>📞 Mở SĐT cho thợ xem ngay</span>
+                                    <p className="text-[11px] font-normal text-slate-500">
+                                      Nếu không bật, hệ thống tự mở SĐT trước giờ làm 48 giờ.
+                                    </p>
+                                  </div>
+                                </label>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
+              );
+            })}
+          </div>
+        </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                  <label className="font-medium text-slate-600">
-                    Ngày thực hiện
-                    <input
-                      type="date"
-                      className="border p-2 rounded-xl w-full mt-1 bg-white"
-                      value={day.shooting_date}
-                      onChange={(e) => updateDay(dayIndex, "shooting_date", e.target.value)}
-                    />
-                  </label>
-                  <label className="font-medium text-slate-600">
-                    Từ giờ
-                    <Time24Input
-                      className="border p-2 rounded-xl w-full mt-1 bg-white"
-                      value={day.start_time}
-                      onChange={(v) => updateDay(dayIndex, "start_time", v)}
-                    />
-                  </label>
-                  <label className="font-medium text-slate-600">
-                    Đến giờ
-                    <Time24Input
-                      className="border p-2 rounded-xl w-full mt-1 bg-white"
-                      value={day.end_time}
-                      onChange={(v) => updateDay(dayIndex, "end_time", v)}
-                    />
-                  </label>
-                  <label className="font-medium text-slate-600">
-                    Ghi chú ngày
-                    <input
-                      className="border p-2 rounded-xl w-full mt-1 bg-white"
-                      value={day.note}
-                      onChange={(e) => updateDay(dayIndex, "note", e.target.value)}
-                      placeholder="Ăn hỏi / tiệc / lưu ý timeline..."
-                    />
-                  </label>
-                </div>
+        {/* Footer cố định */}
+        <div className="sticky bottom-0 z-20 flex justify-end gap-2 border-t bg-white px-6 py-4 rounded-b-2xl">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border px-4 py-2 font-semibold hover:bg-slate-50"
+          >
+            Hủy
+          </button>
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={saving}
+            className="rounded-xl bg-blue-600 px-5 py-2 font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            {saving ? "Đang lưu..." : editingJob ? "Cập nhật job" : "Lưu job"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
-                {/* Các địa điểm trong ngày này */}
-                <div className="space-y-4 pt-1">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-700 text-xs uppercase">Các địa điểm trong ngày này</span>
+// MODAL CHI TIẾT JOB: BẢNG 7 CỘT + SAO CHÉP TỪNG NGÀY + NÚT MỞ SỚM
+function JobDetail({ job, onClose, onEdit, onDelete }: any) {
+  const days = job.job_days || [];
+  const statusInfo = getJobDetailedStatus(job);
+
+  const copySingleDay = (day: any, dayIndex: number) => {
+    const locGroom = (day.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("trai")) || {};
+    const locBride = (day.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("gái")) || {};
+
+    const groomAddr = locGroom.address || job.customers?.address || "";
+    const brideAddr = locBride.address || "";
+
+    let text = `Ngày ${dayIndex + 1}${day.note ? ` – ${day.note}` : ""}: ${formatDateVN(day.shooting_date)} • ${day.start_time?.slice(0, 5)} - ${day.end_time?.slice(0, 5)}\n`;
+    text += `Địa điểm: Nhà trai: ${groomAddr || "Chưa có"} | Nhà gái: ${brideAddr || "Chưa có"}\n`;
+
+    (day.job_assignments || []).forEach((a: any) => {
+      text += `- ${a.role || "Thợ"}: ${a.employees?.full_name || "Chưa chọn"} | Lương: ${money(a.salary_amount)}\n`;
+    });
+
+    navigator.clipboard.writeText(text);
+    alert(`Đã sao chép lịch chụp Ngày ${dayIndex + 1}!`);
+  };
+
+  const copyFullJob = async () => {
+    const lines: string[] = [
+      `📸 [BEEN MEDIA] - LỊCH CHỤP TOÀN BỘ JOB`,
+      `Sự kiện: ${job.event_name || job.customer_name || ""}`,
+      `Mã Job: ${job.job_code}`,
+      `Gói dịch vụ: ${job.service || ""}`,
+      `Khách hàng: ${job.customers?.full_name || job.customer_name || ""}`,
+      `SĐT Nhà trai: ${job.customers?.phone || job.customer_phone || "Chưa có"}`,
+      `SĐT Nhà gái: ${job.customers?.secondary_phone || job.secondary_phone || "Chưa có"}`,
+      `----------------------------------------`,
+    ];
+
+    days.forEach((d: any, i: number) => {
+      const locGroom = (d.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("trai")) || {};
+      const locBride = (d.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("gái")) || {};
+
+      lines.push(
+        `\n📅 Ngày ${i + 1}${d.note ? ` – ${d.note}` : ""}: ${formatDateVN(d.shooting_date)} • ${d.start_time?.slice(0, 5)} - ${d.end_time?.slice(0, 5)}`,
+        `📍 Địa điểm: Nhà trai: ${locGroom.address || job.customers?.address || "Chưa cập nhật"} | Nhà gái: ${locBride.address || "Chưa cập nhật"}`
+      );
+
+      (d.job_assignments || []).forEach((a: any) => {
+        lines.push(`- ${a.role || "Thợ"}: ${a.employees?.full_name || "Chưa chọn"} | Lương: ${money(a.salary_amount)}`);
+      });
+    });
+
+    await navigator.clipboard.writeText(lines.join("\n"));
+    alert("Đã sao chép đầy đủ Job!");
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-4 backdrop-blur-sm overflow-y-auto">
+      <div className="relative w-full max-w-5xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[92vh]">
+        <div className="sticky top-0 z-20 flex items-center justify-between border-b bg-white px-6 py-4 rounded-t-2xl">
+          <div>
+            <h2 className="text-xl sm:text-2xl font-bold text-slate-800">
+              {job.event_name || job.job_code}
+            </h2>
+            <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-slate-500">
+              <span className="font-mono">{job.job_code}</span>
+              <span>•</span>
+              <span className="font-semibold text-slate-700">{job.customers?.full_name || job.customer_name}</span>
+              <span>•</span>
+              <span>{job.service}</span>
+              <span>•</span>
+              <span className={`rounded px-2 py-0.5 font-bold ${statusInfo.badgeClass}`}>
+                {statusInfo.label}
+              </span>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 font-bold"
+            title="Đóng (Esc)"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="p-6 overflow-y-auto space-y-4 text-xs text-slate-700 flex-1">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="rounded-xl border p-3 bg-white shadow-xs">
+              <p className="text-slate-500">Tổng tiền hợp đồng</p>
+              <p className="text-lg font-black text-slate-800 mt-1">{money(job.total_price)}</p>
+            </div>
+            <div className="rounded-xl border p-3 bg-emerald-50/50 shadow-xs">
+              <p className="text-slate-500">Đã thanh toán / Cọc</p>
+              <p className="text-lg font-black text-emerald-600 mt-1">{money(job.deposit)}</p>
+            </div>
+            <div className="rounded-xl border p-3 bg-rose-50/50 shadow-xs">
+              <p className="text-slate-500">Khách còn nợ</p>
+              <p className="text-lg font-black text-rose-600 mt-1">{money(job.debt)}</p>
+            </div>
+            <div className="rounded-xl border p-3 bg-white shadow-xs">
+              <p className="text-slate-500">Số ngày quay/chụp</p>
+              <p className="text-lg font-black text-slate-800 mt-1">{days.length}</p>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-3.5">
+            <p className="font-bold text-blue-900 mb-1.5">Nhu cầu nhân sự</p>
+            <div className="flex gap-2">
+              <span className="rounded-full bg-white border border-blue-200 px-3 py-0.5 text-xs font-semibold text-blue-700 shadow-xs">
+                Cần chụp: {job.required_photo_count || 0}
+              </span>
+              <span className="rounded-full bg-white border border-blue-200 px-3 py-0.5 text-xs font-semibold text-blue-700 shadow-xs">
+                Cần quay: {job.required_video_count || 0}
+              </span>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {days.map((day: any, index: number) => {
+              const locGroom = (day.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("trai")) || {};
+              const locBride = (day.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("gái")) || {};
+
+              const groomAddr = locGroom.address || job.customers?.address || "";
+              const brideAddr = locBride.address || "";
+
+              return (
+                <div key={day.id || index} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
+                  <div className="flex items-center justify-between border-b pb-2">
+                    <h3 className="font-bold text-slate-800 text-sm">
+                      Ngày {index + 1}{day.note ? ` – ${day.note}` : ""}: {formatDateVN(day.shooting_date)} • {day.start_time?.slice(0, 5)} - {day.end_time?.slice(0, 5)}
+                    </h3>
                     <button
                       type="button"
-                      onClick={() => addLocation(dayIndex, "Nhà gái")}
-                      className="rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700 shadow-sm"
+                      onClick={() => copySingleDay(day, index)}
+                      className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1 font-semibold text-blue-600 hover:bg-blue-100 transition-colors"
                     >
-                      + Thêm địa chỉ / nhà gái
+                      📋 Sao chép ngày này
                     </button>
                   </div>
 
-                  {day.locations.map((loc: any, locIndex: number) => (
-                    <div key={locIndex} className="rounded-2xl border bg-white p-4 space-y-3 shadow-xs">
-                      <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-                        <div className="md:col-span-3">
-                          <label className="text-[11px] font-semibold text-slate-500 block mb-1">Tên địa điểm / nhà</label>
-                          <input
-                            className="border p-2 rounded-xl w-full font-bold text-slate-800"
-                            value={loc.location_name}
-                            onChange={(e) => updateLocation(dayIndex, locIndex, "location_name", e.target.value)}
-                            placeholder="Nhà trai / Nhà gái"
-                          />
-                        </div>
-                        <div className="md:col-span-5">
-                          <label className="text-[11px] font-semibold text-slate-500 block mb-1">Địa chỉ</label>
-                          <input
-                            className="border p-2 rounded-xl w-full"
-                            value={loc.address}
-                            onChange={(e) => updateLocation(dayIndex, locIndex, "address", e.target.value)}
-                            placeholder="Xóm 1 Hoàng Xá / Giáp Long..."
-                          />
-                        </div>
-                        <div className="md:col-span-3">
-                          <label className="text-[11px] font-semibold text-slate-500 block mb-1">SĐT tại địa điểm</label>
-                          <input
-                            className="border p-2 rounded-xl w-full font-mono"
-                            value={loc.phone}
-                            onChange={(e) => updateLocation(dayIndex, locIndex, "phone", e.target.value)}
-                            placeholder="0585557555"
-                          />
-                        </div>
-                        <div className="md:col-span-1 flex justify-center pb-2">
-                          <button
-                            type="button"
-                            onClick={() => removeLocation(dayIndex, locIndex)}
-                            className="text-rose-600 font-bold text-base hover:text-rose-800"
-                            title="Xóa địa điểm này"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      </div>
+                  <p className="text-xs text-slate-500">
+                    <span className="font-semibold text-slate-700">Địa điểm: </span>
+                    Nhà trai: {groomAddr || "Chưa cập nhật"} | Nhà gái: {brideAddr || "Chưa cập nhật"}
+                  </p>
 
-                      {/* Nút thêm nhanh 4 vai trò */}
-                      <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-100">
-                        <button
-                          type="button"
-                          onClick
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs min-w-[750px] border rounded-xl overflow-hidden">
+                      <thead className="border-b bg-slate-50 text-slate-600 font-semibold">
+                        <tr>
+                          <th className="p-2.5">Địa điểm</th>
+                          <th className="p-2.5">Địa chỉ / SĐT</th>
+                          <th className="p-2.5">Vai trò</th>
+                          <th className="p-2.5">Thợ</th>
+                          <th className="p-2.5">Lương</th>
+                          <th className="p-2.5 text-center">SĐT cho thợ</th>
+                          <th className="p-2.5">Ghi chú</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y text-slate-700 bg-white">
+                        {(day.job_assignments || []).map((a: any) => {
+                          const isGroom = String(a.work_location_name || "").toLowerCase().includes("trai");
+                          const address = isGroom ? (groomAddr || a.work_location_address) : (brideAddr || a.work_location_address);
+                          const phone = isGroom ? (job.customers?.phone || job.customer_phone) : (job.customers?.secondary_phone || job.secondary_phone);
+
+                          return (
+                            <tr key={a.id} className="hover:bg-slate-50/70">
+                              <td className="p-2.5 font-bold text-slate-800">{a.work_location_name || (isGroom ? "Nhà trai" : "Nhà gái")}</td>
+                              <td className="p-2.5">
+                                <div className="font-medium text-slate-800">{address || "Chưa nhập địa chỉ"}</div>
+                                {phone && <div className="text-[11px] text-slate-500 font-mono mt-0.5">{phone}</div>}
+                              </td>
+                              <td className="p-2.5 text-slate-600">{a.role}</td>
+                              <td className="p-2.5 font-bold text-slate-900">{a.employees?.full_name || "Chưa xếp thợ"}</td>
+                              <td className="p-2.5 font-bold text-slate-800">{money(a.salary_amount)}</td>
+                              <td className="p-2.5 text-center">
+                                {a.contact_visible ? (
+                                  <span className="rounded bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 border border-emerald-200">
+                                    Đang mở
+                                  </span>
+                                ) : (
+                                  <span className="rounded bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-700 border">
+                                    Mở sớm
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-2.5 text-slate-500">{a.note || "-"}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="sticky bottom-0 z-20 flex justify-end gap-2 border-t bg-white px-6 py-4 rounded-b-2xl">
+          <button
+            onClick={copyFullJob}
+            className="rounded-xl bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 shadow-sm"
+          >
+            📋 Sao chép đầy đủ Job
+          </button>
+          <button
+            onClick={onClose}
+            className="rounded-xl border px-4 py-2 font-semibold hover:bg-slate-50"
+          >
+            Đóng
+          </button>
+          <button
+            onClick={onEdit}
+            className="rounded-xl bg-amber-500 px-4 py-2 font-semibold text-white hover:bg-amber-600 shadow-sm"
+          >
+            Sửa job
+          </button>
+          <button
+            onClick={onDelete}
+            className="rounded-xl bg-rose-600 px-4 py-2 font-semibold text-white hover:bg-rose-700 shadow-sm"
+          >
+            Xóa job
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
