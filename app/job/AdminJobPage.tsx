@@ -33,6 +33,10 @@ const emptyJob = {
   note: "",
   required_photo_count: "",
   required_video_count: "",
+  video_editor_id: "",
+  video_editor_salary: 0,
+  photo_editor_id: "",
+  photo_editor_salary: 0,
 };
 
 const makeAssignment = (role = "Thợ chụp") => ({
@@ -300,6 +304,10 @@ export default function AdminJobPage() {
       note: job.note || "",
       required_photo_count: job.required_photo_count !== null && job.required_photo_count !== undefined ? String(job.required_photo_count) : "",
       required_video_count: job.required_video_count !== null && job.required_video_count !== undefined ? String(job.required_video_count) : "",
+      video_editor_id: job.video_editor_id || "",
+      video_editor_salary: Number(job.video_editor_salary || 0),
+      photo_editor_id: job.photo_editor_id || "",
+      photo_editor_salary: Number(job.photo_editor_salary || 0),
     });
 
     setDays(buildDaysFromJob(job));
@@ -518,6 +526,17 @@ export default function AdminJobPage() {
         ? 0 
         : Number(jobForm.required_video_count);
 
+      // GHI THÔNG TIN HẬU KỲ VÀO NOTE NẾU CÓ CHỌN (ĐẢM BẢO KHÔNG BỊ LỖI CỘT DATABASE)
+      let finalNote = jobForm.note || "";
+      if (jobForm.video_editor_id) {
+        const vEmp = employees.find((e) => e.id === jobForm.video_editor_id);
+        finalNote += `\n[HẬU KỲ] Edit Video: ${vEmp?.full_name || "Thợ"} (Công: ${money(jobForm.video_editor_salary)})`;
+      }
+      if (jobForm.photo_editor_id) {
+        const pEmp = employees.find((e) => e.id === jobForm.photo_editor_id);
+        finalNote += `\n[HẬU KỲ] Chỉnh ảnh PTS: ${pEmp?.full_name || "Thợ"} (Công: ${money(jobForm.photo_editor_salary)})`;
+      }
+
       const jobPayload = {
         customer_id: customerId,
         customer_name: customerForm.full_name,
@@ -533,7 +552,7 @@ export default function AdminJobPage() {
         location: jobForm.location,
         required_photo_count: parsedPhotoCount,
         required_video_count: parsedVideoCount,
-        note: jobForm.note,
+        note: finalNote.trim(),
       };
 
       let jobId = editingJob?.id;
@@ -557,6 +576,30 @@ export default function AdminJobPage() {
             { customer_id: customerId, job_id: jobId, amount: deposit, method: "Đặt cọc", note: "Tự tạo khi tạo job" },
           ]);
         }
+      }
+
+      // NẾU CÓ CHỌN THỢ HẬU KỲ, TỰ ĐỘNG THÊM VÀO BẢNG HẬU KỲ ĐỂ TÍNH LƯƠNG TRONG SAO KÊ
+      if (jobForm.video_editor_id) {
+        try {
+          await supabase.from("job_post_productions").insert([{
+            job_id: jobId,
+            assigned_user_id: jobForm.video_editor_id,
+            type: "EDIT_VIDEO",
+            actual_price: Number(jobForm.video_editor_salary || 0),
+            status: "IN_PROGRESS"
+          }]);
+        } catch {}
+      }
+      if (jobForm.photo_editor_id) {
+        try {
+          await supabase.from("job_post_productions").insert([{
+            job_id: jobId,
+            assigned_user_id: jobForm.photo_editor_id,
+            type: "RETOUCH_PTS",
+            actual_price: Number(jobForm.photo_editor_salary || 0),
+            status: "IN_PROGRESS"
+          }]);
+        } catch {}
       }
 
       const usedReserveIds: string[] = [];
@@ -946,6 +989,15 @@ function JobForm(props: any) {
   const missingPhoto = Math.max(reqPhoto - currentPhoto, 0);
   const missingVideo = Math.max(reqVideo - currentVideo, 0);
 
+  // DANH SÁCH THỢ ĐÃ THAM GIA JOB ĐỂ ƯU TIÊN CHỌN HẬU KỲ
+  const assignedWorkersInThisJob = Array.from(
+    new Map(
+      allAssignments
+        .filter((a: any) => a.employee_id)
+        .map((a: any) => [a.employee_id, employees.find((e: any) => e.id === a.employee_id)])
+    ).values()
+  ).filter(Boolean);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-4 backdrop-blur-sm overflow-y-auto">
       <div className="relative w-full max-w-7xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[94vh]">
@@ -1194,255 +1246,363 @@ function JobForm(props: any) {
               </button>
             </div>
 
-            {days.map((day: any, dayIndex: number) => (
-              <div key={dayIndex} className="border rounded-2xl p-4 bg-slate-50 space-y-4 shadow-xs">
-                <div className="flex items-center justify-between border-b pb-2">
-                  <span className="font-bold text-slate-800 text-sm">Ngày chụp {dayIndex + 1}</span>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => duplicateDay(dayIndex)}
-                      className="rounded-lg border bg-white px-2.5 py-1 font-semibold text-blue-700 shadow-xs"
-                    >
-                      📋 Nhân đôi ngày
-                    </button>
-                    {days.length > 1 && (
+            {days.map((day: any, dayIndex: number) => {
+              const reservesForThisDay = reserveWorkers.filter(
+                (r: any) => r.reserve_date === day.shooting_date && r.status === "reserved"
+              );
+
+              return (
+                <div key={dayIndex} className="border rounded-2xl p-4 bg-slate-50 space-y-4 shadow-xs">
+                  <div className="flex items-center justify-between border-b pb-2">
+                    <span className="font-bold text-slate-800 text-sm">Ngày chụp {dayIndex + 1}</span>
+                    <div className="flex gap-2">
                       <button
                         type="button"
-                        onClick={() => removeDay(dayIndex)}
-                        className="rounded-lg border bg-white px-2.5 py-1 font-semibold text-rose-600"
+                        onClick={() => duplicateDay(dayIndex)}
+                        className="rounded-lg border bg-white px-2.5 py-1 font-semibold text-blue-700 shadow-xs"
                       >
-                        Xóa ngày
+                        📋 Nhân đôi ngày
                       </button>
-                    )}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                  <label className="font-medium text-slate-600">
-                    Ngày thực hiện
-                    <input
-                      type="date"
-                      className="border p-2 rounded-xl w-full mt-1 bg-white font-semibold text-slate-800"
-                      value={day.shooting_date}
-                      onChange={(e) => updateDay(dayIndex, "shooting_date", e.target.value)}
-                    />
-                  </label>
-                  <label className="font-medium text-slate-600">
-                    Từ giờ
-                    <Time24Input
-                      className="border p-2 rounded-xl w-full mt-1 bg-white font-semibold text-slate-800"
-                      value={day.start_time}
-                      onChange={(v) => updateDay(dayIndex, "start_time", v)}
-                    />
-                  </label>
-                  <label className="font-medium text-slate-600">
-                    Đến giờ
-                    <Time24Input
-                      className="border p-2 rounded-xl w-full mt-1 bg-white font-semibold text-slate-800"
-                      value={day.end_time}
-                      onChange={(v) => updateDay(dayIndex, "end_time", v)}
-                    />
-                  </label>
-                  <label className="font-medium text-slate-600">
-                    Ghi chú ngày
-                    <input
-                      className="border p-2 rounded-xl w-full mt-1 bg-white font-medium text-slate-800 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
-                      value={day.note}
-                      onChange={(e) => updateDay(dayIndex, "note", e.target.value)}
-                      placeholder="Ăn hỏi / tiệc / lưu ý timeline..."
-                    />
-                  </label>
-                </div>
-
-                <div className="space-y-4 pt-1">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-700 text-xs uppercase">Các địa điểm trong ngày này</span>
-                    <button
-                      type="button"
-                      onClick={() => addLocation(dayIndex, "Nhà gái")}
-                      className="rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700 shadow-sm"
-                    >
-                      + Thêm địa chỉ / nhà gái
-                    </button>
+                      {days.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeDay(dayIndex)}
+                          className="rounded-lg border bg-white px-2.5 py-1 font-semibold text-rose-600"
+                        >
+                          Xóa ngày
+                        </button>
+                      )}
+                    </div>
                   </div>
 
-                  {day.locations.map((loc: any, locIndex: number) => (
-                    <div key={locIndex} className="rounded-2xl border bg-white p-4 space-y-3 shadow-xs">
-                      <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-                        <div className="md:col-span-3">
-                          <label className="text-[11px] font-semibold text-slate-500 block mb-1">Tên địa điểm / nhà</label>
-                          <input
-                            className="border p-2 rounded-xl w-full font-bold text-slate-800 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
-                            value={loc.location_name}
-                            onChange={(e) => updateLocation(dayIndex, locIndex, "location_name", e.target.value)}
-                            placeholder="Nhà trai / Nhà gái"
-                          />
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <label className="font-medium text-slate-600">
+                      Ngày thực hiện
+                      <input
+                        type="date"
+                        className="border p-2 rounded-xl w-full mt-1 bg-white font-semibold text-slate-800"
+                        value={day.shooting_date}
+                        onChange={(e) => updateDay(dayIndex, "shooting_date", e.target.value)}
+                      />
+                    </label>
+                    <label className="font-medium text-slate-600">
+                      Từ giờ
+                      <Time24Input
+                        className="border p-2 rounded-xl w-full mt-1 bg-white font-semibold text-slate-800"
+                        value={day.start_time}
+                        onChange={(v) => updateDay(dayIndex, "start_time", v)}
+                      />
+                    </label>
+                    <label className="font-medium text-slate-600">
+                      Đến giờ
+                      <Time24Input
+                        className="border p-2 rounded-xl w-full mt-1 bg-white font-semibold text-slate-800"
+                        value={day.end_time}
+                        onChange={(v) => updateDay(dayIndex, "end_time", v)}
+                      />
+                    </label>
+                    <label className="font-medium text-slate-600">
+                      Ghi chú ngày
+                      <input
+                        className="border p-2 rounded-xl w-full mt-1 bg-white font-medium text-slate-800 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
+                        value={day.note}
+                        onChange={(e) => updateDay(dayIndex, "note", e.target.value)}
+                        placeholder="Ăn hỏi / tiệc / lưu ý timeline..."
+                      />
+                    </label>
+                  </div>
+
+                  <div className="space-y-4 pt-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-700 text-xs uppercase">Các địa điểm trong ngày này</span>
+                      <button
+                        type="button"
+                        onClick={() => addLocation(dayIndex, "Nhà gái")}
+                        className="rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700 shadow-sm"
+                      >
+                        + Thêm địa chỉ / nhà gái
+                      </button>
+                    </div>
+
+                    {day.locations.map((loc: any, locIndex: number) => (
+                      <div key={locIndex} className="rounded-2xl border bg-white p-4 space-y-3 shadow-xs">
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                          <div className="md:col-span-3">
+                            <label className="text-[11px] font-semibold text-slate-500 block mb-1">Tên địa điểm / nhà</label>
+                            <input
+                              className="border p-2 rounded-xl w-full font-bold text-slate-800 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
+                              value={loc.location_name}
+                              onChange={(e) => updateLocation(dayIndex, locIndex, "location_name", e.target.value)}
+                              placeholder="Nhà trai / Nhà gái"
+                            />
+                          </div>
+                          <div className="md:col-span-5">
+                            <label className="text-[11px] font-semibold text-slate-500 block mb-1">Địa chỉ</label>
+                            <input
+                              className="border p-2 rounded-xl w-full font-medium text-slate-800 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
+                              value={loc.address}
+                              onChange={(e) => updateLocation(dayIndex, locIndex, "address", e.target.value)}
+                              placeholder="Xóm 1 Hoàng Xá / Giáp Long..."
+                            />
+                          </div>
+                          <div className="md:col-span-3">
+                            <label className="text-[11px] font-semibold text-slate-500 block mb-1">SĐT tại địa điểm</label>
+                            <input
+                              className="border p-2 rounded-xl w-full font-mono text-slate-800 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
+                              value={loc.phone}
+                              onChange={(e) => updateLocation(dayIndex, locIndex, "phone", e.target.value)}
+                              placeholder="SĐT tại điểm..."
+                            />
+                          </div>
+                          <div className="md:col-span-1 flex justify-center pb-2">
+                            <button
+                              type="button"
+                              onClick={() => removeLocation(dayIndex, locIndex)}
+                              className="text-rose-600 font-bold text-base hover:text-rose-800"
+                              title="Xóa địa điểm này"
+                            >
+                              ✕
+                            </button>
+                          </div>
                         </div>
-                        <div className="md:col-span-5">
-                          <label className="text-[11px] font-semibold text-slate-500 block mb-1">Địa chỉ</label>
-                          <input
-                            className="border p-2 rounded-xl w-full font-medium text-slate-800 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
-                            value={loc.address}
-                            onChange={(e) => updateLocation(dayIndex, locIndex, "address", e.target.value)}
-                            placeholder="Xóm 1 Hoàng Xá / Giáp Long..."
-                          />
-                        </div>
-                        <div className="md:col-span-3">
-                          <label className="text-[11px] font-semibold text-slate-500 block mb-1">SĐT tại địa điểm</label>
-                          <input
-                            className="border p-2 rounded-xl w-full font-mono text-slate-800 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
-                            value={loc.phone}
-                            onChange={(e) => updateLocation(dayIndex, locIndex, "phone", e.target.value)}
-                            placeholder="SĐT tại điểm..."
-                          />
-                        </div>
-                        <div className="md:col-span-1 flex justify-center pb-2">
+
+                        <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-100">
                           <button
                             type="button"
-                            onClick={() => removeLocation(dayIndex, locIndex)}
-                            className="text-rose-600 font-bold text-base hover:text-rose-800"
-                            title="Xóa địa điểm này"
+                            onClick={() => addAssignment(dayIndex, locIndex, "Thợ chụp")}
+                            className="rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700"
                           >
-                            ✕
+                            + Chụp
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => addAssignment(dayIndex, locIndex, "Thợ quay")}
+                            className="rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700"
+                          >
+                            + Quay
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => addAssignment(dayIndex, locIndex, "Flycam")}
+                            className="rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700"
+                          >
+                            + Flycam
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => addAssignment(dayIndex, locIndex, "Editor")}
+                            className="rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700"
+                          >
+                            + Editor
                           </button>
                         </div>
-                      </div>
 
-                      <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-100">
-                        <button
-                          type="button"
-                          onClick={() => addAssignment(dayIndex, locIndex, "Thợ chụp")}
-                          className="rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700"
-                        >
-                          + Chụp
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => addAssignment(dayIndex, locIndex, "Thợ quay")}
-                          className="rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700"
-                        >
-                          + Quay
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => addAssignment(dayIndex, locIndex, "Flycam")}
-                          className="rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700"
-                        >
-                          + Flycam
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => addAssignment(dayIndex, locIndex, "Editor")}
-                          className="rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700"
-                        >
-                          + Editor
-                        </button>
-                      </div>
-
-                      <div className="space-y-3 pt-2">
-                        {loc.assignments.map((assignment: any, assIndex: number) => (
-                          <div key={assIndex} className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2">
-                            <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-end">
-                              <div className="md:col-span-2">
-                                <label className="text-[11px] text-slate-500 font-medium block mb-1">Vai trò</label>
-                                <select
-                                  className="border p-2 rounded-lg font-medium text-xs bg-white w-full text-slate-800"
-                                  value={assignment.role}
-                                  onChange={(e) => updateAssignment(dayIndex, locIndex, assIndex, "role", e.target.value)}
-                                >
-                                  <option>Thợ chụp</option>
-                                  <option>Thợ quay</option>
-                                  <option>Flycam</option>
-                                  <option>Editor</option>
-                                </select>
-                              </div>
-
-                              <div className="md:col-span-4">
-                                <label className="text-[11px] text-slate-500 font-medium block mb-1">Nhân sự được phân công</label>
-                                <EmployeePicker
-                                  employees={employees}
-                                  value={assignment.employee_id}
-                                  getConflict={(id: string) => getEmployeeConflict(id, dayIndex, locIndex, assIndex)}
-                                  onChange={(id: string) => {
-                                    const selectedEmp = employees.find((e: any) => e.id === id);
-                                    const autoSalary = Number(selectedEmp?.base_fee || 0) > 0
-                                      ? Number(selectedEmp.base_fee)
-                                      : assignment.salary_amount;
-
-                                    updateAssignment(dayIndex, locIndex, assIndex, "employee_id", id);
-                                    if (Number(selectedEmp?.base_fee || 0) > 0) {
-                                      updateAssignment(dayIndex, locIndex, assIndex, "salary_amount", autoSalary);
-                                    }
-                                  }}
-                                />
-                              </div>
-
-                              <div className="md:col-span-2">
-                                <label className="text-[11px] text-slate-500 font-medium block mb-1">Tiền công thợ</label>
-                                <MoneyInput
-                                  className="border p-2 rounded-lg w-full bg-white font-bold text-slate-800"
-                                  value={assignment.salary_amount}
-                                  onChange={(v: number) => updateAssignment(dayIndex, locIndex, assIndex, "salary_amount", v)}
-                                  placeholder="Tiền công"
-                                />
-                              </div>
-
-                              <div className="md:col-span-3">
-                                <label className="text-[11px] text-slate-500 font-medium block mb-1">Ghi chú riêng cho thợ</label>
-                                <input
-                                  className="border p-2 rounded-lg w-full bg-white text-xs font-medium text-slate-800 placeholder:text-slate-300 placeholder:font-normal placeholder:italic"
-                                  value={assignment.note}
-                                  onChange={(e) => updateAssignment(dayIndex, locIndex, assIndex, "note", e.target.value)}
-                                  placeholder="Lưu ý riêng..."
-                                />
-                              </div>
-
-                              <div className="md:col-span-1 flex justify-end">
-                                <button
-                                  type="button"
-                                  onClick={() => removeAssignment(dayIndex, locIndex, assIndex)}
-                                  className="border border-rose-300 text-rose-600 hover:bg-rose-50 px-3 py-2 rounded-lg font-semibold text-xs w-full text-center"
-                                >
-                                  Xóa
-                                </button>
-                              </div>
-                            </div>
-
-                            <div className="pt-2 border-t border-slate-200/60 space-y-1.5">
-                              <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-amber-700">
-                                <input
-                                  type="checkbox"
-                                  checked={Boolean(assignment.client_requested)}
-                                  onChange={(e) => updateAssignment(dayIndex, locIndex, assIndex, "client_requested", e.target.checked)}
-                                  className="rounded border-amber-300 text-amber-600 focus:ring-amber-500"
-                                />
-                                <span>⭐ Khách chỉ định đích danh thợ này</span>
-                              </label>
-
-                              <label className="flex items-start gap-2 cursor-pointer text-xs font-semibold text-blue-700">
-                                <input
-                                  type="checkbox"
-                                  checked={Boolean(assignment.contact_visible)}
-                                  onChange={(e) => updateAssignment(dayIndex, locIndex, assIndex, "contact_visible", e.target.checked)}
-                                  className="rounded border-blue-300 text-blue-600 focus:ring-blue-500 mt-0.5"
-                                />
-                                <div>
-                                  <span>📞 Mở SĐT cho thợ xem ngay</span>
-                                  <p className="text-[11px] font-normal text-slate-400 italic">
-                                    Nếu không bật, hệ thống tự mở SĐT trước giờ làm 48 giờ.
-                                  </p>
+                        <div className="space-y-3 pt-2">
+                          {loc.assignments.map((assignment: any, assIndex: number) => (
+                            <div key={assIndex} className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2">
+                              <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-end">
+                                <div className="md:col-span-2">
+                                  <label className="text-[11px] text-slate-500 font-medium block mb-1">Vai trò</label>
+                                  <select
+                                    className="border p-2 rounded-lg font-medium text-xs bg-white w-full text-slate-800"
+                                    value={assignment.role}
+                                    onChange={(e) => updateAssignment(dayIndex, locIndex, assIndex, "role", e.target.value)}
+                                  >
+                                    <option>Thợ chụp</option>
+                                    <option>Thợ quay</option>
+                                    <option>Flycam</option>
+                                    <option>Editor</option>
+                                  </select>
                                 </div>
-                              </label>
+
+                                <div className="md:col-span-4">
+                                  <label className="text-[11px] text-slate-500 font-medium block mb-1">Nhân sự được phân công</label>
+                                  <EmployeePicker
+                                    employees={employees}
+                                    value={assignment.employee_id}
+                                    getConflict={(id: string) => getEmployeeConflict(id, dayIndex, locIndex, assIndex)}
+                                    onChange={(id: string) => {
+                                      const selectedEmp = employees.find((e: any) => e.id === id);
+                                      const autoSalary = Number(selectedEmp?.base_fee || 0) > 0
+                                        ? Number(selectedEmp.base_fee)
+                                        : assignment.salary_amount;
+
+                                      updateAssignment(dayIndex, locIndex, assIndex, "employee_id", id);
+                                      if (Number(selectedEmp?.base_fee || 0) > 0) {
+                                        updateAssignment(dayIndex, locIndex, assIndex, "salary_amount", autoSalary);
+                                      }
+                                    }}
+                                  />
+                                </div>
+
+                                <div className="md:col-span-2">
+                                  <label className="text-[11px] text-slate-500 font-medium block mb-1">Tiền công thợ</label>
+                                  <MoneyInput
+                                    className="border p-2 rounded-lg w-full bg-white font-bold text-slate-800"
+                                    value={assignment.salary_amount}
+                                    onChange={(v: number) => updateAssignment(dayIndex, locIndex, assIndex, "salary_amount", v)}
+                                    placeholder="Tiền công"
+                                  />
+                                </div>
+
+                                <div className="md:col-span-3">
+                                  <label className="text-[11px] text-slate-500 font-medium block mb-1">Ghi chú riêng cho thợ</label>
+                                  <input
+                                    className="border p-2 rounded-lg w-full bg-white text-xs font-medium text-slate-800 placeholder:text-slate-300 placeholder:font-normal placeholder:italic"
+                                    value={assignment.note}
+                                    onChange={(e) => updateAssignment(dayIndex, locIndex, assIndex, "note", e.target.value)}
+                                    placeholder="Lưu ý riêng..."
+                                  />
+                                </div>
+
+                                <div className="md:col-span-1 flex justify-end">
+                                  <button
+                                    type="button"
+                                    onClick={() => removeAssignment(dayIndex, locIndex, assIndex)}
+                                    className="border border-rose-300 text-rose-600 hover:bg-rose-50 px-3 py-2 rounded-lg font-semibold text-xs w-full text-center"
+                                  >
+                                    Xóa
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="pt-2 border-t border-slate-200/60 space-y-1.5">
+                                <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-amber-700">
+                                  <input
+                                    type="checkbox"
+                                    checked={Boolean(assignment.client_requested)}
+                                    onChange={(e) => updateAssignment(dayIndex, locIndex, assIndex, "client_requested", e.target.checked)}
+                                    className="rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                                  />
+                                  <span>⭐ Khách chỉ định đích danh thợ này</span>
+                                </label>
+
+                                <label className="flex items-start gap-2 cursor-pointer text-xs font-semibold text-blue-700">
+                                  <input
+                                    type="checkbox"
+                                    checked={Boolean(assignment.contact_visible)}
+                                    onChange={(e) => updateAssignment(dayIndex, locIndex, assIndex, "contact_visible", e.target.checked)}
+                                    className="rounded border-blue-300 text-blue-600 focus:ring-blue-500 mt-0.5"
+                                  />
+                                  <div>
+                                    <span>📞 Mở SĐT cho thợ xem ngay</span>
+                                    <p className="text-[11px] font-normal text-slate-400 italic">
+                                      Nếu không bật, hệ thống tự mở SĐT trước giờ làm 48 giờ.
+                                    </p>
+                                  </div>
+                                </label>
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* MỤC 4: PHÂN CÔNG HẬU KỲ (EDIT VIDEO & CHỈNH ẢNH) - ƯU TIÊN THỢ ĐÃ ĐI LÀM */}
+          <div className="border rounded-2xl p-4 bg-purple-50/40 border-purple-200 space-y-3">
+            <div className="border-b border-purple-200 pb-2">
+              <h3 className="font-bold text-sm text-purple-900 uppercase">4. Phân công hậu kỳ (Tùy chọn)</h3>
+              <p className="text-[11px] text-purple-600 font-normal">Ưu tiên thợ đã tham gia quay/chụp trong Job này làm luôn hoặc chỉ định thợ ngoài</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* EDIT VIDEO */}
+              <div className="bg-white p-3.5 rounded-xl border border-purple-100 shadow-xs space-y-2">
+                <span className="font-bold text-slate-800 text-xs block">🎬 Thợ Edit Video:</span>
+                <select
+                  className="w-full border p-2 rounded-lg text-xs bg-white font-medium text-slate-800"
+                  value={jobForm.video_editor_id || ""}
+                  onChange={(e) => {
+                    const empId = e.target.value;
+                    const selectedEmp = employees.find((emp: any) => emp.id === empId);
+                    setJobForm({
+                      ...jobForm,
+                      video_editor_id: empId,
+                      video_editor_salary: Number(selectedEmp?.base_fee || 0) > 0 ? Number(selectedEmp.base_fee) : (jobForm.video_editor_salary || 500000)
+                    });
+                  }}
+                >
+                  <option value="">-- Để trống nếu không phân công --</option>
+                  {assignedWorkersInThisJob.length > 0 && (
+                    <optgroup label="⭐ Thợ đi làm trong Job này (Ưu tiên)">
+                      {assignedWorkersInThisJob.map((emp: any) => (
+                        <option key={emp.id} value={emp.id}>
+                          ⭐ {emp.full_name} ({emp.role || "Thợ"})
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  <optgroup label="Tất cả nhân sự">
+                    {employees.map((emp: any) => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.full_name} ({emp.role || "Nhân sự"})
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-500 text-xs whitespace-nowrap">Tiền công Edit:</span>
+                  <MoneyInput
+                    className="border p-1.5 rounded-lg w-full bg-white font-bold text-purple-700"
+                    value={jobForm.video_editor_salary}
+                    onChange={(v: number) => setJobForm({ ...jobForm, video_editor_salary: v })}
+                    placeholder="Tiền công video"
+                  />
                 </div>
               </div>
-            ))}
+
+              {/* CHỈNH ẢNH PTS */}
+              <div className="bg-white p-3.5 rounded-xl border border-purple-100 shadow-xs space-y-2">
+                <span className="font-bold text-slate-800 text-xs block">🎨 Thợ chỉnh sửa ảnh (Photoshop):</span>
+                <select
+                  className="w-full border p-2 rounded-lg text-xs bg-white font-medium text-slate-800"
+                  value={jobForm.photo_editor_id || ""}
+                  onChange={(e) => {
+                    const empId = e.target.value;
+                    const selectedEmp = employees.find((emp: any) => emp.id === empId);
+                    setJobForm({
+                      ...jobForm,
+                      photo_editor_id: empId,
+                      photo_editor_salary: Number(selectedEmp?.base_fee || 0) > 0 ? Number(selectedEmp.base_fee) : (jobForm.photo_editor_salary || 300000)
+                    });
+                  }}
+                >
+                  <option value="">-- Để trống nếu không phân công --</option>
+                  {assignedWorkersInThisJob.length > 0 && (
+                    <optgroup label="⭐ Thợ đi làm trong Job này (Ưu tiên)">
+                      {assignedWorkersInThisJob.map((emp: any) => (
+                        <option key={emp.id} value={emp.id}>
+                          ⭐ {emp.full_name} ({emp.role || "Thợ"})
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  <optgroup label="Tất cả nhân sự">
+                    {employees.map((emp: any) => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.full_name} ({emp.role || "Nhân sự"})
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-500 text-xs whitespace-nowrap">Tiền công PTS:</span>
+                  <MoneyInput
+                    className="border p-1.5 rounded-lg w-full bg-white font-bold text-blue-700"
+                    value={jobForm.photo_editor_salary}
+                    onChange={(v: number) => setJobForm({ ...jobForm, photo_editor_salary: v })}
+                    placeholder="Tiền công PTS"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
