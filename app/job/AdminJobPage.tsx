@@ -306,6 +306,7 @@ export default function AdminJobPage() {
     setOpenForm(true);
   };
 
+  // TỰ ĐỘNG BẬT FORM SỬA VÀ DỌN SẠCH URL TRÁNH BỊ MỞ LẶP LẠI
   useEffect(() => {
     if (!jobs.length || typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
@@ -320,6 +321,8 @@ export default function AdminJobPage() {
         } else {
           setSelectedJob(targetJob);
         }
+        // Xóa sạch tham số trên thanh địa chỉ để không bị lặp
+        window.history.replaceState({}, "", window.location.pathname);
       }
     }
   }, [jobs]);
@@ -545,7 +548,6 @@ export default function AdminJobPage() {
         customerId = createdCustomer.id;
       }
 
-      // XỬ LÝ KHÔNG GỬI NULL VÀO CỘT NOT NULL (TỰ CHUYỂN SANG 0)
       const parsedPhotoCount = jobForm.required_photo_count === "" || jobForm.required_photo_count === null 
         ? 0 
         : Number(jobForm.required_photo_count);
@@ -665,8 +667,12 @@ export default function AdminJobPage() {
 
       await markUsedReserveWorkers(jobId, usedReserveIds, usedEmployeeIds, shootingDates);
 
+      // ĐÓNG FORM & RESET TRẠNG THÁI
       setOpenForm(false);
       setEditingJob(null);
+      if (typeof window !== "undefined") {
+        window.history.replaceState({}, "", window.location.pathname);
+      }
       await loadData();
       alert("Đã lưu Job thành công!");
     } catch (error: any) {
@@ -889,7 +895,13 @@ export default function AdminJobPage() {
           getEmployeeConflict={getEmployeeConflict}
           editingJob={editingJob}
           saving={saving}
-          onClose={() => { setOpenForm(false); setEditingJob(null); }}
+          onClose={() => {
+            setOpenForm(false);
+            setEditingJob(null);
+            if (typeof window !== "undefined") {
+              window.history.replaceState({}, "", window.location.pathname);
+            }
+          }}
           onSave={saveJob}
         />
       )}
