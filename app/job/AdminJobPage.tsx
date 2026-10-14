@@ -92,7 +92,6 @@ const getEventDateText = (job: any) => {
     .join(" . ");
 };
 
-// KIỂM TRA JOB ĐÃ HOÀN THÀNH (BẰNG TAY HOẶC TỰ ĐỘNG THEO NGÀY GIỜ)
 export const isJobDoneActual = (job: any) => {
   const s = String(job?.status || "").trim().toLowerCase();
   if (s.includes("hoàn thành") || s.includes("đã bàn giao")) return true;
@@ -102,7 +101,6 @@ export const isJobDoneActual = (job: any) => {
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   const currentTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
   
-  // Kiểm tra xem tất cả các ngày chụp của Job đã kết thúc hay chưa
   return days.every((d: any) => {
     const dDate = String(d.shooting_date || "");
     if (!dDate) return false;
@@ -113,7 +111,6 @@ export const isJobDoneActual = (job: any) => {
   });
 };
 
-// PHÂN TÁCH 4 TRẠNG THÁI HIỂN THỊ
 export const getJobDetailedStatus = (job: any) => {
   const isDone = isJobDoneActual(job);
   const total = Number(job?.total_price || 0);
@@ -146,41 +143,6 @@ export const getJobDetailedStatus = (job: any) => {
     label: job?.status || "Đã đặt cọc",
     badgeClass: "bg-slate-100 text-slate-700 border-slate-300",
     isCompleted: false,
-  };
-};
-
-const buildZaloConfirmPayload = (job: any) => {
-  const customer = getMainCustomer(job);
-  const phone = normalizePhone(customer.phone || job.customer_phone);
-  return {
-    phone,
-    template_data: {
-      phone,
-      date: formatDateVN(new Date().toISOString().slice(0, 10)),
-      address: getJobAddress(job),
-      price: Number(job.debt || job.total_price || 0),
-      event_date: getEventDateText(job),
-      name: customer.full_name || job.customer_name || "Quý khách",
-      service_package: job.service || "",
-      phone_number: phone,
-      customer_name: job.event_name || customer.full_name || job.customer_name || "",
-    },
-  };
-};
-
-const buildZaloReviewPayload = (job: any) => {
-  const customer = getMainCustomer(job);
-  const firstDay = getFirstJobDay(job);
-  return {
-    phone: normalizePhone(customer.phone || job.customer_phone),
-    template_data: {
-      phone: normalizePhone(customer.phone || job.customer_phone),
-      order_code: job.service || job.job_code || "",
-      order_date: formatDateVN(firstDay.shooting_date),
-      $zReqId: "",
-      $zReqTime: "",
-      customer_name: job.event_name || customer.full_name || job.customer_name || "",
-    },
   };
 };
 
@@ -414,7 +376,7 @@ export default function AdminJobPage() {
       setDays([{ shooting_date: d.shooting_date || "", start_time: d.start_time || "07:00", end_time: d.end_time || "11:00", note: d.note || "", locations: [{ location_name: d.location_name || "Địa điểm", address: d.address || "", phone: d.location_phone || "", note: d.note || "", assignments: ass.length ? ass : [makeAssignment("Thợ chụp")] }] }]);
       setOpenForm(true);
       alert("AI đã điền trước Job. Hãy kiểm tra lại trước khi bấm Lưu Job.");
-    } catch { /* bỏ qua draft lỗi */ }
+    } catch {}
   }, [employees, customers]);
 
   useEffect(() => {
@@ -700,16 +662,6 @@ export default function AdminJobPage() {
     } catch (error: any) {
       alert(error?.message || "Không lưu được dữ liệu offline trên thiết bị");
     }
-  };
-
-  const restoreOfflineDraft = () => {
-    try {
-      const list = JSON.parse(localStorage.getItem("been_offline_job_drafts") || "[]");
-      const item = list.pop();
-      if (!item) return alert("Không còn bản nháp offline kiểu cũ.");
-      localStorage.setItem("been_offline_job_drafts", JSON.stringify(list));
-      setEditingJob(null); setCustomerForm(item.customerForm); setJobForm(item.jobForm); setDays(item.days); setOpenForm(true); refreshOfflineCount();
-    } catch { alert("Không đọc được bản nháp offline"); }
   };
 
   async function markUsedReserveWorkers(jobId: string) {
@@ -1076,7 +1028,6 @@ export default function AdminJobPage() {
     return ds.some((v: string) => Number(v.slice(0, 4)) === filterYear && (filterMonth === "all" || Number(v.slice(5, 7)) === filterMonth));
   }), [jobs, filterYear, filterMonth]);
 
-  // LỌC THEO TRẠNG THÁI THỰC TẾ & TAB
   const filteredJobs = useMemo(() => {
     const q = search.trim().toLowerCase();
     return periodJobs.filter((job: any) => {
@@ -1102,7 +1053,6 @@ export default function AdminJobPage() {
     });
   }, [periodJobs, statusTab, filterEmployee, search]);
 
-  // THỐNG KÊ CHUẨN XÁC THEO LOGIC MỚI
   const periodTotals = useMemo(() => {
     const completedCount = periodJobs.filter((j: any) => isJobDoneActual(j)).length;
     return {
@@ -1140,7 +1090,6 @@ export default function AdminJobPage() {
         </div>
       </div>
 
-      {/* 6 Thẻ tổng quan */}
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <div className="bg-white rounded-2xl p-4 shadow-sm border">
           <p className="text-xs text-slate-500">Job tổng</p>
@@ -1168,7 +1117,6 @@ export default function AdminJobPage() {
         </div>
       </div>
 
-      {/* Bộ lọc thông minh */}
       <div className="mb-5 rounded-2xl bg-white p-4 shadow-sm border">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <label className="text-xs font-semibold text-slate-600">
@@ -1217,7 +1165,6 @@ export default function AdminJobPage() {
             </select>
           </label>
           
-          {/* Bộ 3 nút lọc trạng thái */}
           <div className="flex items-end gap-1.5 sm:gap-2">
             {(
               [
@@ -1242,7 +1189,6 @@ export default function AdminJobPage() {
         </div>
       </div>
 
-      {/* Bảng danh sách Job */}
       <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1100px] text-left text-xs">
@@ -1333,7 +1279,6 @@ export default function AdminJobPage() {
                       </div>
                     </td>
                     
-                    {/* TRẠNG THÁI CHUẨN XÁC 4 NHÓM */}
                     <td className="p-3.5 text-center">
                       <span className={`inline-block rounded-full border px-2.5 py-1 text-xs font-semibold ${statusInfo.badgeClass}`}>
                         {statusInfo.label}
@@ -1368,7 +1313,6 @@ export default function AdminJobPage() {
         </div>
       </div>
 
-      {/* MODAL TẠO / SỬA JOB (CÓ NÚT X DÍNH TRÊN ĐẦU) */}
       {openForm && (
         <JobForm
           customers={customers}
@@ -1403,24 +1347,23 @@ export default function AdminJobPage() {
         />
       )}
 
-      {/* MODAL CHI TIẾT JOB (CÓ NÚT X DÍNH TRÊN ĐẦU) */}
       {selectedJob && (
         <JobDetail
           job={selectedJob}
+          onReload={loadData}
           onClose={() => setSelectedJob(null)}
           onEdit={() => {
+            const j = selectedJob;
             setSelectedJob(null);
-            openEdit(selectedJob);
+            openEdit(j);
           }}
           onDelete={() => deleteJob(selectedJob.id)}
         />
       )}
 
-      {/* MODAL NHẬP JOB NHANH (CÓ NÚT X DÍNH TRÊN ĐẦU) */}
       {showQuickJob && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 p-3 sm:p-4 backdrop-blur-sm overflow-y-auto">
           <div className="max-h-[92vh] w-full max-w-4xl flex flex-col rounded-2xl bg-white shadow-2xl">
-            {/* Header dính trên đầu */}
             <div className="sticky top-0 z-20 flex items-center justify-between border-b bg-white px-5 py-4 rounded-t-2xl">
               <div>
                 <h2 className="text-lg sm:text-xl font-bold text-slate-800">Nhập Job nhanh</h2>
@@ -1548,7 +1491,6 @@ export default function AdminJobPage() {
   );
 }
 
-// FORM TẠO / SỬA JOB (STICKY HEADER CÓ NÚT X)
 function JobForm(props: any) {
   const {
     customers,
@@ -1582,7 +1524,6 @@ function JobForm(props: any) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-4 backdrop-blur-sm overflow-y-auto">
       <div className="relative w-full max-w-7xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[92vh]">
-        {/* Header dính trên đầu */}
         <div className="sticky top-0 z-20 flex items-center justify-between border-b bg-white px-6 py-4 rounded-t-2xl">
           <div>
             <h2 className="text-lg sm:text-xl font-bold text-slate-800">
@@ -1599,10 +1540,8 @@ function JobForm(props: any) {
           </button>
         </div>
 
-        {/* Nội dung Form cuộn */}
         <div className="p-6 overflow-y-auto space-y-6 text-xs text-slate-700 flex-1">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Cột 1: Khách hàng */}
             <div className="border rounded-2xl p-4 space-y-3 bg-white">
               <h3 className="font-bold text-sm text-blue-700 uppercase">1. Thông tin Khách hàng</h3>
               <label className="block font-medium">
@@ -1689,7 +1628,6 @@ function JobForm(props: any) {
               </div>
             </div>
 
-            {/* Cột 2: Booking & Tiền */}
             <div className="border rounded-2xl p-4 space-y-3 bg-white">
               <h3 className="font-bold text-sm text-blue-700 uppercase">2. Chi tiết Booking & Hợp đồng</h3>
               <input
@@ -1770,7 +1708,6 @@ function JobForm(props: any) {
             </div>
           </div>
 
-          {/* Mục 3: Lịch chụp & Phân công */}
           <div className="space-y-4 pt-2">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-sm text-blue-700 uppercase">3. Ngày chụp & Phân công thợ</h3>
@@ -1844,7 +1781,6 @@ function JobForm(props: any) {
                   </label>
                 </div>
 
-                {/* Danh sách địa điểm */}
                 {day.locations.map((loc: any, locIndex: number) => (
                   <div key={locIndex} className="rounded-xl border bg-white p-3 space-y-3">
                     <div className="flex items-center justify-between border-b pb-2">
@@ -1877,7 +1813,6 @@ function JobForm(props: any) {
                       />
                     </div>
 
-                    {/* Phân công thợ */}
                     <div className="space-y-2 pt-1">
                       {loc.assignments.map((assignment: any, assIndex: number) => (
                         <div key={assIndex} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center bg-slate-50 p-2 rounded-lg border">
@@ -1968,7 +1903,6 @@ function JobForm(props: any) {
           </div>
         </div>
 
-        {/* Footer cố định */}
         <div className="sticky bottom-0 z-20 flex justify-end gap-2 border-t bg-white px-6 py-4 rounded-b-2xl">
           <button
             type="button"
@@ -1991,52 +1925,105 @@ function JobForm(props: any) {
   );
 }
 
-// MODAL CHI TIẾT JOB (STICKY HEADER CÓ NÚT X)
-function JobDetail({ job, onClose, onEdit, onDelete }: any) {
+// MODAL CHI TIẾT JOB: KHÔI PHỤC CHUẨN GIAO DIỆN CŨ (BẢNG 7 CỘT + SAO CHÉP TỪNG NGÀY + MỞ SĐT)
+function JobDetail({ job, onClose, onEdit, onDelete, onReload }: any) {
   const days = job.job_days || [];
   const statusInfo = getJobDetailedStatus(job);
 
+  // Mở/Đóng SĐT cho thợ thủ công
+  const toggleContactVisible = async (assignmentId: string, currentVal: boolean) => {
+    const nextVal = !currentVal;
+    const { error } = await supabase
+      .from("job_assignments")
+      .update({ contact_visible: nextVal })
+      .eq("id", assignmentId);
+
+    if (error) {
+      alert("Lỗi khi cập nhật trạng thái SĐT: " + error.message);
+      return;
+    }
+
+    if (onReload) onReload();
+  };
+
+  // Sao chép lịch chụp chi tiết từng ngày
+  const copySingleDay = (day: any, dayIndex: number) => {
+    const locGroom = (day.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("trai")) || {};
+    const locBride = (day.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("gái")) || {};
+
+    const groomAddr = locGroom.address || job.customers?.address || "";
+    const brideAddr = locBride.address || "";
+
+    let text = `Ngày ${dayIndex + 1}${day.note ? ` – ${day.note}` : ""}: ${formatDateVN(day.shooting_date)} • ${day.start_time?.slice(0, 5)} - ${day.end_time?.slice(0, 5)}\n`;
+    text += `Địa điểm: Nhà trai: ${groomAddr || "Chưa có"} | Nhà gái: ${brideAddr || "Chưa có"}\n`;
+
+    (day.job_assignments || []).forEach((a: any) => {
+      const locName = a.work_location_name || "Địa điểm";
+      const empName = a.employees?.full_name || "Chưa chọn";
+      const salary = money(a.salary_amount);
+      text += `- ${a.role || "Thợ"}: ${empName} (${locName}) | Lương: ${salary}\n`;
+    });
+
+    navigator.clipboard.writeText(text);
+    alert(`Đã sao chép lịch chụp Ngày ${dayIndex + 1} vào bộ nhớ đệm!`);
+  };
+
+  // Sao chép đầy đủ Job
   const copyFullJob = async () => {
     const lines: string[] = [
-      `BEEN MEDIA - THÔNG TIN JOB`,
+      `📸 [BEEN MEDIA] - LỊCH CHỤP TOÀN BỘ JOB`,
       `Sự kiện: ${job.event_name || job.customer_name || ""}`,
-      `Khách: ${job.customers?.full_name || job.customer_name || ""}`,
-      `SĐT khách: ${job.customers?.phone || job.customer_phone || ""}`,
-      `SĐT phụ: ${job.customers?.secondary_phone || job.secondary_phone || ""}`,
-      `Dịch vụ: ${job.service || ""}`,
-      `Trạng thái: ${statusInfo.label}`,
-      `Ghi chú: ${job.note || ""}`,
+      `Mã Job: ${job.job_code}`,
+      `Gói dịch vụ: ${job.service || ""}`,
+      `Khách hàng: ${job.customers?.full_name || job.customer_name || ""}`,
+      `SĐT Nhà trai: ${job.customers?.phone || job.customer_phone || "Chưa có"}`,
+      `SĐT Nhà gái: ${job.customers?.secondary_phone || job.secondary_phone || "Chưa có"}`,
+      `----------------------------------------`,
     ];
-    (job.job_days || []).forEach((d: any, i: number) => {
+
+    days.forEach((d: any, i: number) => {
+      const locGroom = (d.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("trai")) || {};
+      const locBride = (d.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("gái")) || {};
+
       lines.push(
-        ``,
-        `Ngày ${i + 1}: ${formatDateVN(d.shooting_date) || ""} • ${d.start_time || "--:--"} - ${d.end_time || "--:--"}`,
-        `Địa điểm: ${d.location || ""}`
+        `\n📅 Ngày ${i + 1}${d.note ? ` – ${d.note}` : ""}: ${formatDateVN(d.shooting_date)} • ${d.start_time?.slice(0, 5)} - ${d.end_time?.slice(0, 5)}`,
+        `📍 Địa điểm: Nhà trai: ${locGroom.address || job.customers?.address || "Chưa cập nhật"} | Nhà gái: ${locBride.address || "Chưa cập nhật"}`
       );
-      (d.job_assignments || []).forEach((a: any) =>
+
+      (d.job_assignments || []).forEach((a: any) => {
         lines.push(
-          `- ${a.role || ""}: ${a.employees?.full_name || "Chưa chọn"} | Lương: ${money(a.salary_amount)}`
-        )
-      );
+          `- ${a.role || "Thợ"}: ${a.employees?.full_name || "Chưa chọn"} | Lương: ${money(a.salary_amount)}`
+        );
+      });
     });
+
+    if (job.note) {
+      lines.push(`\n📝 Ghi chú chung: ${job.note}`);
+    }
+
     await navigator.clipboard.writeText(lines.join("\n"));
     alert("Đã sao chép đầy đủ Job vào bộ nhớ đệm!");
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-4 backdrop-blur-sm overflow-y-auto">
-      <div className="relative w-full max-w-5xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
+      <div className="relative w-full max-w-5xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[92vh]">
         {/* Header dính trên đầu */}
         <div className="sticky top-0 z-20 flex items-center justify-between border-b bg-white px-6 py-4 rounded-t-2xl">
           <div>
-            <h2 className="text-lg sm:text-xl font-bold text-slate-800">
+            <h2 className="text-xl sm:text-2xl font-bold text-slate-800">
               {job.event_name || job.job_code}
             </h2>
-            <div className="flex items-center gap-2 mt-1">
-              <span className={`inline-block rounded-full border px-2 py-0.5 text-xs font-semibold ${statusInfo.badgeClass}`}>
+            <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-slate-500">
+              <span className="font-mono">{job.job_code}</span>
+              <span>•</span>
+              <span className="font-semibold text-slate-700">{job.customers?.full_name || job.customer_name}</span>
+              <span>•</span>
+              <span>{job.service}</span>
+              <span>•</span>
+              <span className={`rounded px-2 py-0.5 font-bold ${statusInfo.badgeClass}`}>
                 {statusInfo.label}
               </span>
-              <span className="text-xs text-slate-400">• Mã: {job.job_code}</span>
             </div>
           </div>
           <button
@@ -2048,59 +2035,143 @@ function JobDetail({ job, onClose, onEdit, onDelete }: any) {
           </button>
         </div>
 
-        {/* Nội dung chi tiết */}
-        <div className="p-6 overflow-y-auto space-y-5 text-xs text-slate-700 flex-1">
+        {/* Nội dung chi tiết cuộn */}
+        <div className="p-6 overflow-y-auto space-y-4 text-xs text-slate-700 flex-1">
+          {/* 4 Thẻ tài chính */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <div className="rounded-xl border p-3 bg-slate-50">
+            <div className="rounded-xl border p-3 bg-white shadow-xs">
               <p className="text-slate-500">Tổng tiền hợp đồng</p>
               <p className="text-lg font-black text-slate-800 mt-1">{money(job.total_price)}</p>
             </div>
-            <div className="rounded-xl border p-3 bg-emerald-50/50">
+            <div className="rounded-xl border p-3 bg-emerald-50/50 shadow-xs">
               <p className="text-slate-500">Đã thanh toán / Cọc</p>
               <p className="text-lg font-black text-emerald-600 mt-1">{money(job.deposit)}</p>
             </div>
-            <div className="rounded-xl border p-3 bg-rose-50/50">
+            <div className="rounded-xl border p-3 bg-rose-50/50 shadow-xs">
               <p className="text-slate-500">Khách còn nợ</p>
               <p className="text-lg font-black text-rose-600 mt-1">{money(job.debt)}</p>
             </div>
-            <div className="rounded-xl border p-3 bg-slate-50">
+            <div className="rounded-xl border p-3 bg-white shadow-xs">
               <p className="text-slate-500">Số ngày quay/chụp</p>
               <p className="text-lg font-black text-slate-800 mt-1">{days.length}</p>
             </div>
           </div>
 
+          {/* Nhu cầu nhân sự */}
+          <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-3.5">
+            <p className="font-bold text-blue-900 mb-1.5">Nhu cầu nhân sự</p>
+            <div className="flex gap-2">
+              <span className="rounded-full bg-white border border-blue-200 px-3 py-0.5 text-xs font-semibold text-blue-700 shadow-xs">
+                Cần chụp: {job.required_photo_count || 0}
+              </span>
+              <span className="rounded-full bg-white border border-blue-200 px-3 py-0.5 text-xs font-semibold text-blue-700 shadow-xs">
+                Cần quay: {job.required_video_count || 0}
+              </span>
+            </div>
+          </div>
+
+          {/* Danh sách từng ngày chụp - Giao diện bảng 7 cột chuẩn cũ */}
           <div className="space-y-4">
-            {days.map((day: any, index: number) => (
-              <div key={day.id || index} className="rounded-2xl border bg-slate-50 p-4 space-y-3">
-                <div className="flex items-center justify-between border-b pb-2">
-                  <h3 className="font-bold text-slate-800">
-                    Ngày {index + 1}: {formatDateVN(day.shooting_date)} ({day.start_time} - {day.end_time})
-                  </h3>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs bg-white rounded-xl border overflow-hidden">
-                    <thead className="bg-slate-50 border-b text-slate-500">
-                      <tr>
-                        <th className="p-2.5">Địa điểm</th>
-                        <th className="p-2.5">Vai trò</th>
-                        <th className="p-2.5">Thợ phụ trách</th>
-                        <th className="p-2.5 text-right">Tiền công</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y text-slate-700">
-                      {(day.job_assignments || []).map((a: any) => (
-                        <tr key={a.id}>
-                          <td className="p-2.5 font-medium">{a.work_location_name || "Nhà trai/gái"}</td>
-                          <td className="p-2.5">{a.role}</td>
-                          <td className="p-2.5 font-bold text-slate-900">{a.employees?.full_name || "Chưa xếp"}</td>
-                          <td className="p-2.5 text-right font-bold text-orange-600">{money(a.salary_amount)}</td>
+            {days.map((day: any, index: number) => {
+              const locGroom = (day.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("trai")) || {};
+              const locBride = (day.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("gái")) || {};
+
+              const groomAddr = locGroom.address || job.customers?.address || "";
+              const brideAddr = locBride.address || "";
+
+              return (
+                <div key={day.id || index} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
+                  {/* Tiêu đề Ngày + Nút Sao chép ngày này */}
+                  <div className="flex items-center justify-between border-b pb-2">
+                    <h3 className="font-bold text-slate-800 text-sm">
+                      Ngày {index + 1}{day.note ? ` – ${day.note}` : ""}: {formatDateVN(day.shooting_date)} • {day.start_time?.slice(0, 5)} - {day.end_time?.slice(0, 5)}
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() => copySingleDay(day, index)}
+                      className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1 font-semibold text-blue-600 hover:bg-blue-100 transition-colors"
+                    >
+                      📋 Sao chép ngày này
+                    </button>
+                  </div>
+
+                  {/* Tóm tắt Nhà trai | Nhà gái */}
+                  <p className="text-xs text-slate-500">
+                    <span className="font-semibold text-slate-700">Địa điểm: </span>
+                    Nhà trai: {groomAddr || "Chưa cập nhật"} | Nhà gái: {brideAddr || "Chưa cập nhật"}
+                  </p>
+
+                  {/* BẢNG 7 CỘT CHI TIẾT */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs min-w-[750px] border rounded-xl overflow-hidden">
+                      <thead className="border-b bg-slate-50 text-slate-600 font-semibold">
+                        <tr>
+                          <th className="p-2.5">Địa điểm</th>
+                          <th className="p-2.5">Địa chỉ / SĐT</th>
+                          <th className="p-2.5">Vai trò</th>
+                          <th className="p-2.5">Thợ</th>
+                          <th className="p-2.5">Lương</th>
+                          <th className="p-2.5 text-center">SĐT cho thợ</th>
+                          <th className="p-2.5">Ghi chú</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y text-slate-700 bg-white">
+                        {(day.job_assignments || []).length > 0 ? (
+                          (day.job_assignments || []).map((a: any) => {
+                            const isGroom = String(a.work_location_name || "").toLowerCase().includes("trai");
+                            const address = isGroom ? (groomAddr || a.work_location_address) : (brideAddr || a.work_location_address);
+                            const phone = isGroom ? (job.customers?.phone || job.customer_phone) : (job.customers?.secondary_phone || job.secondary_phone);
+
+                            return (
+                              <tr key={a.id} className="hover:bg-slate-50/70">
+                                <td className="p-2.5 font-bold text-slate-800">
+                                  {a.work_location_name || (isGroom ? "Nhà trai" : "Nhà gái")}
+                                </td>
+                                <td className="p-2.5">
+                                  <div className="font-medium text-slate-800">{address || "Chưa nhập địa chỉ"}</div>
+                                  {phone && <div className="text-[11px] text-slate-500 font-mono mt-0.5">{phone}</div>}
+                                </td>
+                                <td className="p-2.5 text-slate-600">{a.role}</td>
+                                <td className="p-2.5 font-bold text-slate-900">{a.employees?.full_name || "Chưa xếp thợ"}</td>
+                                <td className="p-2.5 font-bold text-slate-800">{money(a.salary_amount)}</td>
+                                <td className="p-2.5 text-center">
+                                  {a.contact_visible ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleContactVisible(a.id, true)}
+                                      className="rounded bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
+                                      title="Bấm để ẩn SĐT khỏi thợ"
+                                    >
+                                      Đang mở
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleContactVisible(a.id, false)}
+                                      className="rounded bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-700 border hover:bg-slate-200"
+                                      title="Bấm để mở SĐT cho thợ ngay"
+                                    >
+                                      Mở sớm
+                                    </button>
+                                  )}
+                                </td>
+                                <td className="p-2.5 text-slate-500">{a.note || "-"}</td>
+                              </tr>
+                            );
+                          })
+                        ) : (
+                          <tr>
+                            <td colSpan={7} className="p-3 text-center text-slate-400 italic">
+                              Chưa có phân công thợ cho ca này.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -2108,7 +2179,7 @@ function JobDetail({ job, onClose, onEdit, onDelete }: any) {
         <div className="sticky bottom-0 z-20 flex justify-end gap-2 border-t bg-white px-6 py-4 rounded-b-2xl">
           <button
             onClick={copyFullJob}
-            className="rounded-xl bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700"
+            className="rounded-xl bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 shadow-sm"
           >
             📋 Sao chép đầy đủ Job
           </button>
@@ -2120,13 +2191,13 @@ function JobDetail({ job, onClose, onEdit, onDelete }: any) {
           </button>
           <button
             onClick={onEdit}
-            className="rounded-xl bg-amber-500 px-4 py-2 font-semibold text-white hover:bg-amber-600"
+            className="rounded-xl bg-amber-500 px-4 py-2 font-semibold text-white hover:bg-amber-600 shadow-sm"
           >
             Sửa job
           </button>
           <button
             onClick={onDelete}
-            className="rounded-xl bg-rose-600 px-4 py-2 font-semibold text-white hover:bg-rose-700"
+            className="rounded-xl bg-rose-600 px-4 py-2 font-semibold text-white hover:bg-rose-700 shadow-sm"
           >
             Xóa job
           </button>
