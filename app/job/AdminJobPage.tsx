@@ -404,6 +404,7 @@ export default function AdminJobPage() {
     );
   };
 
+  // HÀM GÁN NHANH THỢ DỰ PHÒNG VÀO NGÀY CHỤP
   const addReservedWorkerToDay = (dayIndex: number, reserve: any) => {
     const currentDay = days[dayIndex];
     if (!currentDay.locations || currentDay.locations.length === 0) return;
@@ -882,6 +883,7 @@ function JobForm(props: any) {
     updateAssignment,
     addAssignment,
     removeAssignment,
+    addReservedWorkerToDay,
     editingJob,
     saving,
     onClose,
