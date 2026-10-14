@@ -507,7 +507,6 @@ export default function AdminJobPage() {
         customerId = createdCustomer.id;
       }
 
-      // CHỈ LƯU CÁC CỘT CHUẨN CÓ SẴN TRONG BẢNG JOBS (LOẠI BỎ PHOTO_EDITOR_ID ĐỂ KHÔNG BÁO LỖI)
       const jobPayload = {
         customer_id: customerId,
         customer_name: customerForm.full_name,
@@ -882,6 +881,7 @@ function JobForm(props: any) {
     updateAssignment,
     addAssignment,
     removeAssignment,
+    addReservedWorkerToDay,
     editingJob,
     saving,
     onClose,
@@ -1367,36 +1367,18 @@ function JobForm(props: any) {
 
                                 <div className="md:col-span-4">
                                   <label className="text-[11px] text-slate-500 font-medium block mb-1">Nhân sự được phân công</label>
-                                  <select
-                                    className="border p-2 rounded-lg font-medium text-xs bg-white w-full text-slate-800"
-                                    value={assignment.employee_id || ""}
-                                    onChange={(e) => {
-                                      const empId = e.target.value;
+                                  <EmployeeCustomSelect
+                                    value={assignment.employee_id}
+                                    employees={employees}
+                                    reserveList={reservesForThisDay}
+                                    onChange={(empId) => {
                                       const matchedReserve = reservesForThisDay.find((r: any) => r.employee_id === empId);
                                       updateAssignment(dayIndex, locIndex, assIndex, "employee_id", empId);
                                       if (matchedReserve) {
                                         updateAssignment(dayIndex, locIndex, assIndex, "reserve_worker_id", matchedReserve.id);
                                       }
                                     }}
-                                  >
-                                    <option value="">-- Gõ tên để tìm thợ... --</option>
-                                    {reservesForThisDay.length > 0 && (
-                                      <optgroup label="⭐ Thợ dự phòng ngày này (Ưu tiên)">
-                                        {reservesForThisDay.map((r: any) => (
-                                          <option key={r.id} value={r.employee_id}>
-                                            ⭐ {r.employees?.full_name} ({r.role || "Dự phòng"})
-                                          </option>
-                                        ))}
-                                      </optgroup>
-                                    )}
-                                    <optgroup label="Tất cả nhân sự">
-                                      {employees.map((e: any) => (
-                                        <option key={e.id} value={e.id}>
-                                          {e.full_name} ({e.role || "Thợ"})
-                                        </option>
-                                      ))}
-                                    </optgroup>
-                                  </select>
+                                  />
                                 </div>
 
                                 <div className="md:col-span-2">
