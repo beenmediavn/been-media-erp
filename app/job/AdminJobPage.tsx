@@ -21,7 +21,6 @@ const emptyCustomer = {
   facebook: "",
 };
 
-// MẶC ĐỊNH SỐ LƯỢNG THỢ VÀ HẬU KỲ ĐỂ TRỐNG (KHÔNG BẮT BUỘC)
 const emptyJob = {
   event_name: "",
   booking_date: new Date().toISOString().slice(0, 10),
@@ -49,10 +48,10 @@ const makeAssignment = (role = "Thợ chụp") => ({
   reserve_worker_id: "",
 });
 
-const makeLocation = (name = "Nhà trai") => ({
+const makeLocation = (name = "Nhà trai", phone = "") => ({
   location_name: name,
   address: "",
-  phone: "",
+  phone: phone,
   note: "",
   assignments: [makeAssignment("Thợ chụp"), makeAssignment("Thợ quay")],
 });
@@ -147,10 +146,22 @@ export default function AdminJobPage() {
     return true;
   };
 
+  // TỰ ĐỘNG ĐẢO SĐT Ở TRÊN VÀ ĐỒNG THỜI ĐẢO CẢ DƯỚI CÁC ĐỊA ĐIỂM
   const swapBrideGroomPhones = () => {
     const groom = customerForm.phone || "";
     const bride = customerForm.secondary_phone || "";
     setCustomerForm((prev: any) => ({ ...prev, phone: bride, secondary_phone: groom }));
+    setDays((prev: any[]) =>
+      prev.map((day: any) => ({
+        ...day,
+        locations: (day.locations || []).map((loc: any, idx: number) => {
+          const n = String(loc.location_name || "").toLowerCase();
+          if (n.includes("trai") || idx === 0) return { ...loc, phone: bride };
+          if (n.includes("gái") || idx === 1) return { ...loc, phone: groom };
+          return loc;
+        }),
+      }))
+    );
   };
 
   async function loadData() {
@@ -227,7 +238,7 @@ export default function AdminJobPage() {
         start_time: day.start_time || "07:00",
         end_time: day.end_time || "11:00",
         note: day.note || "",
-        locations: locations.length ? locations : [makeLocation("Nhà trai"), makeLocation("Nhà gái")]
+        locations: locations.length ? locations : [makeLocation("Nhà trai", job.customers?.phone || job.customer_phone || ""), makeLocation("Nhà gái", job.customers?.secondary_phone || job.secondary_phone || "")]
       };
     });
   };
@@ -266,7 +277,6 @@ export default function AdminJobPage() {
     setOpenForm(true);
   };
 
-  // TỰ ĐỘNG BẬT FORM SỬA JOB KHI ĐƯỢC CHUYỂN TỪ TRANG LỊCH SANG
   useEffect(() => {
     if (!jobs.length || typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
@@ -312,11 +322,11 @@ export default function AdminJobPage() {
 
   const addLocation = (dayIndex: number, name = "Nhà gái") => {
     setDays((prev) =>
-      prev.map((day, i) =>
-        i === dayIndex
-          ? { ...day, locations: [...day.locations, makeLocation(name)] }
-          : day
-      )
+      prev.map((day, i) => {
+        if (i !== dayIndex) return day;
+        const defaultPhone = name.toLowerCase().includes("gái") ? (customerForm.secondary_phone || "") : (customerForm.phone || "");
+        return { ...day, locations: [...day.locations, makeLocation(name, defaultPhone)] };
+      })
     );
   };
 
@@ -831,6 +841,7 @@ export default function AdminJobPage() {
           jobForm={jobForm}
           setJobForm={setJobForm}
           days={days}
+          setDays={setDays}
           updateDay={updateDay}
           addDay={addDay}
           duplicateDay={duplicateDay}
@@ -861,7 +872,6 @@ export default function AdminJobPage() {
   );
 }
 
-// FORM TẠO / SỬA JOB ĐẦY ĐỦ CÓ THÊM PHẦN HẬU KỲ ƯU TIÊN THỢ ĐI LÀM
 function JobForm(props: any) {
   const {
     customers,
@@ -873,6 +883,7 @@ function JobForm(props: any) {
     jobForm,
     setJobForm,
     days,
+    setDays,
     updateDay,
     addDay,
     duplicateDay,
@@ -890,6 +901,35 @@ function JobForm(props: any) {
     onSave,
   } = props;
 
+  // TỰ ĐỘNG ĐỒNG BỘ SĐT XUỐNG CÁC ĐỊA ĐIỂM KHI THAY ĐỔI SĐT CHÍNH / PHỤ
+  const handleGroomPhoneChange = (newPhone: string) => {
+    setCustomerForm((prev: any) => ({ ...prev, phone: newPhone }));
+    setDays((prev: any[]) =>
+      prev.map((day: any) => ({
+        ...day,
+        locations: (day.locations || []).map((loc: any, idx: number) => {
+          const n = String(loc.location_name || "").toLowerCase();
+          if (n.includes("trai") || idx === 0) return { ...loc, phone: newPhone };
+          return loc;
+        }),
+      }))
+    );
+  };
+
+  const handleBridePhoneChange = (newPhone: string) => {
+    setCustomerForm((prev: any) => ({ ...prev, secondary_phone: newPhone }));
+    setDays((prev: any[]) =>
+      prev.map((day: any) => ({
+        ...day,
+        locations: (day.locations || []).map((loc: any, idx: number) => {
+          const n = String(loc.location_name || "").toLowerCase();
+          if (n.includes("gái") || idx === 1) return { ...loc, phone: newPhone };
+          return loc;
+        }),
+      }))
+    );
+  };
+
   const allAssignments = days.flatMap((d: any) => d.locations || []).flatMap((l: any) => l.assignments || []);
   const currentPhoto = allAssignments.filter((a: any) => a.employee_id && a.role?.toLowerCase().includes("chụp")).length;
   const currentVideo = allAssignments.filter((a: any) => a.employee_id && a.role?.toLowerCase().includes("quay")).length;
@@ -901,7 +941,6 @@ function JobForm(props: any) {
   const missingPhoto = Math.max(reqPhoto - currentPhoto, 0);
   const missingVideo = Math.max(reqVideo - currentVideo, 0);
 
-  // DANH SÁCH THỢ ĐÃ ĐƯỢC PHÂN CÔNG ĐI LÀM TRONG JOB NÀY (ĐỂ ƯU TIÊN CHO EDIT)
   const assignedWorkersInThisJob = Array.from(
     new Map(
       allAssignments
@@ -940,15 +979,29 @@ function JobForm(props: any) {
                   value={customerForm.customer_id}
                   onChange={(e) => {
                     const customer = customers.find((c: any) => c.id === e.target.value);
+                    const pGroom = customer?.phone || "";
+                    const pBride = customer?.secondary_phone || "";
                     setCustomerForm({
                       customer_id: e.target.value,
                       full_name: customer?.full_name || "",
-                      phone: customer?.phone || "",
-                      secondary_phone: customer?.secondary_phone || "",
+                      phone: pGroom,
+                      secondary_phone: pBride,
                       email: customer?.email || "",
                       address: customer?.address || "",
                       facebook: customer?.facebook || customer?.full_name || "",
                     });
+                    // TỰ ĐỘNG ĐIỀN XUỐNG ĐỊA ĐIỂM
+                    setDays((prev: any[]) =>
+                      prev.map((day: any) => ({
+                        ...day,
+                        locations: (day.locations || []).map((loc: any, idx: number) => {
+                          const n = String(loc.location_name || "").toLowerCase();
+                          if (n.includes("trai") || idx === 0) return { ...loc, phone: pGroom };
+                          if (n.includes("gái") || idx === 1) return { ...loc, phone: pBride };
+                          return loc;
+                        }),
+                      }))
+                    );
                   }}
                 >
                   <option value="">Khách mới hoặc chọn từ CRM</option>
@@ -977,7 +1030,7 @@ function JobForm(props: any) {
                     className="mt-1 border p-2.5 rounded-xl w-full font-mono text-slate-900 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
                     placeholder="0912..."
                     value={customerForm.phone}
-                    onChange={(e) => setCustomerForm({ ...customerForm, phone: e.target.value })}
+                    onChange={(e) => handleGroomPhoneChange(e.target.value)}
                   />
                 </label>
                 <button
@@ -993,7 +1046,7 @@ function JobForm(props: any) {
                     className="mt-1 border p-2.5 rounded-xl w-full font-mono text-slate-900 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
                     placeholder="SĐT phụ..."
                     value={customerForm.secondary_phone}
-                    onChange={(e) => setCustomerForm({ ...customerForm, secondary_phone: e.target.value })}
+                    onChange={(e) => handleBridePhoneChange(e.target.value)}
                   />
                 </label>
               </div>
@@ -1132,7 +1185,6 @@ function JobForm(props: any) {
             </div>
           )}
 
-          {/* Mục 3: Ngày chụp → Địa điểm → Phân công thợ */}
           <div className="space-y-4 pt-2">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-sm text-blue-700 uppercase">3. Ngày chụp → Địa điểm → Phân công thợ</h3>
@@ -1271,7 +1323,7 @@ function JobForm(props: any) {
                               className="border p-2 rounded-xl w-full font-mono text-slate-800 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
                               value={loc.phone}
                               onChange={(e) => updateLocation(dayIndex, locIndex, "phone", e.target.value)}
-                              placeholder="0585557555"
+                              placeholder="SĐT tại điểm..."
                             />
                           </div>
                           <div className="md:col-span-1 flex justify-center pb-2">
@@ -1437,7 +1489,7 @@ function JobForm(props: any) {
             })}
           </div>
 
-          {/* MỤC 4: HẬU KỲ (EDIT VIDEO & CHỈNH ẢNH) - TÙY CHỌN, ƯU TIÊN THỢ ĐÃ ĐI LÀM TRONG JOB */}
+          {/* MỤC 4: HẬU KỲ */}
           <div className="border rounded-2xl p-4 bg-purple-50/40 border-purple-200 space-y-3">
             <div className="border-b border-purple-200 pb-2">
               <h3 className="font-bold text-sm text-purple-900 uppercase">4. Phân công hậu kỳ (Tùy chọn)</h3>
@@ -1445,7 +1497,6 @@ function JobForm(props: any) {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* EDIT VIDEO */}
               <div className="bg-white p-3.5 rounded-xl border border-purple-100 shadow-xs space-y-2">
                 <span className="font-bold text-slate-800 text-xs block">🎬 Thợ Edit Video:</span>
                 <select
@@ -1483,7 +1534,6 @@ function JobForm(props: any) {
                 </div>
               </div>
 
-              {/* CHỈNH ẢNH PTS */}
               <div className="bg-white p-3.5 rounded-xl border border-purple-100 shadow-xs space-y-2">
                 <span className="font-bold text-slate-800 text-xs block">🎨 Thợ chỉnh sửa ảnh (Photoshop):</span>
                 <select
