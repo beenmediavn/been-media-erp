@@ -580,22 +580,41 @@ export default function AdminSchedulePage() {
                       <MapPin size={17} className="bm-gold" />
                       <span className="truncate">{r.location || j.location || "Chưa nhập địa điểm"}</span>
                     </p>
-                    <p className="flex gap-2 items-center text-slate-700">
+                    <p className="flex gap-2 items-center text-slate-700 sm:col-span-2">
                       <Users size={17} className="bm-gold" />
-                      {(r.job_assignments || []).length} thợ được phân công
+                      <span>{(r.job_assignments || []).length} thợ được phân công:</span>
                     </p>
+                  </div>
+
+                  {/* HIỂN THỊ CHI TIẾT TÊN THỢ VÀ VAI TRÒ NGAY TRÊN CARD LỊCH CHỤP */}
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {r.job_assignments && r.job_assignments.length > 0 ? (
+                      r.job_assignments.map((assignment: any) => (
+                        <span 
+                          key={assignment.id} 
+                          className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700 border"
+                        >
+                          {assignment.employees?.full_name || "Nhân sự"} • {assignment.role}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-xs text-slate-400 italic">Chưa có thợ được phân công</span>
+                    )}
+                  </div>
+
+                  <div className="mt-3 flex items-center justify-between pt-2 border-t border-slate-100">
                     <p className="flex gap-2 items-center">
                       <Wallet size={17} className="bm-gold" />
                       <span className={debt > 0 ? "font-semibold text-rose-600" : "text-emerald-600"}>
                         {debt > 0 ? `Khách còn nợ ${money(debt)}` : "Đã thanh toán đủ"}
                       </span>
                     </p>
-                  </div>
-
-                  <div className="mt-4 flex justify-end" onClick={(e) => e.stopPropagation()}>
                     <button
                       type="button"
-                      onClick={() => setViewingJob(j)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setViewingJob(j);
+                      }}
                       className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100 transition shadow-xs"
                     >
                       Xem / sửa Job →
