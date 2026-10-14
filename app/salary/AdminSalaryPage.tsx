@@ -109,8 +109,11 @@ export default function AdminSalaryPage() {
   }, []);
 
   const filteredAssignments = useMemo(() => {
-    if (month === "ALL") return assignments.filter((a) => !a.jobs?.deleted_at);
-    return assignments.filter((a) => a.job_days?.shooting_date?.startsWith(month) && !a.jobs?.deleted_at);
+    let result = assignments;
+    if (month !== "ALL") {
+      result = assignments.filter((a) => a.job_days?.shooting_date?.startsWith(month));
+    }
+    return result.filter((a) => !a.jobs?.deleted_at);
   }, [assignments, month]);
 
   const filteredAdvances = useMemo(() => {
@@ -133,32 +136,41 @@ export default function AdminSalaryPage() {
       const empAssignmentsRaw = filteredAssignments.filter((a) => a.employee_id === emp.id);
 
       const seenAssignments = new Set<string>();
-      const empAssignmentsAll = empAssignmentsRaw.filter((a: any) => {
-        const key = [
-          String(a.job_id || ""),
-          String(a.job_day_id || a.job_days?.shooting_date || ""),
-          String(a.employee_id || ""),
-          String(a.role || "").trim().toLowerCase(),
-          String(a.work_location_name || "").trim().toLowerCase(),
-          String(a.work_location_address || "").trim().toLowerCase(),
-          String(a.job_days?.start_time || "").slice(0, 5),
-          String(a.job_days?.end_time || "").slice(0, 5),
-        ].join("|");
-        if (seenAssignments.has(key)) return false;
-        seenAssignments.add(key);
-        return true;
-      });
+      const empAssignmentsAll = empAssignmentsRaw
+        .filter((a: any) => {
+          const key = [
+            String(a.job_id || ""),
+            String(a.job_day_id || a.job_days?.shooting_date || ""),
+            String(a.employee_id || ""),
+            String(a.role || "").trim().toLowerCase(),
+            String(a.work_location_name || "").trim().toLowerCase(),
+            String(a.work_location_address || "").trim().toLowerCase(),
+            String(a.job_days?.start_time || "").slice(0, 5),
+            String(a.job_days?.end_time || "").slice(0, 5),
+          ].join("|");
+          if (seenAssignments.has(key)) return false;
+          seenAssignments.add(key);
+          return true;
+        })
+        .sort((a: any, b: any) => {
+          const dateA = String(a.job_days?.shooting_date || "");
+          const dateB = String(b.job_days?.shooting_date || "");
+          return dateA.localeCompare(dateB);
+        });
 
       const empAssignments = empAssignmentsAll.filter((a) => assignmentCompleted(a));
       const assignedSalary = empAssignmentsAll.reduce((sum, a) => sum + Number(a.salary_amount || 0), 0);
       const baseSalary = empAssignments.reduce((sum, a) => sum + Number(a.salary_amount || 0), 0);
 
-      const empPosts = postProductions.filter(
-        (p: any) =>
-          p.assigned_user_id === emp.id &&
-          p.status === "COMPLETED" &&
-          (month === "ALL" || (p.completed_at && p.completed_at.startsWith(month)))
-      );
+      const empPosts = postProductions
+        .filter(
+          (p: any) =>
+            p.assigned_user_id === emp.id &&
+            p.status === "COMPLETED" &&
+            (month === "ALL" || (p.completed_at && p.completed_at.startsWith(month)))
+        )
+        .sort((a: any, b: any) => String(a.completed_at || "").localeCompare(String(b.completed_at || "")));
+
       const postSalary = empPosts.reduce((sum, p) => sum + Number(p.actual_price || p.default_price || 0), 0);
 
       const allEmployeeAdjustments = filteredAdjustments.filter((a) => a.employee_id === emp.id);
@@ -206,7 +218,6 @@ export default function AdminSalaryPage() {
     });
   }, [employees, filteredAssignments, postProductions, filteredAdvances, filteredPayments, filteredAdjustments, month]);
 
-  // Cập nhật lại thông tin selectedEmployee nếu state rows thay đổi
   useEffect(() => {
     if (selectedEmployee) {
       const refreshed = rows.find((r) => r.id === selectedEmployee.id);
@@ -365,7 +376,6 @@ export default function AdminSalaryPage() {
     await loadData();
   };
 
-  // 1. TÍNH NĂNG SAO CHÉP VĂN BẢN GỬI QUA ZALO / MESSENGER / FB
   const handleCopyStatementText = () => {
     if (!statementEmployee) return;
 
@@ -416,7 +426,6 @@ export default function AdminSalaryPage() {
     setTimeout(() => setCopySuccess(false), 2500);
   };
 
-  // 2. TÍNH NĂNG GỬI SAO KÊ VÀO MỤC TIN NHẮN TRONG APP CHO THỢ
   const handleSendMessageToWorker = async () => {
     if (!statementEmployee || isSendingMessage) return;
     setIsSendingMessage(true);
@@ -451,7 +460,6 @@ export default function AdminSalaryPage() {
     }
   };
 
-  // 3. XÁC NHẬN GỬI VÀ LƯU BẢN SAO KÊ VÀO HỆ THỐNG
   const handleConfirmSendStatement = async () => {
     if (!statementEmployee || isSendingStatement) return;
     setIsSendingStatement(true);
@@ -560,7 +568,6 @@ export default function AdminSalaryPage() {
         ))}
       </div>
 
-      {/* DANH SÁCH THẺ THỢ CÒN NỢ LƯƠNG - BẤM VÀO THẺ MỞ NGAY POPUP THAO TÁC */}
       {debtRows.length > 0 && (
         <div className="mb-6 rounded-2xl bg-red-50 p-4 shadow-sm border border-red-100">
           <div className="flex items-center justify-between mb-3">
@@ -616,7 +623,6 @@ export default function AdminSalaryPage() {
         </div>
       )}
 
-      {/* Bảng lương chi tiết */}
       <div className="bg-white rounded-xl shadow p-4 sm:p-6">
         <div className="hidden overflow-x-auto lg:block">
           <table className="w-full min-w-[1000px] text-xs">
@@ -713,7 +719,6 @@ export default function AdminSalaryPage() {
           </table>
         </div>
 
-        {/* Giao diện di động */}
         <div className="space-y-3 lg:hidden">
           {filteredRows.map((emp) => (
             <div key={emp.id} className="rounded-2xl border p-4 text-xs">
@@ -760,11 +765,9 @@ export default function AdminSalaryPage() {
         </div>
       </div>
 
-      {/* POPUP CHI TIẾT & BẢNG ĐIỀU KHIỂN NHANH KHI BẤM VÀO THỢ */}
       {selectedEmployee && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4">
           <div className="bg-white rounded-2xl shadow-2xl p-5 sm:p-6 w-full max-w-4xl max-h-[90vh] flex flex-col">
-            {/* Header popup */}
             <div className="flex items-center justify-between pb-3 border-b">
               <div>
                 <h2 className="text-xl sm:text-2xl font-bold text-slate-900 flex items-center gap-2">
@@ -786,7 +789,6 @@ export default function AdminSalaryPage() {
               </button>
             </div>
 
-            {/* BẢNG ĐIỀU KHIỂN THAO TÁC TRỰC TIẾP (THANH TOÁN, ỨNG, THƯỞNG, PHẠT, PHÁT SINH, SAO KÊ) */}
             <div className="my-4 p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">⚡ Thao tác tài chính nhanh:</span>
@@ -837,7 +839,6 @@ export default function AdminSalaryPage() {
               </div>
             </div>
 
-            {/* Thống kê 6 chỉ số */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-4">
               <div className="border rounded-lg p-2.5 bg-slate-50/50">
                 <p className="text-[11px] text-gray-500">Lương Job</p>
@@ -867,7 +868,6 @@ export default function AdminSalaryPage() {
               </div>
             </div>
 
-            {/* Danh sách Job đã đi làm & Hậu kỳ */}
             <div className="overflow-auto flex-1 border rounded-xl">
               <table className="w-full min-w-[700px] text-xs">
                 <thead>
@@ -882,29 +882,31 @@ export default function AdminSalaryPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {[...(selectedEmployee.salaryJobs || []), ...selectedEmployee.jobs.filter((j: any) => !assignmentCompleted(j))].map((job: any) => (
-                    <tr key={job.id} className="hover:bg-slate-50">
-                      <td className="p-2.5">{formatDateVN(job.job_days?.shooting_date)}</td>
-                      <td className="p-2.5 font-medium">{job.jobs?.event_name || job.jobs?.customer_name}</td>
-                      <td className="p-2.5">{job.role}</td>
-                      <td className="p-2.5">
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${assignmentCompleted(job) ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
-                          {assignmentCompleted(job) ? "Đã xong" : (job.jobs?.status || "Chưa xong")}
-                        </span>
-                      </td>
-                      <td className="p-2.5 text-slate-500">{job.work_location_name}</td>
-                      <td className="p-2.5 text-right font-bold">{formatMoney(job.salary_amount)}</td>
-                      <td className="p-2.5 text-right">
-                        {assignmentCompleted(job) ? (
-                          <b className={Number(job.jobRemain || 0) > 0 ? "text-red-600" : "text-emerald-700"}>
-                            {Number(job.jobRemain || 0) > 0 ? formatMoney(job.jobRemain) : "ĐÃ TRẢ ĐỦ"}
-                          </b>
-                        ) : (
-                          <span className="text-slate-400">Job tương lai</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                  {[...(selectedEmployee.salaryJobs || []), ...selectedEmployee.jobs.filter((j: any) => !assignmentCompleted(j))]
+                    .sort((a: any, b: any) => String(a.job_days?.shooting_date || "").localeCompare(String(b.job_days?.shooting_date || "")))
+                    .map((job: any) => (
+                      <tr key={job.id} className="hover:bg-slate-50">
+                        <td className="p-2.5">{formatDateVN(job.job_days?.shooting_date)}</td>
+                        <td className="p-2.5 font-medium">{job.jobs?.event_name || job.jobs?.customer_name}</td>
+                        <td className="p-2.5">{job.role}</td>
+                        <td className="p-2.5">
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${assignmentCompleted(job) ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
+                            {assignmentCompleted(job) ? "Đã xong" : (job.jobs?.status || "Chưa xong")}
+                          </span>
+                        </td>
+                        <td className="p-2.5 text-slate-500">{job.work_location_name}</td>
+                        <td className="p-2.5 text-right font-bold">{formatMoney(job.salary_amount)}</td>
+                        <td className="p-2.5 text-right">
+                          {assignmentCompleted(job) ? (
+                            <b className={Number(job.jobRemain || 0) > 0 ? "text-red-600" : "text-emerald-700"}>
+                              {Number(job.jobRemain || 0) > 0 ? formatMoney(job.jobRemain) : "ĐÃ TRẢ ĐỦ"}
+                            </b>
+                          ) : (
+                            <span className="text-slate-400">Job tương lai</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
                   {selectedEmployee.postJobs?.map((p: any) => (
                     <tr key={p.id} className="bg-purple-50/30 hover:bg-purple-50/60">
                       <td className="p-2.5">{formatDateVN(p.completed_at?.slice(0, 10))}</td>
@@ -920,7 +922,6 @@ export default function AdminSalaryPage() {
               </table>
             </div>
 
-            {/* Nút đóng modal */}
             <div className="flex justify-end pt-3 mt-3 border-t">
               <button
                 onClick={() => setSelectedEmployee(null)}
@@ -933,7 +934,6 @@ export default function AdminSalaryPage() {
         </div>
       )}
 
-      {/* MODAL SAO KÊ LƯƠNG ĐỐI SOÁT */}
       {statementEmployee && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 sm:p-4 backdrop-blur-sm overflow-y-auto">
           <div className="relative w-full max-w-4xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[92vh]">
@@ -1122,7 +1122,6 @@ export default function AdminSalaryPage() {
         </div>
       )}
 
-      {/* Modal chỉnh sửa giao dịch */}
       {editingTxn && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-6">
@@ -1158,7 +1157,6 @@ export default function AdminSalaryPage() {
         </div>
       )}
 
-      {/* Modal Thưởng / Phạt */}
       {showPenalty && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-5">
