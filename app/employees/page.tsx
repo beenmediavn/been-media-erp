@@ -47,6 +47,7 @@ export default function EmployeesPage() {
     username: "",
     password: "",
     avatar_url: "",
+    base_fee: 0,
   });
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -103,7 +104,6 @@ export default function EmployeesPage() {
         (a) => a.employee_id === emp.id && !a.jobs?.deleted_at
       );
 
-      // 1. TỔNG LƯƠNG PHÁT SINH: Bao gồm TẤT CẢ các Job được phân công (cả tương lai + chưa thanh toán + đã xong)
       const allAssignedJobSalary = empAssignmentsAll.reduce((sum, a) => sum + Number(a.salary_amount || 0), 0);
       
       const empPostsAll = (postProductions || []).filter(
@@ -114,10 +114,8 @@ export default function EmployeesPage() {
       const empAdj = (adjustments || []).filter((a) => a.employee_id === emp.id);
       const adjTotal = empAdj.reduce((sum, a) => sum + Number(a.amount || 0), 0);
 
-      // Lương phát sinh hiển thị ở cột = Tổng mọi job (quá khứ + hiện tại + tương lai)
       const totalSalaryAssigned = allAssignedJobSalary + allPostSalary + adjTotal;
 
-      // 2. CÔNG NỢ THỰC TẾ: CHỈ TÍNH NHỮNG JOB ĐÃ HOÀN THÀNH
       const empAssignmentsDone = empAssignmentsAll.filter((a) => isAssignmentDone(a));
       const baseSalaryDone = empAssignmentsDone.reduce((sum, a) => sum + Number(a.salary_amount || 0), 0);
       
@@ -134,18 +132,17 @@ export default function EmployeesPage() {
         .filter((p) => p.employee_id === emp.id)
         .reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
-      // Còn phải trả: Chỉ tính trên Job đã xong
       const remain = Math.max(totalEarnedDone - totalAdvance - totalPaid, 0);
 
       return {
         ...emp,
         doneJobsCount: empAssignmentsDone.length,
         totalJobsCount: empAssignmentsAll.length,
-        assignedSalary: totalSalaryAssigned, // Lương phát sinh tổng mọi job (chưa thanh toán + tương lai)
-        earnedSalary: totalEarnedDone,       // Lương thực tế job đã xong
+        assignedSalary: totalSalaryAssigned,
+        earnedSalary: totalEarnedDone,
         totalAdvance,
         totalPaid,
-        remain,                             // Chỉ nợ job đã hoàn thành
+        remain,
       };
     });
   }, [employees, assignments, postProductions, adjustments, advances, payments]);
@@ -174,6 +171,7 @@ export default function EmployeesPage() {
         username: emp.username || "",
         password: "",
         avatar_url: emp.avatar_url || "",
+        base_fee: Number(emp.base_fee || 0),
       });
     } else {
       setEditingEmployee(null);
@@ -184,6 +182,7 @@ export default function EmployeesPage() {
         username: "",
         password: "",
         avatar_url: "",
+        base_fee: 0,
       });
     }
     setAvatarFile(null);
@@ -218,6 +217,7 @@ export default function EmployeesPage() {
       role: formData.role,
       username: formData.username,
       avatar_url,
+      base_fee: Number(formData.base_fee || 0),
     };
     if (formData.password) {
       payload.password = formData.password;
@@ -246,12 +246,11 @@ export default function EmployeesPage() {
   return (
     <MainLayout>
       <div className="space-y-5">
-        {/* Header trang */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-slate-800">Nhân sự</h1>
             <p className="text-xs sm:text-sm text-slate-500">
-              Danh sách thợ, tài khoản đăng nhập và đối soát lương theo Job đã hoàn thành
+              Danh sách thợ, mức lương cố định, tài khoản đăng nhập và đối soát công nợ
             </p>
           </div>
           <button
@@ -262,7 +261,6 @@ export default function EmployeesPage() {
           </button>
         </div>
 
-        {/* 3 Thẻ thống kê */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div className="rounded-2xl border bg-white p-4 shadow-sm">
             <p className="text-xs text-slate-500">Tổng nhân sự</p>
@@ -282,7 +280,6 @@ export default function EmployeesPage() {
           </div>
         </div>
 
-        {/* Tìm kiếm */}
         <div className="flex items-center justify-between">
           <input
             value={search}
@@ -292,19 +289,18 @@ export default function EmployeesPage() {
           />
         </div>
 
-        {/* Bảng danh sách - Desktop */}
         <div className="hidden lg:block overflow-hidden rounded-2xl border bg-white shadow-sm">
           <table className="w-full text-left text-xs">
             <thead className="border-b bg-slate-50 text-[11px] font-semibold uppercase text-slate-600">
               <tr>
                 <th className="p-3.5">Nhân sự</th>
                 <th className="p-3.5">Vai trò</th>
-                <th className="p-3.5">User</th>
+                <th className="p-3.5 text-right">Lương mặc định / Job</th>
                 <th className="p-3.5 text-center">Job xong / Tổng</th>
-                <th className="p-3.5 text-right">Lương phát sinh (Tất cả Job)</th>
+                <th className="p-3.5 text-right">Lương phát sinh</th>
                 <th className="p-3.5 text-right">Đã ứng</th>
                 <th className="p-3.5 text-right">Đã thanh toán</th>
-                <th className="p-3.5 text-right">Còn phải trả (Đã xong)</th>
+                <th className="p-3.5 text-right">Còn phải trả</th>
                 <th className="p-3.5 text-center">Thao tác</th>
               </tr>
             </thead>
@@ -327,11 +323,12 @@ export default function EmployeesPage() {
                     </div>
                   </td>
                   <td className="p-3.5 font-medium">{emp.role}</td>
-                  <td className="p-3.5 text-slate-500">{emp.username}</td>
+                  <td className="p-3.5 text-right font-bold text-blue-700">
+                    {Number(emp.base_fee || 0) > 0 ? formatMoney(emp.base_fee) : <span className="text-slate-400 font-normal">Chưa cài</span>}
+                  </td>
                   <td className="p-3.5 text-center font-semibold text-blue-600">
                     {emp.doneJobsCount} / {emp.totalJobsCount}
                   </td>
-                  {/* LƯƠNG PHÁT SINH = TỔNG TOÀN BỘ JOB CHƯA THANH TOÁN VÀ TƯƠNG LAI */}
                   <td className="p-3.5 text-right font-bold text-slate-800">
                     {formatMoney(emp.assignedSalary)}
                   </td>
@@ -341,7 +338,6 @@ export default function EmployeesPage() {
                   <td className="p-3.5 text-right font-medium text-emerald-600">
                     {formatMoney(emp.totalPaid)}
                   </td>
-                  {/* CÒN PHẢI TRẢ = CHỈ TÍNH JOB ĐÃ HOÀN THÀNH THỰC TẾ */}
                   <td className="p-3.5 text-right font-black">
                     {emp.remain > 0 ? (
                       <span className="text-rose-600">{formatMoney(emp.remain)}</span>
@@ -365,204 +361,154 @@ export default function EmployeesPage() {
                   </td>
                 </tr>
               ))}
-              {filteredRows.length === 0 && (
-                <tr>
-                  <td colSpan={9} className="p-6 text-center text-slate-400">
-                    Không tìm thấy nhân sự phù hợp
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         </div>
 
-        {/* Danh sách thẻ - Mobile (Chống tràn, chuẩn UX) */}
-        <div className="space-y-3 lg:hidden">
-          {filteredRows.map((emp) => (
-            <div key={emp.id} className="rounded-2xl border bg-white p-4 shadow-sm text-xs">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="h-10 w-10 overflow-hidden rounded-full border bg-slate-100 flex items-center justify-center font-bold text-slate-600">
-                    {emp.avatar_url ? (
-                      <img src={emp.avatar_url} alt="" className="h-full w-full object-cover" />
+        {/* Modal Sửa/Thêm nhân sự */}
+        {showModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-4 backdrop-blur-sm overflow-y-auto">
+            <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
+              <div className="sticky top-0 z-20 flex items-center justify-between bg-white px-5 py-4 border-b rounded-t-2xl">
+                <div>
+                  <h3 className="text-base sm:text-lg font-bold text-slate-800">
+                    {editingEmployee ? "Sửa thông tin nhân sự" : "Thêm nhân sự mới"}
+                  </h3>
+                  <p className="text-xs text-slate-400">Quản lý hồ sơ, lương cố định và phân quyền thợ</p>
+                </div>
+                <button
+                  onClick={() => setShowModal(false)}
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 font-bold"
+                  title="Đóng (Esc)"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleSave} className="p-5 overflow-y-auto space-y-4 text-xs text-slate-700 flex-1">
+                <div className="flex items-center gap-4 border p-3 rounded-xl bg-slate-50">
+                  <div className="h-16 w-16 overflow-hidden rounded-full border bg-white flex items-center justify-center font-bold text-slate-400 text-sm">
+                    {avatarFile ? (
+                      <img src={URL.createObjectURL(avatarFile)} alt="Preview" className="h-full w-full object-cover" />
+                    ) : formData.avatar_url ? (
+                      <img src={formData.avatar_url} alt="Avatar" className="h-full w-full object-cover" />
                     ) : (
-                      emp.full_name?.slice(0, 1) || "NV"
+                      "Ảnh"
                     )}
                   </div>
                   <div>
-                    <p className="font-bold text-sm text-slate-800">{emp.full_name}</p>
-                    <p className="text-slate-400">{emp.phone} • {emp.role}</p>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Ảnh đại diện</label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleAvatarChange}
+                      className="text-xs text-slate-500 file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">Hỗ trợ chọn ảnh từ máy tính hoặc điện thoại</p>
                   </div>
                 </div>
-                <div className="text-right">
-                  <span className="text-[10px] text-slate-400 block">Còn phải trả (Đã xong)</span>
-                  <span className={`font-black text-sm ${emp.remain > 0 ? "text-rose-600" : "text-slate-500"}`}>
-                    {emp.remain > 0 ? formatMoney(emp.remain) : "0 đ"}
-                  </span>
-                </div>
-              </div>
 
-              <div className="mt-3 grid grid-cols-3 gap-2 border-t pt-2.5 text-center">
-                <div className="bg-slate-50 p-2 rounded-lg">
-                  <span className="text-[10px] text-slate-400 block">Job xong / Tổng</span>
-                  <b className="text-blue-600 font-bold">{emp.doneJobsCount}/{emp.totalJobsCount}</b>
-                </div>
-                <div className="bg-slate-50 p-2 rounded-lg">
-                  <span className="text-[10px] text-slate-400 block">Lương phát sinh</span>
-                  <b className="text-slate-700">{formatMoney(emp.assignedSalary)}</b>
-                </div>
-                <div className="bg-slate-50 p-2 rounded-lg">
-                  <span className="text-[10px] text-slate-400 block">Đã ứng</span>
-                  <b className="text-amber-600">{formatMoney(emp.totalAdvance)}</b>
-                </div>
-              </div>
-
-              <div className="mt-3 flex gap-2 border-t pt-2.5">
-                <button
-                  onClick={() => openEdit(emp)}
-                  className="flex-1 rounded-xl bg-amber-500 py-2 font-semibold text-white text-xs"
-                >
-                  Sửa thông tin
-                </button>
-                <button
-                  onClick={() => handleDelete(emp.id, emp.full_name)}
-                  className="rounded-xl bg-rose-600 px-4 py-2 font-semibold text-white text-xs"
-                >
-                  Xóa
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Modal Sửa/Thêm có nút X dính trên đầu */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-4 backdrop-blur-sm overflow-y-auto">
-          <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
-            <div className="sticky top-0 z-20 flex items-center justify-between bg-white px-5 py-4 border-b rounded-t-2xl">
-              <div>
-                <h3 className="text-base sm:text-lg font-bold text-slate-800">
-                  {editingEmployee ? "Sửa thông tin nhân sự" : "Thêm nhân sự mới"}
-                </h3>
-                <p className="text-xs text-slate-400">Quản lý hồ sơ và phân quyền thợ</p>
-              </div>
-              <button
-                onClick={() => setShowModal(false)}
-                className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 font-bold"
-                title="Đóng (Esc)"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleSave} className="p-5 overflow-y-auto space-y-4 text-xs text-slate-700 flex-1">
-              <div className="flex items-center gap-4 border p-3 rounded-xl bg-slate-50">
-                <div className="h-16 w-16 overflow-hidden rounded-full border bg-white flex items-center justify-center font-bold text-slate-400 text-sm">
-                  {avatarFile ? (
-                    <img src={URL.createObjectURL(avatarFile)} alt="Preview" className="h-full w-full object-cover" />
-                  ) : formData.avatar_url ? (
-                    <img src={formData.avatar_url} alt="Avatar" className="h-full w-full object-cover" />
-                  ) : (
-                    "Ảnh"
-                  )}
-                </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Ảnh đại diện</label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleAvatarChange}
-                    className="text-xs text-slate-500 file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
-                  />
-                  <p className="text-[10px] text-slate-400 mt-1">Hỗ trợ chọn ảnh từ máy tính hoặc điện thoại</p>
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-semibold mb-1">Họ và tên *</label>
-                <input
-                  required
-                  value={formData.full_name}
-                  onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                  placeholder="VD: Nguyễn Văn A"
-                  className="w-full rounded-xl border p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold mb-1">Số điện thoại *</label>
+                  <label className="block font-semibold mb-1">Họ và tên *</label>
                   <input
                     required
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    placeholder="0912..."
-                    className="w-full rounded-xl border p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={formData.full_name}
+                    onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+                    placeholder="VD: Nguyễn Văn A"
+                    className="w-full rounded-xl border p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold"
                   />
                 </div>
-                <div>
-                  <label className="block font-semibold mb-1">Vai trò</label>
-                  <select
-                    value={formData.role}
-                    onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                    className="w-full rounded-xl border p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
-                  >
-                    <option value="Photographer">Photographer</option>
-                    <option value="CAMERAMEN">CAMERAMEN</option>
-                    <option value="Flycam">Flycam</option>
-                    <option value="Editor">Editor (Hậu kỳ)</option>
-                    <option value="Make up">Make up</option>
-                  </select>
-                </div>
-              </div>
 
-              <div className="grid grid-cols-2 gap-3 border-t pt-3">
-                <div>
-                  <label className="block font-semibold mb-1">Tên đăng nhập (User) *</label>
-                  <input
-                    required
-                    value={formData.username}
-                    onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                    placeholder="VD: thanhtoan1"
-                    className="w-full rounded-xl border p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-semibold mb-1">Số điện thoại *</label>
+                    <input
+                      required
+                      value={formData.phone}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      placeholder="0912..."
+                      className="w-full rounded-xl border p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold mb-1">Vai trò</label>
+                    <select
+                      value={formData.role}
+                      onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                      className="w-full rounded-xl border p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                    >
+                      <option value="Photographer">Photographer</option>
+                      <option value="CAMERAMEN">CAMERAMEN</option>
+                      <option value="Flycam">Flycam</option>
+                      <option value="Editor">Editor (Hậu kỳ)</option>
+                      <option value="Make up">Make up</option>
+                    </select>
+                  </div>
                 </div>
-                <div>
-                  <label className="block font-semibold mb-1">
-                    {editingEmployee ? "Đổi mật khẩu (nếu cần)" : "Mật khẩu *"}
+
+                {/* Ô ĐIỀN LƯƠNG CỐ ĐỊNH / MỨC CÔNG MẶC ĐỊNH MỖI JOB */}
+                <div className="bg-blue-50/60 p-3 rounded-xl border border-blue-100">
+                  <label className="block font-bold text-blue-900 mb-1">
+                    💰 Lương cố định / Mức công mặc định theo Job
                   </label>
-                  <input
-                    type="password"
-                    required={!editingEmployee}
-                    value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    placeholder="••••••"
-                    className="w-full rounded-xl border p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  <MoneyInput
+                    value={formData.base_fee}
+                    onChange={(v: number) => setFormData({ ...formData, base_fee: v })}
+                    className="w-full rounded-xl border p-2.5 font-bold text-blue-700 bg-white"
+                    placeholder="VD: 700.000 đ"
                   />
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    👉 Khi phân công thợ này vào bất kỳ Job nào, tiền công sẽ tự động nhảy số tiền này (không cần gõ tay).
+                  </p>
                 </div>
-              </div>
 
-              <div className="sticky bottom-0 bg-white pt-3 border-t flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="rounded-xl border px-4 py-2 font-semibold hover:bg-slate-50"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  disabled={isUploading}
-                  className="rounded-xl bg-blue-600 px-5 py-2 font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {isUploading ? "Đang lưu..." : "Lưu nhân sự"}
-                </button>
-              </div>
-            </form>
+                <div className="grid grid-cols-2 gap-3 border-t pt-3">
+                  <div>
+                    <label className="block font-semibold mb-1">Tên đăng nhập (User) *</label>
+                    <input
+                      required
+                      value={formData.username}
+                      onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                      placeholder="VD: thanhtoan1"
+                      className="w-full rounded-xl border p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold mb-1">
+                      {editingEmployee ? "Đổi mật khẩu (nếu cần)" : "Mật khẩu *"}
+                    </label>
+                    <input
+                      type="password"
+                      required={!editingEmployee}
+                      value={formData.password}
+                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      placeholder="••••••"
+                      className="w-full rounded-xl border p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="sticky bottom-0 bg-white pt-3 border-t flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowModal(false)}
+                    className="rounded-xl border px-4 py-2 font-semibold hover:bg-slate-50"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isUploading}
+                    className="rounded-xl bg-blue-600 px-5 py-2 font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {isUploading ? "Đang lưu..." : "Lưu nhân sự"}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </MainLayout>
   );
 }
