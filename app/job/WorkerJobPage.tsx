@@ -1,31 +1,665 @@
 "use client";
-import { useEffect,useMemo,useState } from "react";
+
+import { useEffect, useMemo, useState } from "react";
 import MainLayout from "../components/layout/MainLayout";
 import { supabase } from "@/lib/supabase";
-import { getOfflineCache, setOfflineCache } from "@/lib/offline-db";
 import type { AppUser } from "@/lib/auth";
-import { contactIsVisible,formatVNDate,workerStatus } from "@/lib/workerAccess";
-import { Copy,Clock3,MapPin,Phone,Wallet,Camera,Home } from "lucide-react";
-const money=(v:any)=>Number(v||0).toLocaleString("vi-VN")+" đ";
-const isCompleted=(status:any)=>String(status||"").toLowerCase().includes("hoàn thành");
+import { formatVNDate, workerStatus } from "@/lib/workerAccess";
+import { MapPin, PhoneCall, Clock3, Wallet, Copy, CheckCircle2, ChevronRight } from "lucide-react";
+import { formatDateVN } from "@/lib/date-vn";
 
-export default function WorkerJobPage({user}:{user:AppUser}){
- const [rows,setRows]=useState<any[]>([]),[loading,setLoading]=useState(true),[year,setYear]=useState(new Date().getFullYear()),[month,setMonth]=useState<"all"|number>("all"),[status,setStatus]=useState<"all"|"done"|"upcoming">("all");
- async function load(){setLoading(true);const {data,error}=await supabase.from("job_assignments").select("*, jobs(id,event_name,customer_name,customer_phone,secondary_phone,service,status,note,deleted_at), job_days(id,shooting_date,start_time,end_time,location,note,job_locations(id,location_name,address,phone,sort_order))").eq("employee_id",user.id).order("created_at",{ascending:false});setLoading(false);if(error){try{const cached=await getOfflineCache<any[]>(`worker-job-${user.id}`);if(cached?.data){setRows(cached.data);return}}catch{}if(navigator.onLine)alert(error.message);return;}setRows(data||[]);setOfflineCache(`worker-job-${user.id}`,data||[]).catch(()=>{})}
- useEffect(()=>{load()},[user.id]);
- const filtered=useMemo(()=>rows.filter(a=>{if(a.jobs?.deleted_at)return false;const d=a.job_days?.shooting_date||"";if(!d.startsWith(String(year)))return false;if(month!=="all"&&!d.startsWith(`${year}-${String(month).padStart(2,"0")}`))return false;const s=workerStatus(d,a.jobs?.status);if(status==="done"&&!s.startsWith("Đã"))return false;if(status==="upcoming"&&s!=="Sắp tới")return false;return true}),[rows,year,month,status]);
- const earned=filtered.reduce((s,a)=>s+Number(a.salary_amount||0),0);
- function canShowPhone(a:any){return !isCompleted(a.jobs?.status)&&contactIsVisible(a,a.job_days?.shooting_date,a.job_days?.start_time)}
- function allLocations(a:any){const saved=(a.job_days?.job_locations||[]).slice().sort((x:any,y:any)=>Number(x.sort_order||0)-Number(y.sort_order||0));if(saved.length)return saved;return [{location_name:a.work_location_name||"Địa điểm",address:a.work_location_address||a.job_days?.location||"",phone:a.work_location_phone||""}]}
- function norm(v:any){return String(v||"").trim().toLocaleLowerCase("vi-VN").replace(/\s+/g," ")}
- function isMyLocation(a:any,l:any){
-   const assignedName=norm(a.work_location_name),assignedAddress=norm(a.work_location_address);
-   const locationName=norm(l.location_name),locationAddress=norm(l.address);
-   if(!assignedName&&!assignedAddress)return false;
-   if(assignedName&&locationName&&assignedName===locationName)return true;
-   if(assignedAddress&&locationAddress&&assignedAddress===locationAddress)return true;
-   return Boolean(assignedName&&locationName&&(assignedName.includes(locationName)||locationName.includes(assignedName))&&(!assignedAddress||!locationAddress||assignedAddress===locationAddress));
- }
- async function copyAssignment(a:any){const visible=canShowPhone(a);const locs=allLocations(a);const locationLines=locs.flatMap((l:any,i:number)=>[`Địa điểm ${i+1}: ${l.location_name||""}${isMyLocation(a,l)?"  ← BẠN LÀM TẠI ĐÂY":""}`,`Địa chỉ: ${l.address||""}`,`SĐT: ${visible?(l.phone||"Không có"):(isCompleted(a.jobs?.status)?"Đã ẩn vì Job hoàn thành":"Sẽ hiển thị trước 48h")}`]);const text=[`BEEN MEDIA - PHIẾU CÔNG VIỆC`,`Sự kiện: ${a.jobs?.event_name||a.jobs?.customer_name||""}`,`Ngày: ${formatVNDate(a.job_days?.shooting_date)}`,`Thời gian: ${a.job_days?.start_time||"--:--"} - ${a.job_days?.end_time||"--:--"}`,`Nhiệm vụ: ${a.role||""}`,`Phân công: ${a.work_location_name||"Chưa xác định"}${a.work_location_address?` - ${a.work_location_address}`:""}`,...locationLines,`Tiền công: ${money(a.salary_amount)}`,`Ghi chú: ${a.note||a.job_days?.note||a.jobs?.note||""}`].join("\n");await navigator.clipboard.writeText(text);alert("Đã sao chép công việc và địa điểm được phân công")}
- return <MainLayout><div className="mx-auto max-w-6xl"><div className="mb-5"><h1 className="text-2xl font-bold sm:text-3xl">Job của tôi</h1><p className="text-slate-500">Hiển thị đầy đủ các địa điểm trong Job. SĐT tự ẩn khi Job hoàn thành.</p></div><div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4"><div className="rounded-2xl bg-white p-4 shadow"><p className="text-sm text-slate-500">Số lượt phân công</p><b className="text-2xl">{filtered.length}</b></div><div className="rounded-2xl bg-white p-4 shadow"><p className="text-sm text-slate-500">Thu nhập theo lọc</p><b className="text-xl text-emerald-700">{money(earned)}</b></div></div><div className="mb-5 flex flex-wrap gap-2"><select value={year} onChange={e=>setYear(Number(e.target.value))} className="rounded-xl border bg-white p-2">{[year-1,year,year+1].map(y=><option key={y}>{y}</option>)}</select><select value={month} onChange={e=>setMonth(e.target.value==="all"?"all":Number(e.target.value))} className="rounded-xl border bg-white p-2"><option value="all">Cả năm</option>{Array.from({length:12},(_,i)=><option key={i+1} value={i+1}>Tháng {i+1}</option>)}</select>{[["all","Tất cả"],["upcoming","Sắp tới"],["done","Đã làm"]].map(([k,l])=><button key={k} onClick={()=>setStatus(k as any)} className={`rounded-full px-4 py-2 text-sm font-semibold ${status===k?"bg-blue-600 text-white":"border bg-white"}`}>{l}</button>)}</div>{loading?<div className="rounded-2xl bg-white p-8 text-center">Đang tải...</div>:<div className="space-y-3">{filtered.map(a=>{const st=workerStatus(a.job_days?.shooting_date,a.jobs?.status),visible=canShowPhone(a),locs=allLocations(a);return <div key={a.id} className="rounded-2xl bg-white p-4 shadow sm:p-5"><div className="flex flex-wrap items-start justify-between gap-2"><div><h2 className="text-lg font-bold">{a.jobs?.event_name||a.jobs?.customer_name||"Job"}</h2><p className="text-sm text-blue-700">{a.jobs?.service||""}</p></div><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold">{st}</span></div><div className="mt-4 grid gap-2 text-sm sm:grid-cols-2"><p className="flex gap-2"><Clock3 size={17}/>{formatVNDate(a.job_days?.shooting_date)} • {a.job_days?.start_time||"--:--"} - {a.job_days?.end_time||"--:--"}</p><p className="flex gap-2"><Camera size={17}/>{a.role}</p><p className="flex gap-2"><Wallet size={17}/><b>Tiền công: {money(a.salary_amount)}</b></p></div><div className="mt-4 rounded-2xl border bg-slate-50 p-3"><div className="mb-2 flex items-center gap-2 font-bold"><Home size={18}/>Địa điểm trong Job</div><div className="mb-3 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm"><b>Phân công của bạn:</b> {a.role||"Thợ"} • <b>{a.work_location_name||"Chưa xác định địa điểm"}</b>{a.work_location_address?` — ${a.work_location_address}`:""}</div><div className="space-y-3">{locs.map((l:any,i:number)=>{const mine=isMyLocation(a,l);return <div key={l.id||i} className={`rounded-xl border p-3 ${mine?"border-blue-500 bg-blue-50 ring-1 ring-blue-200":"border-transparent bg-white"}`}><div className="flex flex-wrap items-center justify-between gap-2"><p className="flex gap-2 font-semibold"><MapPin size={17}/>{l.location_name||`Địa điểm ${i+1}`}</p>{mine&&<span className="rounded-full bg-blue-600 px-3 py-1 text-xs font-bold text-white">✓ BẠN LÀM TẠI ĐÂY</span>}</div><p className="mt-1 pl-6 text-sm">{l.address||"Chưa có địa chỉ"}</p>{mine&&<p className="mt-1 pl-6 text-xs font-semibold text-blue-700">{a.role||"Nhiệm vụ"} • {a.job_days?.start_time||"--:--"} - {a.job_days?.end_time||"--:--"}</p>}<p className="mt-1 flex gap-2 pl-6 text-sm"><Phone size={16}/>{visible?(l.phone||"Chưa có SĐT"):(isCompleted(a.jobs?.status)?"SĐT đã tự ẩn vì Job hoàn thành":"SĐT được mở trước 48 giờ hoặc khi Admin mở sớm")}</p></div>})}</div></div><div className="mt-3 rounded-xl bg-slate-50 p-3 text-sm"><b>Ghi chú:</b> {a.note||a.job_days?.note||a.jobs?.note||"Không có"}</div><div className="mt-4 flex justify-end"><button onClick={()=>copyAssignment(a)} className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 font-semibold text-white"><Copy size={17}/>Sao chép công việc</button></div></div>})}{filtered.length===0&&<div className="rounded-2xl bg-white p-8 text-center text-slate-500">Không có Job phù hợp.</div>}</div>}</div></MainLayout>
+const money = (v: any) => Number(v || 0).toLocaleString("vi-VN") + " đ";
+
+export default function WorkerJobPage({ user }: { user: AppUser }) {
+  const [assignments, setAssignments] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<"all" | "upcoming" | "done">("upcoming");
+  const [selectedYear, setSelectedYear] = useState<string>("all");
+  const [selectedMonth, setSelectedMonth] = useState<string>("all");
+
+  // STATE XEM CHI TIẾT JOB CỦA THỢ
+  const [viewingAssignment, setViewingAssignment] = useState<any>(null);
+
+  async function load() {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("job_assignments")
+      .select("id,role,salary_amount,work_location_name,work_location_address,work_location_phone,note,contact_visible,jobs(*, customers(*), job_days(*, job_locations(*), job_assignments(*, employees(*)))), job_days(id,shooting_date,start_time,end_time,location,note)")
+      .eq("employee_id", user.id);
+
+    setLoading(false);
+    if (error) {
+      if (navigator.onLine) alert(error.message);
+      return;
+    }
+    setAssignments(data || []);
+  }
+
+  useEffect(() => {
+    load();
+  }, [user.id]);
+
+  // SẮP XẾP DANH SÁCH JOB THEO THỨ TỰ NGÀY THÁNG (SỚM LÊN TRƯỚC, MUỘN XUỐNG SAU)
+  const sortedAssignments = useMemo(() => {
+    return [...assignments].sort((a, b) => {
+      const dateA = String(a.job_days?.shooting_date || "");
+      const dateB = String(b.job_days?.shooting_date || "");
+      return dateA.localeCompare(dateB);
+    });
+  }, [assignments]);
+
+  const totalSalary = sortedAssignments.reduce((sum, a) => sum + Number(a.salary_amount || 0), 0);
+
+  const filteredAssignments = useMemo(() => {
+    return sortedAssignments.filter((a) => {
+      const dateStr = a.job_days?.shooting_date || "";
+      const [year, month] = dateStr.split("-");
+
+      if (selectedYear !== "all" && year !== selectedYear) return false;
+      if (selectedMonth !== "all" && month !== selectedMonth) return false;
+
+      const isDone = workerStatus(dateStr, a.jobs?.status).includes("Đã làm") || workerStatus(dateStr, a.jobs?.status).includes("Hoàn thành");
+      if (filter === "upcoming" && isDone) return false;
+      if (filter === "done" && !isDone) return false;
+
+      return true;
+    });
+  }, [sortedAssignments, filter, selectedYear, selectedMonth]);
+
+  const handleCopyJobInfo = (assignment: any) => {
+    const job = assignment.jobs || {};
+    const lines = [
+      `📸 [BEEN MEDIA] - THÔNG TIN JOB`,
+      `Sự kiện: ${job.event_name || job.customer_name || ""}`,
+      `Vai trò của bạn: ${assignment.role} (${money(assignment.salary_amount)})`,
+      `Khách hàng: ${job.customers?.full_name || job.customer_name || ""}`,
+      `Ngày: ${formatDateVN(assignment.job_days?.shooting_date)} • ${assignment.job_days?.start_time?.slice(0, 5)} - ${assignment.job_days?.end_time?.slice(0, 5)}`,
+      `----------------------------------------`,
+    ];
+    (job.job_days || []).forEach((d: any, idx: number) => {
+      lines.push(
+        `📅 Ngày ${idx + 1}${d.note ? ` (${d.note})` : ""}: ${formatDateVN(d.shooting_date)} • ${d.start_time?.slice(0, 5)} - ${d.end_time?.slice(0, 5)}`,
+        `📍 Địa điểm: ${d.location || "Chưa nhập"}`
+      );
+    });
+    navigator.clipboard.writeText(lines.join("\n"));
+    alert("Đã sao chép thông tin Job!");
+  };
+
+  return (
+    <MainLayout>
+      <div className="mx-auto max-w-4xl space-y-5">
+        <div>
+          <h1 className="text-2xl font-bold sm:text-3xl text-slate-800">Job của tôi</h1>
+          <p className="text-xs sm:text-sm text-slate-500 mt-1">Hiển thị đầy đủ các địa điểm trong Job. SĐT tự ẩn khi Job hoàn thành.</p>
+        </div>
+
+        {/* Thẻ tổng kết */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-2xl bg-white p-4 shadow-sm border">
+            <p className="text-xs text-slate-500 font-medium">Số lượt phân công</p>
+            <p className="text-2xl font-black text-slate-800 mt-1">{sortedAssignments.length}</p>
+          </div>
+          <div className="rounded-2xl bg-white p-4 shadow-sm border">
+            <p className="text-xs text-slate-500 font-medium">Thu nhập theo lọc</p>
+            <p className="text-xl font-black text-emerald-600 mt-1">{money(filteredAssignments.reduce((s, a) => s + Number(a.salary_amount || 0), 0))}</p>
+          </div>
+        </div>
+
+        {/* Thanh lọc trạng thái và thời gian */}
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(e.target.value)}
+            className="rounded-xl border bg-white px-3 py-2 text-xs font-semibold"
+          >
+            <option value="all">Tất cả các năm</option>
+            <option value="2026">2026</option>
+            <option value="2025">2025</option>
+          </select>
+
+          <select
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+            className="rounded-xl border bg-white px-3 py-2 text-xs font-semibold"
+          >
+            <option value="all">Cả năm (Tất cả tháng)</option>
+            {Array.from({ length: 12 }, (_, i) => pad(i + 1)).map((m) => (
+              <option key={m} value={m}>Tháng {m}</option>
+            ))}
+          </select>
+
+          <div className="flex items-center gap-1.5 ml-auto">
+            <button
+              onClick={() => setFilter("all")}
+              className={`rounded-full px-3.5 py-1.5 text-xs font-bold transition-all ${filter === "all" ? "bg-blue-600 text-white shadow-xs" : "bg-white border text-slate-700"}`}
+            >
+              Tất cả
+            </button>
+            <button
+              onClick={() => setFilter("upcoming")}
+              className={`rounded-full px-3.5 py-1.5 text-xs font-bold transition-all ${filter === "upcoming" ? "bg-blue-600 text-white shadow-xs" : "bg-white border text-slate-700"}`}
+            >
+              Sắp tới
+            </button>
+            <button
+              onClick={() => setFilter("done")}
+              className={`rounded-full px-3.5 py-1.5 text-xs font-bold transition-all ${filter === "done" ? "bg-blue-600 text-white shadow-xs" : "bg-white border text-slate-700"}`}
+            >
+              Đã làm
+            </button>
+          </div>
+        </div>
+
+        {/* Danh sách Job đã sắp xếp chuẩn ngày tháng */}
+        {loading ? (
+          <p className="text-xs text-slate-400">Đang tải danh sách Job...</p>
+        ) : (
+          <div className="space-y-3">
+            {filteredAssignments.map((a) => {
+              const j = a.jobs || {};
+              const statusText = workerStatus(a.job_days?.shooting_date, j.status);
+              const isUpcoming = !statusText.includes("Đã làm") && !statusText.includes("Hoàn thành");
+
+              return (
+                <div
+                  key={a.id}
+                  onClick={() => setViewingAssignment(a)}
+                  className="rounded-2xl bg-white p-4 sm:p-5 border shadow-sm cursor-pointer hover:border-blue-400 hover:shadow-md transition-all space-y-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h2 className="text-base sm:text-lg font-bold text-slate-900">
+                        {j.event_name || j.customer_name || "Job"}
+                      </h2>
+                      <p className="text-xs text-blue-600 font-semibold mt-0.5">{j.service || "Job"}</p>
+                    </div>
+                    <span className={`text-xs font-bold px-3 py-1 rounded-full border ${isUpcoming ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`}>
+                      {statusText}
+                    </span>
+                  </div>
+
+                  <div className="grid gap-1.5 text-xs sm:text-sm text-slate-700 pt-1 border-t border-slate-100">
+                    <p className="flex items-center gap-2">
+                      <Clock3 size={15} className="text-slate-400" />
+                      <span>{formatDateVN(a.job_days?.shooting_date)} • {a.job_days?.start_time?.slice(0, 5)} - {a.job_days?.end_time?.slice(0, 5)}</span>
+                    </p>
+                    <p className="flex items-center gap-2">
+                      <Users size={15} className="text-slate-400" />
+                      <span>Vai trò: <b className="text-blue-600">{a.role}</b></span>
+                    </p>
+                    <p className="flex items-center gap-2">
+                      <Wallet size={15} className="text-slate-400" />
+                      <span>Tiền công: <b className="text-emerald-600">{money(a.salary_amount)}</b></span>
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+
+            {filteredAssignments.length === 0 && (
+              <div className="rounded-2xl bg-white p-8 text-center text-xs text-slate-400 border border-dashed">
+                Không có Job nào phù hợp với bộ lọc.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* MODAL CHI TIẾT JOB CHUẨN GIAO DIỆN THỢ */}
+      {viewingAssignment && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 p-3 sm:p-4 backdrop-blur-sm overflow-y-auto">
+          <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl flex flex-col max-h-[92vh]">
+            <div className="sticky top-0 z-20 flex items-center justify-between border-b bg-white px-5 py-3.5 rounded-t-2xl">
+              <div>
+                <h2 className="text-base sm:text-lg font-bold text-slate-900">
+                  {viewingAssignment.jobs?.event_name || viewingAssignment.jobs?.customer_name}
+                </h2>
+                <p className="text-xs text-blue-600 font-semibold">{viewingAssignment.jobs?.service || "Job"}</p>
+              </div>
+              <button
+                onClick={() => setViewingAssignment(null)}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-4 overflow-y-auto space-y-4 text-xs sm:text-sm text-slate-700 flex-1">
+              <div className="rounded-xl border p-3.5 bg-slate-50 space-y-1.5">
+                <p className="flex items-center gap-1.5 font-bold text-slate-800">
+                  <Clock3 size={15} className="text-blue-600" />
+                  {formatDateVN(viewingAssignment.job_days?.shooting_date)} • {viewingAssignment.job_days?.start_time?.slice(0, 5)} - {viewingAssignment.job_days?.end_time?.slice(0, 5)}
+                </p>
+                <p>• Vai trò phân công: <b className="text-blue-600">{viewingAssignment.role}</b></p>
+                <p>• Tiền công dự kiến: <b className="text-emerald-600">{money(viewingAssignment.salary_amount)}</b></p>
+              </div>
+
+              {/* ĐỊA ĐIỂM TRONG JOB & NHẤN MẠNH BẠN LÀM TẠI ĐÂY */}
+              <div className="rounded-2xl border border-blue-200 bg-blue-50/40 p-4 space-y-3">
+                <p className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+                  <MapPin size={16} className="text-blue-600" /> Địa điểm trong Job
+                </p>
+
+                {(() => {
+                  const currentDay = (viewingAssignment.jobs?.job_days || []).find(
+                    (d: any) => d.id === viewingAssignment.job_day_id || d.shooting_date === viewingAssignment.job_days?.shooting_date
+                  ) || viewingAssignment.job_days;
+
+                  const locations = currentDay?.job_locations || [];
+                  const cust = viewingAssignment.jobs?.customers || {};
+                  const isContactOpen = Boolean(viewingAssignment.contact_visible);
+                  const mainPhone = cust.phone || viewingAssignment.jobs?.customer_phone || "";
+                  const subPhone = cust.secondary_phone || viewingAssignment.jobs?.secondary_phone || "";
+
+                  if (locations.length === 0) {
+                    return (
+                      <div className="rounded-xl bg-white p-3 border shadow-2xs space-y-1">
+                        <p className="font-semibold text-slate-800">Phân công của bạn:</p>
+                        <p className="text-xs text-slate-600">
+                          {viewingAssignment.role} • {viewingAssignment.work_location_name || "Địa điểm"} — {viewingAssignment.work_location_address || currentDay?.location || "Chưa có địa chỉ"}
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  return locations.map((loc: any, idx: number) => {
+                    const locNameLower = String(loc.location_name || "").toLowerCase();
+                    const workNameLower = String(viewingAssignment.work_location_name || "").toLowerCase();
+                    const isMyLocation = locNameLower.includes(workNameLower) || workNameLower.includes(locNameLower) || (locations.length === 1);
+
+                    const isGroom = locNameLower.includes("trai");
+                    const phoneToDisplay = isGroom ? mainPhone : subPhone;
+
+                    return (
+                      <div
+                        key={loc.id || idx}
+                        className={`rounded-xl p-3.5 border bg-white space-y-2 relative transition-all ${
+                          isMyLocation ? "ring-2 ring-blue-500 border-blue-300 bg-blue-50/10 shadow-sm" : "border-slate-200"
+                        }`}
+                      >
+                        {isMyLocation && (
+                          <span className="absolute top-2.5 right-2.5 rounded-full bg-blue-600 text-white text-[10px] font-extrabold px-2.5 py-1 shadow-xs">
+                            ✓ BẠN LÀM TẠI ĐÂY
+                          </span>
+                        )}
+                        <p className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+                          📍 {loc.location_name || (isGroom ? "Nhà trai" : "Nhà gái")}
+                        </p>
+                        <p className="text-xs text-slate-700 font-medium">{loc.address || "Chưa có địa chỉ"}</p>
+                        
+                        <div className="pt-1 text-xs border-t border-slate-100 flex items-center justify-between">
+                          <span className="text-slate-500">SĐT liên hệ:</span>
+                          {isContactOpen ? (
+                            phoneToDisplay ? (
+                              <a href={`tel:${phoneToDisplay}`} className="font-bold text-emerald-600 flex items-center gap-1 underline">
+                                <PhoneCall size={13} /> {phoneToDisplay}
+                              </a>
+                            ) : (
+                              <span className="text-slate-400 italic">Chưa có số điện thoại</span>
+                            )
+                          ) : (
+                            <span className="text-amber-600 font-medium italic bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                              🔒 SĐT được mở trước 48 giờ hoặc khi Admin mở sớm
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            </div>
+
+            <div className="sticky bottom-0 z-20 flex justify-end gap-2.5 border-t bg-white px-5 py-3 rounded-b-2xl">
+              <button
+                onClick={() => handleCopyJobInfo(viewingAssignment)}
+                className="rounded-xl bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 text-xs flex items-center gap-1.5 shadow-sm"
+              >
+                <Copy size={14} /> Sao chép thông tin
+              </button>
+              <button
+                onClick={() => setViewingAssignment(null)}
+                className="rounded-xl border px-4 py-2 font-semibold hover:bg-slate-50 text-xs"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </MainLayout>
+  );
+}"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import MainLayout from "../components/layout/MainLayout";
+import { supabase } from "@/lib/supabase";
+import type { AppUser } from "@/lib/auth";
+import { formatVNDate, workerStatus } from "@/lib/workerAccess";
+import { MapPin, PhoneCall, Clock3, Wallet, Copy, CheckCircle2, ChevronRight } from "lucide-react";
+import { formatDateVN } from "@/lib/date-vn";
+
+const money = (v: any) => Number(v || 0).toLocaleString("vi-VN") + " đ";
+
+export default function WorkerJobPage({ user }: { user: AppUser }) {
+  const [assignments, setAssignments] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<"all" | "upcoming" | "done">("upcoming");
+  const [selectedYear, setSelectedYear] = useState<string>("all");
+  const [selectedMonth, setSelectedMonth] = useState<string>("all");
+
+  // STATE XEM CHI TIẾT JOB CỦA THỢ
+  const [viewingAssignment, setViewingAssignment] = useState<any>(null);
+
+  async function load() {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("job_assignments")
+      .select("id,role,salary_amount,work_location_name,work_location_address,work_location_phone,note,contact_visible,jobs(*, customers(*), job_days(*, job_locations(*), job_assignments(*, employees(*)))), job_days(id,shooting_date,start_time,end_time,location,note)")
+      .eq("employee_id", user.id);
+
+    setLoading(false);
+    if (error) {
+      if (navigator.onLine) alert(error.message);
+      return;
+    }
+    setAssignments(data || []);
+  }
+
+  useEffect(() => {
+    load();
+  }, [user.id]);
+
+  // SẮP XẾP DANH SÁCH JOB THEO THỨ TỰ NGÀY THÁNG (SỚM LÊN TRƯỚC, MUỘN XUỐNG SAU)
+  const sortedAssignments = useMemo(() => {
+    return [...assignments].sort((a, b) => {
+      const dateA = String(a.job_days?.shooting_date || "");
+      const dateB = String(b.job_days?.shooting_date || "");
+      return dateA.localeCompare(dateB);
+    });
+  }, [assignments]);
+
+  const totalSalary = sortedAssignments.reduce((sum, a) => sum + Number(a.salary_amount || 0), 0);
+
+  const filteredAssignments = useMemo(() => {
+    return sortedAssignments.filter((a) => {
+      const dateStr = a.job_days?.shooting_date || "";
+      const [year, month] = dateStr.split("-");
+
+      if (selectedYear !== "all" && year !== selectedYear) return false;
+      if (selectedMonth !== "all" && month !== selectedMonth) return false;
+
+      const isDone = workerStatus(dateStr, a.jobs?.status).includes("Đã làm") || workerStatus(dateStr, a.jobs?.status).includes("Hoàn thành");
+      if (filter === "upcoming" && isDone) return false;
+      if (filter === "done" && !isDone) return false;
+
+      return true;
+    });
+  }, [sortedAssignments, filter, selectedYear, selectedMonth]);
+
+  const handleCopyJobInfo = (assignment: any) => {
+    const job = assignment.jobs || {};
+    const lines = [
+      `📸 [BEEN MEDIA] - THÔNG TIN JOB`,
+      `Sự kiện: ${job.event_name || job.customer_name || ""}`,
+      `Vai trò của bạn: ${assignment.role} (${money(assignment.salary_amount)})`,
+      `Khách hàng: ${job.customers?.full_name || job.customer_name || ""}`,
+      `Ngày: ${formatDateVN(assignment.job_days?.shooting_date)} • ${assignment.job_days?.start_time?.slice(0, 5)} - ${assignment.job_days?.end_time?.slice(0, 5)}`,
+      `----------------------------------------`,
+    ];
+    (job.job_days || []).forEach((d: any, idx: number) => {
+      lines.push(
+        `📅 Ngày ${idx + 1}${d.note ? ` (${d.note})` : ""}: ${formatDateVN(d.shooting_date)} • ${d.start_time?.slice(0, 5)} - ${d.end_time?.slice(0, 5)}`,
+        `📍 Địa điểm: ${d.location || "Chưa nhập"}`
+      );
+    });
+    navigator.clipboard.writeText(lines.join("\n"));
+    alert("Đã sao chép thông tin Job!");
+  };
+
+  return (
+    <MainLayout>
+      <div className="mx-auto max-w-4xl space-y-5">
+        <div>
+          <h1 className="text-2xl font-bold sm:text-3xl text-slate-800">Job của tôi</h1>
+          <p className="text-xs sm:text-sm text-slate-500 mt-1">Hiển thị đầy đủ các địa điểm trong Job. SĐT tự ẩn khi Job hoàn thành.</p>
+        </div>
+
+        {/* Thẻ tổng kết */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-2xl bg-white p-4 shadow-sm border">
+            <p className="text-xs text-slate-500 font-medium">Số lượt phân công</p>
+            <p className="text-2xl font-black text-slate-800 mt-1">{sortedAssignments.length}</p>
+          </div>
+          <div className="rounded-2xl bg-white p-4 shadow-sm border">
+            <p className="text-xs text-slate-500 font-medium">Thu nhập theo lọc</p>
+            <p className="text-xl font-black text-emerald-600 mt-1">{money(filteredAssignments.reduce((s, a) => s + Number(a.salary_amount || 0), 0))}</p>
+          </div>
+        </div>
+
+        {/* Thanh lọc trạng thái và thời gian */}
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(e.target.value)}
+            className="rounded-xl border bg-white px-3 py-2 text-xs font-semibold"
+          >
+            <option value="all">Tất cả các năm</option>
+            <option value="2026">2026</option>
+            <option value="2025">2025</option>
+          </select>
+
+          <select
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+            className="rounded-xl border bg-white px-3 py-2 text-xs font-semibold"
+          >
+            <option value="all">Cả năm (Tất cả tháng)</option>
+            {Array.from({ length: 12 }, (_, i) => pad(i + 1)).map((m) => (
+              <option key={m} value={m}>Tháng {m}</option>
+            ))}
+          </select>
+
+          <div className="flex items-center gap-1.5 ml-auto">
+            <button
+              onClick={() => setFilter("all")}
+              className={`rounded-full px-3.5 py-1.5 text-xs font-bold transition-all ${filter === "all" ? "bg-blue-600 text-white shadow-xs" : "bg-white border text-slate-700"}`}
+            >
+              Tất cả
+            </button>
+            <button
+              onClick={() => setFilter("upcoming")}
+              className={`rounded-full px-3.5 py-1.5 text-xs font-bold transition-all ${filter === "upcoming" ? "bg-blue-600 text-white shadow-xs" : "bg-white border text-slate-700"}`}
+            >
+              Sắp tới
+            </button>
+            <button
+              onClick={() => setFilter("done")}
+              className={`rounded-full px-3.5 py-1.5 text-xs font-bold transition-all ${filter === "done" ? "bg-blue-600 text-white shadow-xs" : "bg-white border text-slate-700"}`}
+            >
+              Đã làm
+            </button>
+          </div>
+        </div>
+
+        {/* Danh sách Job đã sắp xếp chuẩn ngày tháng */}
+        {loading ? (
+          <p className="text-xs text-slate-400">Đang tải danh sách Job...</p>
+        ) : (
+          <div className="space-y-3">
+            {filteredAssignments.map((a) => {
+              const j = a.jobs || {};
+              const statusText = workerStatus(a.job_days?.shooting_date, j.status);
+              const isUpcoming = !statusText.includes("Đã làm") && !statusText.includes("Hoàn thành");
+
+              return (
+                <div
+                  key={a.id}
+                  onClick={() => setViewingAssignment(a)}
+                  className="rounded-2xl bg-white p-4 sm:p-5 border shadow-sm cursor-pointer hover:border-blue-400 hover:shadow-md transition-all space-y-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h2 className="text-base sm:text-lg font-bold text-slate-900">
+                        {j.event_name || j.customer_name || "Job"}
+                      </h2>
+                      <p className="text-xs text-blue-600 font-semibold mt-0.5">{j.service || "Job"}</p>
+                    </div>
+                    <span className={`text-xs font-bold px-3 py-1 rounded-full border ${isUpcoming ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`}>
+                      {statusText}
+                    </span>
+                  </div>
+
+                  <div className="grid gap-1.5 text-xs sm:text-sm text-slate-700 pt-1 border-t border-slate-100">
+                    <p className="flex items-center gap-2">
+                      <Clock3 size={15} className="text-slate-400" />
+                      <span>{formatDateVN(a.job_days?.shooting_date)} • {a.job_days?.start_time?.slice(0, 5)} - {a.job_days?.end_time?.slice(0, 5)}</span>
+                    </p>
+                    <p className="flex items-center gap-2">
+                      <Users size={15} className="text-slate-400" />
+                      <span>Vai trò: <b className="text-blue-600">{a.role}</b></span>
+                    </p>
+                    <p className="flex items-center gap-2">
+                      <Wallet size={15} className="text-slate-400" />
+                      <span>Tiền công: <b className="text-emerald-600">{money(a.salary_amount)}</b></span>
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+
+            {filteredAssignments.length === 0 && (
+              <div className="rounded-2xl bg-white p-8 text-center text-xs text-slate-400 border border-dashed">
+                Không có Job nào phù hợp với bộ lọc.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* MODAL CHI TIẾT JOB CHUẨN GIAO DIỆN THỢ */}
+      {viewingAssignment && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 p-3 sm:p-4 backdrop-blur-sm overflow-y-auto">
+          <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl flex flex-col max-h-[92vh]">
+            <div className="sticky top-0 z-20 flex items-center justify-between border-b bg-white px-5 py-3.5 rounded-t-2xl">
+              <div>
+                <h2 className="text-base sm:text-lg font-bold text-slate-900">
+                  {viewingAssignment.jobs?.event_name || viewingAssignment.jobs?.customer_name}
+                </h2>
+                <p className="text-xs text-blue-600 font-semibold">{viewingAssignment.jobs?.service || "Job"}</p>
+              </div>
+              <button
+                onClick={() => setViewingAssignment(null)}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-4 overflow-y-auto space-y-4 text-xs sm:text-sm text-slate-700 flex-1">
+              <div className="rounded-xl border p-3.5 bg-slate-50 space-y-1.5">
+                <p className="flex items-center gap-1.5 font-bold text-slate-800">
+                  <Clock3 size={15} className="text-blue-600" />
+                  {formatDateVN(viewingAssignment.job_days?.shooting_date)} • {viewingAssignment.job_days?.start_time?.slice(0, 5)} - {viewingAssignment.job_days?.end_time?.slice(0, 5)}
+                </p>
+                <p>• Vai trò phân công: <b className="text-blue-600">{viewingAssignment.role}</b></p>
+                <p>• Tiền công dự kiến: <b className="text-emerald-600">{money(viewingAssignment.salary_amount)}</b></p>
+              </div>
+
+              {/* ĐỊA ĐIỂM TRONG JOB & NHẤN MẠNH BẠN LÀM TẠI ĐÂY */}
+              <div className="rounded-2xl border border-blue-200 bg-blue-50/40 p-4 space-y-3">
+                <p className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+                  <MapPin size={16} className="text-blue-600" /> Địa điểm trong Job
+                </p>
+
+                {(() => {
+                  const currentDay = (viewingAssignment.jobs?.job_days || []).find(
+                    (d: any) => d.id === viewingAssignment.job_day_id || d.shooting_date === viewingAssignment.job_days?.shooting_date
+                  ) || viewingAssignment.job_days;
+
+                  const locations = currentDay?.job_locations || [];
+                  const cust = viewingAssignment.jobs?.customers || {};
+                  const isContactOpen = Boolean(viewingAssignment.contact_visible);
+                  const mainPhone = cust.phone || viewingAssignment.jobs?.customer_phone || "";
+                  const subPhone = cust.secondary_phone || viewingAssignment.jobs?.secondary_phone || "";
+
+                  if (locations.length === 0) {
+                    return (
+                      <div className="rounded-xl bg-white p-3 border shadow-2xs space-y-1">
+                        <p className="font-semibold text-slate-800">Phân công của bạn:</p>
+                        <p className="text-xs text-slate-600">
+                          {viewingAssignment.role} • {viewingAssignment.work_location_name || "Địa điểm"} — {viewingAssignment.work_location_address || currentDay?.location || "Chưa có địa chỉ"}
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  return locations.map((loc: any, idx: number) => {
+                    const locNameLower = String(loc.location_name || "").toLowerCase();
+                    const workNameLower = String(viewingAssignment.work_location_name || "").toLowerCase();
+                    const isMyLocation = locNameLower.includes(workNameLower) || workNameLower.includes(locNameLower) || (locations.length === 1);
+
+                    const isGroom = locNameLower.includes("trai");
+                    const phoneToDisplay = isGroom ? mainPhone : subPhone;
+
+                    return (
+                      <div
+                        key={loc.id || idx}
+                        className={`rounded-xl p-3.5 border bg-white space-y-2 relative transition-all ${
+                          isMyLocation ? "ring-2 ring-blue-500 border-blue-300 bg-blue-50/10 shadow-sm" : "border-slate-200"
+                        }`}
+                      >
+                        {isMyLocation && (
+                          <span className="absolute top-2.5 right-2.5 rounded-full bg-blue-600 text-white text-[10px] font-extrabold px-2.5 py-1 shadow-xs">
+                            ✓ BẠN LÀM TẠI ĐÂY
+                          </span>
+                        )}
+                        <p className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+                          📍 {loc.location_name || (isGroom ? "Nhà trai" : "Nhà gái")}
+                        </p>
+                        <p className="text-xs text-slate-700 font-medium">{loc.address || "Chưa có địa chỉ"}</p>
+                        
+                        <div className="pt-1 text-xs border-t border-slate-100 flex items-center justify-between">
+                          <span className="text-slate-500">SĐT liên hệ:</span>
+                          {isContactOpen ? (
+                            phoneToDisplay ? (
+                              <a href={`tel:${phoneToDisplay}`} className="font-bold text-emerald-600 flex items-center gap-1 underline">
+                                <PhoneCall size={13} /> {phoneToDisplay}
+                              </a>
+                            ) : (
+                              <span className="text-slate-400 italic">Chưa có số điện thoại</span>
+                            )
+                          ) : (
+                            <span className="text-amber-600 font-medium italic bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                              🔒 SĐT được mở trước 48 giờ hoặc khi Admin mở sớm
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            </div>
+
+            <div className="sticky bottom-0 z-20 flex justify-end gap-2.5 border-t bg-white px-5 py-3 rounded-b-2xl">
+              <button
+                onClick={() => handleCopyJobInfo(viewingAssignment)}
+                className="rounded-xl bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 text-xs flex items-center gap-1.5 shadow-sm"
+              >
+                <Copy size={14} /> Sao chép thông tin
+              </button>
+              <button
+                onClick={() => setViewingAssignment(null)}
+                className="rounded-xl border px-4 py-2 font-semibold hover:bg-slate-50 text-xs"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </MainLayout>
+  );
 }
