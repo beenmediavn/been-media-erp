@@ -32,10 +32,6 @@ const emptyJob = {
   note: "",
   required_photo_count: "",
   required_video_count: "",
-  video_editor_id: "",
-  video_editor_salary: 0,
-  photo_editor_id: "",
-  photo_editor_salary: 0,
 };
 
 const makeAssignment = (role = "Thợ chụp") => ({
@@ -146,7 +142,6 @@ export default function AdminJobPage() {
     return true;
   };
 
-  // TỰ ĐỘNG ĐẢO SĐT Ở TRÊN VÀ ĐỒNG THỜI ĐẢO CẢ DƯỚI CÁC ĐỊA ĐIỂM
   const swapBrideGroomPhones = () => {
     const groom = customerForm.phone || "";
     const bride = customerForm.secondary_phone || "";
@@ -267,10 +262,6 @@ export default function AdminJobPage() {
       note: job.note || "",
       required_photo_count: job.required_photo_count !== null && job.required_photo_count !== undefined ? String(job.required_photo_count) : "",
       required_video_count: job.required_video_count !== null && job.required_video_count !== undefined ? String(job.required_video_count) : "",
-      video_editor_id: job.video_editor_id || "",
-      video_editor_salary: Number(job.video_editor_salary || 0),
-      photo_editor_id: job.photo_editor_id || "",
-      photo_editor_salary: Number(job.photo_editor_salary || 0),
     });
 
     setDays(buildDaysFromJob(job));
@@ -516,6 +507,7 @@ export default function AdminJobPage() {
         customerId = createdCustomer.id;
       }
 
+      // CHỈ LƯU CÁC CỘT CHUẨN CÓ SẴN TRONG BẢNG JOBS (LOẠI BỎ PHOTO_EDITOR_ID ĐỂ KHÔNG BÁO LỖI)
       const jobPayload = {
         customer_id: customerId,
         customer_name: customerForm.full_name,
@@ -531,10 +523,6 @@ export default function AdminJobPage() {
         location: jobForm.location,
         required_photo_count: jobForm.required_photo_count === "" ? null : Number(jobForm.required_photo_count),
         required_video_count: jobForm.required_video_count === "" ? null : Number(jobForm.required_video_count),
-        video_editor_id: jobForm.video_editor_id || null,
-        video_editor_salary: Number(jobForm.video_editor_salary || 0),
-        photo_editor_id: jobForm.photo_editor_id || null,
-        photo_editor_salary: Number(jobForm.photo_editor_salary || 0),
         note: jobForm.note,
       };
 
@@ -894,14 +882,12 @@ function JobForm(props: any) {
     updateAssignment,
     addAssignment,
     removeAssignment,
-    addReservedWorkerToDay,
     editingJob,
     saving,
     onClose,
     onSave,
   } = props;
 
-  // TỰ ĐỘNG ĐỒNG BỘ SĐT XUỐNG CÁC ĐỊA ĐIỂM KHI THAY ĐỔI SĐT CHÍNH / PHỤ
   const handleGroomPhoneChange = (newPhone: string) => {
     setCustomerForm((prev: any) => ({ ...prev, phone: newPhone }));
     setDays((prev: any[]) =>
@@ -940,14 +926,6 @@ function JobForm(props: any) {
   const hasInputReq = (jobForm.required_photo_count !== "" && reqPhoto > 0) || (jobForm.required_video_count !== "" && reqVideo > 0);
   const missingPhoto = Math.max(reqPhoto - currentPhoto, 0);
   const missingVideo = Math.max(reqVideo - currentVideo, 0);
-
-  const assignedWorkersInThisJob = Array.from(
-    new Map(
-      allAssignments
-        .filter((a: any) => a.employee_id)
-        .map((a: any) => [a.employee_id, employees.find((e: any) => e.id === a.employee_id)])
-    ).values()
-  ).filter(Boolean);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-4 backdrop-blur-sm overflow-y-auto">
@@ -990,7 +968,6 @@ function JobForm(props: any) {
                       address: customer?.address || "",
                       facebook: customer?.facebook || customer?.full_name || "",
                     });
-                    // TỰ ĐỘNG ĐIỀN XUỐNG ĐỊA ĐIỂM
                     setDays((prev: any[]) =>
                       prev.map((day: any) => ({
                         ...day,
@@ -1185,6 +1162,7 @@ function JobForm(props: any) {
             </div>
           )}
 
+          {/* Mục 3: Ngày chụp → Địa điểm → Phân công thợ */}
           <div className="space-y-4 pt-2">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-sm text-blue-700 uppercase">3. Ngày chụp → Địa điểm → Phân công thợ</h3>
@@ -1487,90 +1465,6 @@ function JobForm(props: any) {
                 </div>
               );
             })}
-          </div>
-
-          {/* MỤC 4: HẬU KỲ */}
-          <div className="border rounded-2xl p-4 bg-purple-50/40 border-purple-200 space-y-3">
-            <div className="border-b border-purple-200 pb-2">
-              <h3 className="font-bold text-sm text-purple-900 uppercase">4. Phân công hậu kỳ (Tùy chọn)</h3>
-              <p className="text-[11px] text-purple-600">Ưu tiên thợ đã đi chụp/quay trong Job nhận làm hoặc chỉ định thợ ngoài (để trống nếu không cần)</p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="bg-white p-3.5 rounded-xl border border-purple-100 shadow-xs space-y-2">
-                <span className="font-bold text-slate-800 text-xs block">🎬 Thợ Edit Video:</span>
-                <select
-                  className="w-full border p-2 rounded-lg text-xs bg-white font-medium text-slate-800"
-                  value={jobForm.video_editor_id || ""}
-                  onChange={(e) => setJobForm({ ...jobForm, video_editor_id: e.target.value })}
-                >
-                  <option value="">-- Để trống nếu không phân công --</option>
-                  {assignedWorkersInThisJob.length > 0 && (
-                    <optgroup label="⭐ Thợ đi làm trong Job này (Ưu tiên)">
-                      {assignedWorkersInThisJob.map((emp: any) => (
-                        <option key={emp.id} value={emp.id}>
-                          ⭐ {emp.full_name} (Thợ trong Job)
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                  <optgroup label="Tất cả nhân sự">
-                    {employees.map((emp: any) => (
-                      <option key={emp.id} value={emp.id}>
-                        {emp.full_name} ({emp.role || "Nhân sự"})
-                      </option>
-                    ))}
-                  </optgroup>
-                </select>
-
-                <div className="flex items-center gap-2">
-                  <span className="text-slate-500 text-xs whitespace-nowrap">Tiền công Edit:</span>
-                  <MoneyInput
-                    className="border p-1.5 rounded-lg w-full bg-white font-bold text-purple-700"
-                    value={jobForm.video_editor_salary}
-                    onChange={(v: number) => setJobForm({ ...jobForm, video_editor_salary: v })}
-                    placeholder="Tiền công video"
-                  />
-                </div>
-              </div>
-
-              <div className="bg-white p-3.5 rounded-xl border border-purple-100 shadow-xs space-y-2">
-                <span className="font-bold text-slate-800 text-xs block">🎨 Thợ chỉnh sửa ảnh (Photoshop):</span>
-                <select
-                  className="w-full border p-2 rounded-lg text-xs bg-white font-medium text-slate-800"
-                  value={jobForm.photo_editor_id || ""}
-                  onChange={(e) => setJobForm({ ...jobForm, photo_editor_id: e.target.value })}
-                >
-                  <option value="">-- Để trống nếu không phân công --</option>
-                  {assignedWorkersInThisJob.length > 0 && (
-                    <optgroup label="⭐ Thợ đi làm trong Job này (Ưu tiên)">
-                      {assignedWorkersInThisJob.map((emp: any) => (
-                        <option key={emp.id} value={emp.id}>
-                          ⭐ {emp.full_name} (Thợ trong Job)
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                  <optgroup label="Tất cả nhân sự">
-                    {employees.map((emp: any) => (
-                      <option key={emp.id} value={emp.id}>
-                        {emp.full_name} ({emp.role || "Nhân sự"})
-                      </option>
-                    ))}
-                  </optgroup>
-                </select>
-
-                <div className="flex items-center gap-2">
-                  <span className="text-slate-500 text-xs whitespace-nowrap">Tiền công PTS:</span>
-                  <MoneyInput
-                    className="border p-1.5 rounded-lg w-full bg-white font-bold text-blue-700"
-                    value={jobForm.photo_editor_salary}
-                    onChange={(v: number) => setJobForm({ ...jobForm, photo_editor_salary: v })}
-                    placeholder="Tiền công PTS"
-                  />
-                </div>
-              </div>
-            </div>
           </div>
         </div>
 
