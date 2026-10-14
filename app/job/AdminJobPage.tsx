@@ -526,7 +526,6 @@ export default function AdminJobPage() {
         ? 0 
         : Number(jobForm.required_video_count);
 
-      // GHI THÔNG TIN HẬU KỲ VÀO NOTE NẾU CÓ CHỌN (ĐẢM BẢO KHÔNG BỊ LỖI CỘT DATABASE)
       let finalNote = jobForm.note || "";
       if (jobForm.video_editor_id) {
         const vEmp = employees.find((e) => e.id === jobForm.video_editor_id);
@@ -578,7 +577,6 @@ export default function AdminJobPage() {
         }
       }
 
-      // NẾU CÓ CHỌN THỢ HẬU KỲ, TỰ ĐỘNG THÊM VÀO BẢNG HẬU KỲ ĐỂ TÍNH LƯƠNG TRONG SAO KÊ
       if (jobForm.video_editor_id) {
         try {
           await supabase.from("job_post_productions").insert([{
@@ -926,6 +924,7 @@ function JobForm(props: any) {
   const {
     customers,
     employees,
+    reserveWorkers = [],
     customerForm,
     setCustomerForm,
     swapBrideGroomPhones,
@@ -978,6 +977,42 @@ function JobForm(props: any) {
     );
   };
 
+  const addReservedWorkerToDay = (dayIndex: number, reserve: any) => {
+    const currentDay = days[dayIndex];
+    if (!currentDay.locations || currentDay.locations.length === 0) return;
+    const targetLocIndex = 0;
+    const emp = reserve.employees;
+    const role = reserve.role || "Thợ chụp";
+    const salary = Number(emp?.base_fee || 0) > 0 ? Number(emp.base_fee) : Number(role.includes("quay") ? 900000 : 700000);
+
+    setDays((prev: any[]) =>
+      prev.map((day: any, dIdx: number) => {
+        if (dIdx !== dayIndex) return day;
+        return {
+          ...day,
+          locations: day.locations.map((loc: any, lIdx: number) => {
+            if (lIdx !== targetLocIndex) return loc;
+            return {
+              ...loc,
+              assignments: [
+                ...loc.assignments,
+                {
+                  employee_id: reserve.employee_id,
+                  role: role,
+                  salary_amount: salary,
+                  note: "Thêm từ dự phòng",
+                  client_requested: false,
+                  contact_visible: false,
+                  reserve_worker_id: reserve.id,
+                },
+              ],
+            };
+          }),
+        };
+      })
+    );
+  };
+
   const allAssignments = days.flatMap((d: any) => d.locations || []).flatMap((l: any) => l.assignments || []);
   const currentPhoto = allAssignments.filter((a: any) => a.employee_id && a.role?.toLowerCase().includes("chụp")).length;
   const currentVideo = allAssignments.filter((a: any) => a.employee_id && a.role?.toLowerCase().includes("quay")).length;
@@ -989,7 +1024,6 @@ function JobForm(props: any) {
   const missingPhoto = Math.max(reqPhoto - currentPhoto, 0);
   const missingVideo = Math.max(reqVideo - currentVideo, 0);
 
-  // DANH SÁCH THỢ ĐÃ THAM GIA JOB ĐỂ ƯU TIÊN CHỌN HẬU KỲ
   const assignedWorkersInThisJob = Array.from(
     new Map(
       allAssignments
@@ -1247,7 +1281,7 @@ function JobForm(props: any) {
             </div>
 
             {days.map((day: any, dayIndex: number) => {
-              const reservesForThisDay = reserveWorkers.filter(
+              const reservesForThisDay = (reserveWorkers || []).filter(
                 (r: any) => r.reserve_date === day.shooting_date && r.status === "reserved"
               );
 
@@ -1311,6 +1345,27 @@ function JobForm(props: any) {
                       />
                     </label>
                   </div>
+
+                  {day.shooting_date && reservesForThisDay.length > 0 && (
+                    <div className="rounded-xl border border-amber-300 bg-amber-50/80 p-3 flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-xs">
+                        <span className="font-bold text-amber-900">⭐ Có {reservesForThisDay.length} thợ dự phòng trùng ngày ({formatDateVN(day.shooting_date)}): </span>
+                        <span className="text-amber-800">Bấm thêm nhanh để gán vào job, sau khi lưu sẽ tự động xóa khỏi danh sách chờ:</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {reservesForThisDay.map((r: any) => (
+                          <button
+                            key={r.id}
+                            type="button"
+                            onClick={() => addReservedWorkerToDay(dayIndex, r)}
+                            className="bg-white border border-amber-300 text-amber-900 hover:bg-amber-100 px-2.5 py-1 rounded-lg text-xs font-bold shadow-xs transition"
+                          >
+                            + {r.employees?.full_name} ({r.role})
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="space-y-4 pt-1">
                     <div className="flex items-center justify-between">
@@ -1422,7 +1477,9 @@ function JobForm(props: any) {
                                     value={assignment.employee_id}
                                     getConflict={(id: string) => getEmployeeConflict(id, dayIndex, locIndex, assIndex)}
                                     onChange={(id: string) => {
+                                      const matchedReserve = reservesForThisDay.find((r: any) => r.employee_id === id);
                                       const selectedEmp = employees.find((e: any) => e.id === id);
+                                      
                                       const autoSalary = Number(selectedEmp?.base_fee || 0) > 0
                                         ? Number(selectedEmp.base_fee)
                                         : assignment.salary_amount;
@@ -1430,6 +1487,10 @@ function JobForm(props: any) {
                                       updateAssignment(dayIndex, locIndex, assIndex, "employee_id", id);
                                       if (Number(selectedEmp?.base_fee || 0) > 0) {
                                         updateAssignment(dayIndex, locIndex, assIndex, "salary_amount", autoSalary);
+                                      }
+
+                                      if (matchedReserve) {
+                                        updateAssignment(dayIndex, locIndex, assIndex, "reserve_worker_id", matchedReserve.id);
                                       }
                                     }}
                                   />
@@ -1503,7 +1564,7 @@ function JobForm(props: any) {
             })}
           </div>
 
-          {/* MỤC 4: PHÂN CÔNG HẬU KỲ (EDIT VIDEO & CHỈNH ẢNH) - ƯU TIÊN THỢ ĐÃ ĐI LÀM */}
+          {/* MỤC 4: PHÂN CÔNG HẬU KỲ */}
           <div className="border rounded-2xl p-4 bg-purple-50/40 border-purple-200 space-y-3">
             <div className="border-b border-purple-200 pb-2">
               <h3 className="font-bold text-sm text-purple-900 uppercase">4. Phân công hậu kỳ (Tùy chọn)</h3>
@@ -1511,7 +1572,6 @@ function JobForm(props: any) {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* EDIT VIDEO */}
               <div className="bg-white p-3.5 rounded-xl border border-purple-100 shadow-xs space-y-2">
                 <span className="font-bold text-slate-800 text-xs block">🎬 Thợ Edit Video:</span>
                 <select
@@ -1557,7 +1617,6 @@ function JobForm(props: any) {
                 </div>
               </div>
 
-              {/* CHỈNH ẢNH PTS */}
               <div className="bg-white p-3.5 rounded-xl border border-purple-100 shadow-xs space-y-2">
                 <span className="font-bold text-slate-800 text-xs block">🎨 Thợ chỉnh sửa ảnh (Photoshop):</span>
                 <select
