@@ -438,7 +438,11 @@ export default function AdminSchedulePage() {
       `----------------------------------------`,
     ];
 
-    (job.job_days || []).forEach((d: any, idx: number) => {
+    const sortedDays = [...(job.job_days || [])].sort((a: any, b: any) => 
+      String(a.shooting_date || "").localeCompare(String(b.shooting_date || ""))
+    );
+
+    sortedDays.forEach((d: any, idx: number) => {
       lines.push(
         `\n📅 Ngày ${idx + 1}${d.note ? ` (${d.note})` : ""}: ${formatDateVN(d.shooting_date)} • ${d.start_time?.slice(0, 5)} - ${d.end_time?.slice(0, 5)}`,
         `📍 Địa điểm: ${d.location || "Chưa nhập"}`
@@ -586,7 +590,6 @@ export default function AdminSchedulePage() {
                     </p>
                   </div>
 
-                  {/* HIỂN THỊ CHI TIẾT TÊN THỢ VÀ VAI TRÒ NGAY TRÊN CARD LỊCH CHỤP */}
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {r.job_assignments && r.job_assignments.length > 0 ? (
                       r.job_assignments.map((assignment: any) => (
@@ -682,93 +685,96 @@ export default function AdminSchedulePage() {
                 </div>
 
                 <div className="space-y-4">
-                  {(viewingJob.job_days || []).map((day: any, idx: number) => {
-                    const locGroom = (day.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("trai")) || {};
-                    const locBride = (day.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("gái")) || {};
+                  {/* SẮP XẾP CÁC NGÀY CHỤP THEO ĐÚNG THỨ TỰ TỪ SỚM ĐẾN MUỘN */}
+                  {[...(viewingJob.job_days || [])]
+                    .sort((a: any, b: any) => String(a.shooting_date || "").localeCompare(String(b.shooting_date || "")))
+                    .map((day: any, idx: number) => {
+                      const locGroom = (day.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("trai")) || {};
+                      const locBride = (day.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("gái")) || {};
 
-                    const groomAddr = locGroom.address || viewingJob.customers?.address || "";
-                    const brideAddr = locBride.address || "";
+                      const groomAddr = locGroom.address || viewingJob.customers?.address || "";
+                      const brideAddr = locBride.address || "";
 
-                    return (
-                      <div key={day.id || idx} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
-                        <div className="flex items-center justify-between border-b pb-2">
-                          <h3 className="font-bold text-slate-800 text-sm">
-                            Ngày {idx + 1}{day.note ? ` – ${day.note}` : ""}: {formatDateVN(day.shooting_date)} • {day.start_time?.slice(0, 5)} - {day.end_time?.slice(0, 5)}
-                          </h3>
-                          <button
-                            type="button"
-                            onClick={() => copySingleDay(day, idx)}
-                            className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1 font-semibold text-blue-600 hover:bg-blue-100 transition-colors"
-                          >
-                            📋 Sao chép ngày này
-                          </button>
+                      return (
+                        <div key={day.id || idx} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
+                          <div className="flex items-center justify-between border-b pb-2">
+                            <h3 className="font-bold text-slate-800 text-sm">
+                              Ngày {idx + 1}{day.note ? ` – ${day.note}` : ""}: {formatDateVN(day.shooting_date)} • {day.start_time?.slice(0, 5)} - {day.end_time?.slice(0, 5)}
+                            </h3>
+                            <button
+                              type="button"
+                              onClick={() => copySingleDay(day, idx)}
+                              className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1 font-semibold text-blue-600 hover:bg-blue-100 transition-colors"
+                            >
+                              📋 Sao chép ngày này
+                            </button>
+                          </div>
+
+                          <p className="text-xs text-slate-500">
+                            <span className="font-semibold text-slate-700">Địa điểm: </span>
+                            Nhà trai: {groomAddr || "Chưa cập nhật"} | Nhà gái: {brideAddr || "Chưa cập nhật"}
+                          </p>
+
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left text-xs min-w-[750px] border rounded-xl overflow-hidden">
+                              <thead className="border-b bg-slate-50 text-slate-600 font-semibold">
+                                <tr>
+                                  <th className="p-2.5">Địa điểm</th>
+                                  <th className="p-2.5">Địa chỉ / SĐT</th>
+                                  <th className="p-2.5">Vai trò</th>
+                                  <th className="p-2.5">Thợ</th>
+                                  <th className="p-2.5">Lương</th>
+                                  <th className="p-2.5 text-center">SĐT cho thợ</th>
+                                  <th className="p-2.5">Ghi chú</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y text-slate-700 bg-white">
+                                {(day.job_assignments || []).map((a: any) => {
+                                  const isGroom = String(a.work_location_name || "").toLowerCase().includes("trai");
+                                  const address = isGroom ? (groomAddr || a.work_location_address) : (brideAddr || a.work_location_address);
+                                  const phone = isGroom ? (viewingJob.customers?.phone || viewingJob.customer_phone) : (viewingJob.customers?.secondary_phone || viewingJob.secondary_phone);
+
+                                  return (
+                                    <tr key={a.id} className="hover:bg-slate-50/70">
+                                      <td className="p-2.5 font-bold text-slate-800">{a.work_location_name || (isGroom ? "Nhà trai" : "Nhà gái")}</td>
+                                      <td className="p-2.5">
+                                        <div className="font-medium text-slate-800">{address || "Chưa nhập địa chỉ"}</div>
+                                        {phone && <div className="text-[11px] text-slate-500 font-mono mt-0.5">{phone}</div>}
+                                      </td>
+                                      <td className="p-2.5 text-slate-600">{a.role}</td>
+                                      <td className="p-2.5 font-bold text-slate-900">{a.employees?.full_name || "Chưa xếp thợ"}</td>
+                                      <td className="p-2.5 font-bold text-slate-800">{money(a.salary_amount)}</td>
+                                      <td className="p-2.5 text-center">
+                                        {a.contact_visible ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => toggleContactVisible(a.id, true)}
+                                            className="rounded bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
+                                            title="Bấm để ẩn SĐT"
+                                          >
+                                            Đang mở
+                                          </button>
+                                        ) : (
+                                          <button
+                                            type="button"
+                                            onClick={() => toggleContactVisible(a.id, false)}
+                                            className="rounded bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-700 border hover:bg-slate-200"
+                                            title="Bấm để mở SĐT cho thợ xem ngay"
+                                          >
+                                            Mở sớm
+                                          </button>
+                                        )}
+                                      </td>
+                                      <td className="p-2.5 text-slate-500">{a.note || "-"}</td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
-
-                        <p className="text-xs text-slate-500">
-                          <span className="font-semibold text-slate-700">Địa điểm: </span>
-                          Nhà trai: {groomAddr || "Chưa cập nhật"} | Nhà gái: {brideAddr || "Chưa cập nhật"}
-                        </p>
-
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-left text-xs min-w-[750px] border rounded-xl overflow-hidden">
-                            <thead className="border-b bg-slate-50 text-slate-600 font-semibold">
-                              <tr>
-                                <th className="p-2.5">Địa điểm</th>
-                                <th className="p-2.5">Địa chỉ / SĐT</th>
-                                <th className="p-2.5">Vai trò</th>
-                                <th className="p-2.5">Thợ</th>
-                                <th className="p-2.5">Lương</th>
-                                <th className="p-2.5 text-center">SĐT cho thợ</th>
-                                <th className="p-2.5">Ghi chú</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y text-slate-700 bg-white">
-                              {(day.job_assignments || []).map((a: any) => {
-                                const isGroom = String(a.work_location_name || "").toLowerCase().includes("trai");
-                                const address = isGroom ? (groomAddr || a.work_location_address) : (brideAddr || a.work_location_address);
-                                const phone = isGroom ? (viewingJob.customers?.phone || viewingJob.customer_phone) : (viewingJob.customers?.secondary_phone || viewingJob.secondary_phone);
-
-                                return (
-                                  <tr key={a.id} className="hover:bg-slate-50/70">
-                                    <td className="p-2.5 font-bold text-slate-800">{a.work_location_name || (isGroom ? "Nhà trai" : "Nhà gái")}</td>
-                                    <td className="p-2.5">
-                                      <div className="font-medium text-slate-800">{address || "Chưa nhập địa chỉ"}</div>
-                                      {phone && <div className="text-[11px] text-slate-500 font-mono mt-0.5">{phone}</div>}
-                                    </td>
-                                    <td className="p-2.5 text-slate-600">{a.role}</td>
-                                    <td className="p-2.5 font-bold text-slate-900">{a.employees?.full_name || "Chưa xếp thợ"}</td>
-                                    <td className="p-2.5 font-bold text-slate-800">{money(a.salary_amount)}</td>
-                                    <td className="p-2.5 text-center">
-                                      {a.contact_visible ? (
-                                        <button
-                                          type="button"
-                                          onClick={() => toggleContactVisible(a.id, true)}
-                                          className="rounded bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
-                                          title="Bấm để ẩn SĐT"
-                                        >
-                                          Đang mở
-                                        </button>
-                                      ) : (
-                                        <button
-                                          type="button"
-                                          onClick={() => toggleContactVisible(a.id, false)}
-                                          className="rounded bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-700 border hover:bg-slate-200"
-                                          title="Bấm để mở SĐT cho thợ xem ngay"
-                                        >
-                                          Mở sớm
-                                        </button>
-                                      )}
-                                    </td>
-                                    <td className="p-2.5 text-slate-500">{a.note || "-"}</td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
                 </div>
               </div>
 
