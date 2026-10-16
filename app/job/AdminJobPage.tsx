@@ -1560,7 +1560,7 @@ function JobDetail({ job, onClose, onEdit, onDelete, onReload }: any) {
     onReload();
   };
 
-  // SAO CHÉP NGÀY CHỤP (RIÊNG TỪNG NGÀY - CHUẨN XÁC ĐẦY ĐỦ THÔNG TIN)
+  // SAO CHÉP NGÀY CHỤP (RIÊNG TỪNG NGÀY - PHÂN CÔNG ĐỊA ĐIỂM RÕ RÀNG)
   const copySingleDay = (day: any, dayIndex: number) => {
     const groomPhone = job.customers?.phone || job.customer_phone || "Chưa có";
     const bridePhone = job.customers?.secondary_phone || job.secondary_phone || "Chưa có";
@@ -1584,9 +1584,8 @@ function JobDetail({ job, onClose, onEdit, onDelete, onReload }: any) {
     text += `👥 Phân công thợ & Địa điểm:\n`;
 
     (day.job_assignments || []).forEach((a: any) => {
-      const isGroomLoc = String(a.work_location_name || "").toLowerCase().includes("trai");
-      const placeName = isGroomLoc ? "Nhà trai" : "Nhà gái";
-      text += `- ${a.role || "Thợ"}: ${a.employees?.full_name || "Chưa chọn"} | Phụ trách: ${placeName} | Lương: ${money(a.salary_amount)}\n`;
+      const locName = a.work_location_name || "Nhà trai";
+      text += `- ${a.role || "Thợ"}: ${a.employees?.full_name || "Chưa chọn"} | Phụ trách: ${locName} | Lương: ${money(a.salary_amount)}\n`;
     });
 
     navigator.clipboard.writeText(text);
@@ -1626,9 +1625,8 @@ function JobDetail({ job, onClose, onEdit, onDelete, onReload }: any) {
       );
 
       (d.job_assignments || []).forEach((a: any) => {
-        const isGroomLoc = String(a.work_location_name || "").toLowerCase().includes("trai");
-        const placeName = isGroomLoc ? "Nhà trai" : "Nhà gái";
-        lines.push(`- ${a.role || "Thợ"}: ${a.employees?.full_name || "Chưa chọn"} | Phụ trách: ${placeName} | Lương: ${money(a.salary_amount)}`);
+        const locName = a.work_location_name || "Nhà trai";
+        lines.push(`- ${a.role || "Thợ"}: ${a.employees?.full_name || "Chưa chọn"} | Phụ trách: ${locName} | Lương: ${money(a.salary_amount)}`);
       });
     });
 
