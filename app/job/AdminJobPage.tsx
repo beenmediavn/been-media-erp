@@ -1560,7 +1560,7 @@ function JobDetail({ job, onClose, onEdit, onDelete, onReload }: any) {
     onReload();
   };
 
-  // SAO CHÉP NGÀY CHỤP (RIÊNG TỪNG NGÀY)
+  // SAO CHÉP NGÀY CHỤP (RIÊNG TỪNG NGÀY - ĐẦY ĐỦ THÔNG TIN CHUNG)
   const copySingleDay = (day: any, dayIndex: number) => {
     const groomPhone = job.customers?.phone || job.customer_phone || "Chưa có";
     const bridePhone = job.customers?.secondary_phone || job.secondary_phone || "Chưa có";
@@ -1593,7 +1593,7 @@ function JobDetail({ job, onClose, onEdit, onDelete, onReload }: any) {
     alert(`Đã sao chép lịch chụp Ngày ${dayIndex + 1}!`);
   };
 
-  // SAO CHÉP TOÀN BỘ JOB (ĐẦY ĐỦ TẤT CẢ CÁC NGÀY)
+  // SAO CHÉP TOÀN BỘ JOB (LIỆT KÊ ĐẦY ĐỦ TẤT CẢ CÁC NGÀY)
   const copyFullJob = async () => {
     const groomPhone = job.customers?.phone || job.customer_phone || "Chưa có";
     const bridePhone = job.customers?.secondary_phone || job.secondary_phone || "Chưa có";
