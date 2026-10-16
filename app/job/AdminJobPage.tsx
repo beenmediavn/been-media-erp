@@ -134,7 +134,6 @@ export default function AdminJobPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
-  // Bổ sung các tab lọc và sắp xếp job theo yêu cầu
   const [statusTab, setStatusTab] = useState<"all" | "completed" | "upcoming" | "incomplete" | "paid" | "unpaid">("all");
   const [filterYear, setFilterYear] = useState(new Date().getFullYear());
   const [filterMonth, setFilterMonth] = useState<"all" | number>("all");
@@ -947,42 +946,6 @@ function JobForm(props: any) {
           return loc;
         }),
       }))
-    );
-  };
-
-  const addReservedWorkerToDay = (dayIndex: number, reserve: any) => {
-    const currentDay = days[dayIndex];
-    if (!currentDay.locations || currentDay.locations.length === 0) return;
-    const targetLocIndex = 0;
-    const emp = reserve.employees;
-    const role = reserve.role || "Thợ chụp";
-    const salary = Number(emp?.base_fee || 0) > 0 ? Number(emp.base_fee) : Number(role.includes("quay") ? 900000 : 700000);
-
-    setDays((prev: any[]) =>
-      prev.map((day: any, dIdx: number) => {
-        if (dIdx !== dayIndex) return day;
-        return {
-          ...day,
-          locations: day.locations.map((loc: any, lIdx: number) => {
-            if (lIdx !== targetLocIndex) return loc;
-            return {
-              ...loc,
-              assignments: [
-                ...loc.assignments,
-                {
-                  employee_id: reserve.employee_id,
-                  role: role,
-                  salary_amount: salary,
-                  note: "Thêm từ dự phòng",
-                  client_requested: false,
-                  contact_visible: true,
-                  reserve_worker_id: reserve.id,
-                },
-              ],
-            };
-          }),
-        };
-      })
     );
   };
 
