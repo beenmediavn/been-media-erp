@@ -290,7 +290,7 @@ export default function AdminJobPage() {
       event_name: job.event_name || "",
       booking_date: job.booking_date || new Date().toISOString().slice(0, 10),
       service: job.service || "Combo VIP",
-      total_price: Number(job.total_price || 0) - Number(job.extra_fee || 0), // Tách riêng giá gốc
+      total_price: Number(job.total_price || 0) - Number(job.extra_fee || 0),
       deposit: Number(job.deposit || 0),
       status: job.status || "Đã đặt cọc",
       location: job.location || "",
@@ -1539,7 +1539,7 @@ function JobDetail({ job, onClose, onEdit, onDelete, onReload }: any) {
     if (extraAmount <= 0) return alert("Vui lòng nhập số tiền phát sinh");
     const currentExtra = Number(job.extra_fee || 0);
     const newExtra = currentExtra + Number(extraAmount);
-    const newTotal = Number(job.total_price || 0) - currentExtra + newExtra; // cập nhật tổng mới
+    const newTotal = Number(job.total_price || 0) - currentExtra + newExtra;
     const newDebt = newTotal - deposit;
 
     const updatedNote = (job.note || "") + `\n[PHÁT SINH] ${extraNote}: +${money(extraAmount)}`;
@@ -1560,44 +1560,53 @@ function JobDetail({ job, onClose, onEdit, onDelete, onReload }: any) {
     onReload();
   };
 
+  // SAO CHÉP NGÀY CHỤP (RIÊNG TỪNG NGÀY)
   const copySingleDay = (day: any, dayIndex: number) => {
+    const groomPhone = job.customers?.phone || job.customer_phone || "Chưa có";
+    const bridePhone = job.customers?.secondary_phone || job.secondary_phone || "Chưa có";
+    
     const locGroom = (day.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("trai")) || {};
     const locBride = (day.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("gái")) || {};
 
     const groomAddr = locGroom.address || job.customers?.address || "Chưa cập nhật";
     const brideAddr = locBride.address || "Chưa cập nhật";
-    const groomPhone = job.customers?.phone || job.customer_phone || "Chưa có";
-    const bridePhone = job.customers?.secondary_phone || job.secondary_phone || "Chưa có";
 
-    let text = `📸 [BEEN MEDIA] - LỊCH CHỤP NGÀY ${dayIndex + 1}\n`;
+    let text = `📸 [BEEN MEDIA] - THÔNG TIN JOB\n`;
     text += `Sự kiện: ${job.event_name || job.customer_name || ""}\n`;
     text += `Khách hàng: ${job.customers?.full_name || job.customer_name || ""}\n`;
-    text += `SĐT Nhà trai: ${groomPhone} | SĐT Nhà gái: ${bridePhone}\n`;
+    text += `SĐT Nhà trai: ${groomPhone}\n`;
+    text += `SĐT Nhà gái: ${bridePhone}\n`;
     text += `----------------------------------------\n`;
     text += `📅 Ngày ${dayIndex + 1}${day.note ? ` – ${day.note}` : ""}: ${formatDateVN(day.shooting_date)} • ${day.start_time?.slice(0, 5)} - ${day.end_time?.slice(0, 5)}\n`;
-    text += `📍 Địa điểm:\n- Nhà trai: ${groomAddr}\n- Nhà gái: ${brideAddr}\n\n👥 Phân công thợ:\n`;
+    text += `📍 Địa điểm:\n`;
+    text += `- Nhà trai: ${groomAddr} (SĐT: ${groomPhone})\n`;
+    text += `- Nhà gái: ${brideAddr} (SĐT: ${bridePhone})\n\n`;
+    text += `👥 Phân công thợ & Địa điểm:\n`;
 
     (day.job_assignments || []).forEach((a: any) => {
-      text += `- ${a.role || "Thợ"}: ${a.employees?.full_name || "Chưa chọn"} | Phụ trách: ${a.work_location_name || "Địa điểm chính"} | Lương: ${money(a.salary_amount)}\n`;
+      const isGroomLoc = String(a.work_location_name || "").toLowerCase().includes("trai");
+      const placeName = isGroomLoc ? "Nhà trai" : "Nhà gái";
+      text += `- ${a.role || "Thợ"}: ${a.employees?.full_name || "Chưa chọn"} | Phụ trách: ${placeName} | Lương: ${money(a.salary_amount)}\n`;
     });
 
     navigator.clipboard.writeText(text);
     alert(`Đã sao chép lịch chụp Ngày ${dayIndex + 1}!`);
   };
 
+  // SAO CHÉP TOÀN BỘ JOB (ĐẦY ĐỦ TẤT CẢ CÁC NGÀY)
   const copyFullJob = async () => {
     const groomPhone = job.customers?.phone || job.customer_phone || "Chưa có";
     const bridePhone = job.customers?.secondary_phone || job.secondary_phone || "Chưa có";
 
     const lines: string[] = [
-      `📸 [BEEN MEDIA] - THÔNG TIN JOB TỔNG`,
+      `📸 [BEEN MEDIA] - THÔNG TIN JOB`,
       `Sự kiện: ${job.event_name || job.customer_name || ""}`,
       `Mã Job: ${job.job_code}`,
       `Dịch vụ: ${job.service || ""}`,
       `Khách hàng: ${job.customers?.full_name || job.customer_name || ""}`,
       `SĐT Nhà trai: ${groomPhone}`,
       `SĐT Nhà gái: ${bridePhone}`,
-      `Tổng tiền: ${money(total)} | Đã cọc/thanh toán: ${money(deposit)} | Còn nợ: ${money(debt)}`,
+      `Tổng tiền: ${money(total)} | Đã cọc: ${money(deposit)} | Còn nợ: ${money(debt)}`,
       `----------------------------------------`,
     ];
 
@@ -1605,21 +1614,26 @@ function JobDetail({ job, onClose, onEdit, onDelete, onReload }: any) {
       const locGroom = (d.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("trai")) || {};
       const locBride = (d.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("gái")) || {};
 
+      const groomAddr = locGroom.address || job.customers?.address || "Chưa cập nhật";
+      const brideAddr = locBride.address || "Chưa cập nhật";
+
       lines.push(
         `\n📅 Ngày ${i + 1}${d.note ? ` – ${d.note}` : ""}: ${formatDateVN(d.shooting_date)} • ${d.start_time?.slice(0, 5)} - ${d.end_time?.slice(0, 5)}`,
         `📍 Địa điểm:`,
-        `- Nhà trai: ${locGroom.address || job.customers?.address || "Chưa cập nhật"} (SĐT: ${groomPhone})`,
-        `- Nhà gái: ${locBride.address || "Chưa cập nhật"} (SĐT: ${bridePhone})`,
-        `👥 Phân công thợ:`
+        `- Nhà trai: ${groomAddr} (SĐT: ${groomPhone})`,
+        `- Nhà gái: ${brideAddr} (SĐT: ${bridePhone})`,
+        `👥 Phân công thợ & Địa điểm:`
       );
 
       (d.job_assignments || []).forEach((a: any) => {
-        lines.push(`- ${a.role || "Thợ"}: ${a.employees?.full_name || "Chưa chọn"} | Địa điểm: ${a.work_location_name || "Chính"} | Lương: ${money(a.salary_amount)}`);
+        const isGroomLoc = String(a.work_location_name || "").toLowerCase().includes("trai");
+        const placeName = isGroomLoc ? "Nhà trai" : "Nhà gái";
+        lines.push(`- ${a.role || "Thợ"}: ${a.employees?.full_name || "Chưa chọn"} | Phụ trách: ${placeName} | Lương: ${money(a.salary_amount)}`);
       });
     });
 
     await navigator.clipboard.writeText(lines.join("\n"));
-    alert("Đã sao chép đầy đủ Job tổng kèm phân công chi tiết!");
+    alert("Đã sao chép đầy đủ Job tổng kèm phân công chi tiết tất cả các ngày!");
   };
 
   return (
