@@ -28,7 +28,7 @@ const emptyJob = {
   service: "Combo VIP",
   total_price: 0,
   deposit: 0,
-  status: "Đã đặt cọc",
+  status: "Da dat coc",
   location: "",
   note: "",
   required_photo_count: "",
@@ -39,22 +39,22 @@ const emptyJob = {
   photo_editor_salary: 0,
 };
 
-const makeAssignment = (role = "Thợ chụp") => ({
+const makeAssignment = (role = "Tho chup") => ({
   employee_id: "",
   role,
-  salary_amount: role === "Thợ quay" ? 900000 : role === "Flycam" ? 1200000 : role === "Editor" ? 500000 : 700000,
+  salary_amount: role === "Tho quay" ? 900000 : role === "Flycam" ? 1200000 : role === "Editor" ? 500000 : 700000,
   note: "",
   client_requested: false,
   contact_visible: true,
   reserve_worker_id: "",
 });
 
-const makeLocation = (name = "Nhà trai", phone = "") => ({
+const makeLocation = (name = "Nha trai", phone = "") => ({
   location_name: name,
   address: "",
   phone: phone,
   note: "",
-  assignments: [makeAssignment("Thợ chụp"), makeAssignment("Thợ quay")],
+  assignments: [makeAssignment("Tho chup"), makeAssignment("Tho quay")],
 });
 
 const makeDay = () => ({
@@ -62,7 +62,7 @@ const makeDay = () => ({
   start_time: "07:00",
   end_time: "11:00",
   note: "",
-  locations: [makeLocation("Nhà trai"), makeLocation("Nhà gái")],
+  locations: [makeLocation("Nha trai"), makeLocation("Nha gai")],
 });
 
 const timeToMinutes = (value: any) => {
@@ -74,7 +74,7 @@ const timeOverlaps = (aStart: any, aEnd: any, bStart: any, bEnd: any) =>
 
 export const isJobDoneActual = (job: any) => {
   const s = String(job?.status || "").trim().toLowerCase();
-  if (s.includes("hoàn thành") || s.includes("đã bàn giao")) return true;
+  if (s.includes("hoan thanh") || s.includes("da ban giao")) return true;
   const days = job?.job_days || [];
   if (!days.length) return false;
   const now = new Date();
@@ -100,20 +100,20 @@ export const getJobDetailedStatus = (job: any) => {
 
   if (isPaid) {
     return {
-      label: "Hoàn thành - Đã thanh toán",
+      label: "Hoan thanh - Da thanh toan",
       badgeClass: "bg-emerald-100 text-emerald-800 border-emerald-300",
       isCompleted: true,
     };
   }
   if (isDone && !isPaid) {
     return {
-      label: "Hoàn thành - Chưa thanh toán",
+      label: "Hoan thanh - Chua thanh toan",
       badgeClass: "bg-amber-100 text-amber-800 border-amber-300",
       isCompleted: true,
     };
   }
   return {
-    label: job?.status || "Đã đặt cọc",
+    label: job?.status || "Da dat coc",
     badgeClass: "bg-slate-100 text-slate-700 border-slate-300",
     isCompleted: false,
   };
@@ -138,12 +138,12 @@ export default function AdminJobPage() {
   const [filterMonth, setFilterMonth] = useState<"all" | number>("all");
   const [filterEmployee, setFilterEmployee] = useState("");
 
-  const requestPin = async (action = "thao tác này") => {
+  const requestPin = async (action = "thao tac nay") => {
     const { data } = await supabase.from("app_settings").select("value").eq("id", "edit_pin").maybeSingle();
     const pin = data?.value || "2580";
-    const entered = window.prompt(`Nhập PIN để ${action}:`);
+    const entered = window.prompt(`Nhap PIN de ${action}:`);
     if (entered === null) return false;
-    if (entered !== pin) { alert("PIN không đúng"); return false; }
+    if (entered !== pin) { alert("PIN khong dung"); return false; }
     return true;
   };
 
@@ -157,7 +157,7 @@ export default function AdminJobPage() {
         locations: (day.locations || []).map((loc: any, idx: number) => {
           const n = String(loc.location_name || "").toLowerCase();
           if (n.includes("trai") || idx === 0) return { ...loc, phone: bride };
-          if (n.includes("gái") || idx === 1) return { ...loc, phone: groom };
+          if (n.includes("gai") || idx === 1) return { ...loc, phone: groom };
           return loc;
         }),
       }))
@@ -204,7 +204,7 @@ export default function AdminJobPage() {
         if (jd.shooting_date !== currentDay.shooting_date) continue;
         if (!timeOverlaps(currentDay.start_time, currentDay.end_time, jd.start_time, jd.end_time)) continue;
         const hit = (jd.job_assignments || []).find((a: any) => a.employee_id === employeeId);
-        if (hit) return { job: job.event_name || job.customer_name || "Job khác", start: jd.start_time, end: jd.end_time };
+        if (hit) return { job: job.event_name || job.customer_name || "Job khac", start: jd.start_time, end: jd.end_time };
       }
     }
 
@@ -215,7 +215,7 @@ export default function AdminJobPage() {
         for (let ai = 0; ai < (d.locations[li].assignments || []).length; ai++) {
           if (di === dayIndex && li === locationIndex && ai === assignmentIndex) continue;
           if (d.locations[li].assignments[ai].employee_id === employeeId) {
-            return { job: "Phân công khác trong Job này", start: d.start_time, end: d.end_time };
+            return { job: "Phan cong khac trong Job nay", start: d.start_time, end: d.end_time };
           }
         }
       }
@@ -229,7 +229,7 @@ export default function AdminJobPage() {
     return jobDays.map((day: any) => {
       const savedLocations = (day.job_locations || []).slice().sort((a: any, b: any) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
       const locations = savedLocations.map((loc: any) => ({
-        location_name: loc.location_name || "Địa điểm",
+        location_name: loc.location_name || "Dia diem",
         address: loc.address || "",
         phone: loc.phone || "",
         note: "",
@@ -238,7 +238,7 @@ export default function AdminJobPage() {
           String(a.work_location_address || "") === String(loc.address || "")
         ).map((assignment: any) => ({
           employee_id: assignment.employee_id || "",
-          role: assignment.role || "Thợ chụp",
+          role: assignment.role || "Tho chup",
           salary_amount: Number(assignment.salary_amount || 0),
           note: assignment.note || "",
           client_requested: Boolean(assignment.client_requested),
@@ -249,11 +249,11 @@ export default function AdminJobPage() {
       if (!locations.length) {
         const groups: any = {};
         (day.job_assignments || []).forEach((assignment: any) => {
-          const key = [assignment.work_location_name || day.location || "Địa điểm", assignment.work_location_address || "", assignment.work_location_phone || ""].join("__");
-          if (!groups[key]) groups[key] = { location_name: assignment.work_location_name || day.location || "Địa điểm", address: assignment.work_location_address || "", phone: assignment.work_location_phone || "", note: "", assignments: [] };
+          const key = [assignment.work_location_name || day.location || "Dia diem", assignment.work_location_address || "", assignment.work_location_phone || ""].join("__");
+          if (!groups[key]) groups[key] = { location_name: assignment.work_location_name || day.location || "Dia diem", address: assignment.work_location_address || "", phone: assignment.work_location_phone || "", note: "", assignments: [] };
           groups[key].assignments.push({
             employee_id: assignment.employee_id || "",
-            role: assignment.role || "Thợ chụp",
+            role: assignment.role || "Tho chup",
             salary_amount: Number(assignment.salary_amount || 0),
             note: assignment.note || "",
             client_requested: Boolean(assignment.client_requested),
@@ -268,7 +268,7 @@ export default function AdminJobPage() {
         start_time: day.start_time || "07:00",
         end_time: day.end_time || "11:00",
         note: day.note || "",
-        locations: locations.length ? locations : [makeLocation("Nhà trai", job.customers?.phone || job.customer_phone || ""), makeLocation("Nhà gái", job.customers?.secondary_phone || job.secondary_phone || "")]
+        locations: locations.length ? locations : [makeLocation("Nha trai", job.customers?.phone || job.customer_phone || ""), makeLocation("Nha gai", job.customers?.secondary_phone || job.secondary_phone || "")]
       };
     });
   };
@@ -292,7 +292,7 @@ export default function AdminJobPage() {
       service: job.service || "Combo VIP",
       total_price: Number(job.total_price || 0) - Number(job.extra_fee || 0),
       deposit: Number(job.deposit || 0),
-      status: job.status || "Đã đặt cọc",
+      status: job.status || "Da dat coc",
       location: job.location || "",
       note: job.note || "",
       required_photo_count: job.required_photo_count !== null && job.required_photo_count !== undefined ? String(job.required_photo_count) : "",
@@ -332,11 +332,11 @@ export default function AdminJobPage() {
     setDays((prev) => prev.map((day, i) => (i === dayIndex ? { ...day, [key]: value } : day)));
   };
 
-  const addLocation = (dayIndex: number, name = "Nhà gái") => {
+  const addLocation = (dayIndex: number, name = "Nha gai") => {
     setDays((prev) =>
       prev.map((day, i) => {
         if (i !== dayIndex) return day;
-        const defaultPhone = name.toLowerCase().includes("gái") ? (customerForm.secondary_phone || "") : (customerForm.phone || "");
+        const defaultPhone = name.toLowerCase().includes("gai") ? (customerForm.secondary_phone || "") : (customerForm.phone || "");
         return { ...day, locations: [...day.locations, makeLocation(name, defaultPhone)] };
       })
     );
@@ -366,7 +366,7 @@ export default function AdminJobPage() {
     );
   };
 
-  const addAssignment = (dayIndex: number, locationIndex: number, role = "Thợ chụp") => {
+  const addAssignment = (dayIndex: number, locationIndex: number, role = "Tho chup") => {
     setDays((prev) =>
       prev.map((day, i) => {
         if (i !== dayIndex) return day;
@@ -440,7 +440,7 @@ export default function AdminJobPage() {
           .in("reserve_date", shootingDates);
       }
     } catch (e) {
-      console.error("Lỗi cập nhật thợ dự phòng:", e);
+      console.error("Loi cap nhat tho du phong:", e);
     }
   }
 
@@ -448,15 +448,15 @@ export default function AdminJobPage() {
     if (saving) return;
 
     if (!customerForm.customer_id && !customerForm.full_name.trim()) {
-      alert("Vui lòng chọn khách hàng hoặc nhập tên khách mới");
+      alert("Vui long chon khach hang hoac nhap ten khach moi");
       return;
     }
     if (!jobForm.event_name.trim()) {
-      alert("Vui lòng nhập tên sự kiện / tên dâu rể");
+      alert("Vui long nhap ten su kien / ten dau re");
       return;
     }
     if (days.some((day) => !day.shooting_date)) {
-      alert("Vui lòng nhập đầy đủ ngày chụp");
+      alert("Vui long nhap day du ngay chup");
       return;
     }
 
@@ -503,11 +503,11 @@ export default function AdminJobPage() {
       let finalNote = jobForm.note || "";
       if (jobForm.video_editor_id) {
         const vEmp = employees.find((e) => e.id === jobForm.video_editor_id);
-        finalNote += `\n[HẬU KỲ] Edit Video: ${vEmp?.full_name || "Thợ"} (Công: ${money(jobForm.video_editor_salary)})`;
+        finalNote += `\n[HAU KY] Edit Video: ${vEmp?.full_name || "Tho"} (Cong: ${money(jobForm.video_editor_salary)})`;
       }
       if (jobForm.photo_editor_id) {
         const pEmp = employees.find((e) => e.id === jobForm.photo_editor_id);
-        finalNote += `\n[HẬU KỲ] Chỉnh ảnh PTS: ${pEmp?.full_name || "Thợ"} (Công: ${money(jobForm.photo_editor_salary)})`;
+        finalNote += `\n[HAU KY] Chinh anh PTS: ${pEmp?.full_name || "Tho"} (Cong: ${money(jobForm.photo_editor_salary)})`;
       }
 
       const jobPayload = {
@@ -521,7 +521,7 @@ export default function AdminJobPage() {
         total_price: total,
         deposit,
         debt,
-        status: debt <= 0 ? "Hoàn thành" : jobForm.status,
+        status: debt <= 0 ? "Hoan thanh" : jobForm.status,
         location: jobForm.location,
         required_photo_count: parsedPhotoCount,
         required_video_count: parsedVideoCount,
@@ -550,7 +550,7 @@ export default function AdminJobPage() {
 
         if (deposit > 0) {
           await supabase.from("customer_payments").insert([
-            { customer_id: customerId, job_id: jobId, amount: deposit, method: "Đặt cọc", note: "Thanh toán lần 1" },
+            { customer_id: customerId, job_id: jobId, amount: deposit, method: "Dat coc", note: "Thanh toan lan 1" },
           ]);
         }
       }
@@ -629,17 +629,17 @@ export default function AdminJobPage() {
       setOpenForm(false);
       setEditingJob(null);
       await loadData();
-      alert("Đã lưu Job thành công!");
+      alert("Da luu Job thanh cong!");
     } catch (error: any) {
-      alert(error.message || "Lỗi lưu Job");
+      alert(error.message || "Loi luu Job");
     } finally {
       setSaving(false);
     }
   }
 
   async function deleteJob(id: string) {
-    if (!(await requestPin("xóa Job"))) return;
-    if (!confirm("Chuyển Job này vào Thùng rác 30 ngày?")) return;
+    if (!(await requestPin("xoa Job"))) return;
+    if (!confirm("Chuyen Job nay vao Thung rac 30 ngay?")) return;
     const { error } = await supabase.from("jobs").update({ deleted_at: new Date().toISOString(), deleted_by: "Admin ERP" }).eq("id", id);
     if (error) return alert(error.message);
     setSelectedJob(null);
@@ -696,7 +696,7 @@ export default function AdminJobPage() {
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-800">Job / Booking</h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Quản lý lịch quay/chụp, thanh toán linh hoạt, phát sinh và phân công ekip
+            Quan ly lich quay/chụp, thanh toan linh hoạt, phát sinh và phân công ekip
           </p>
         </div>
         <div className="flex gap-2">
@@ -940,7 +940,7 @@ function JobForm(props: any) {
         ...day,
         locations: (day.locations || []).map((loc: any, idx: number) => {
           const n = String(loc.location_name || "").toLowerCase();
-          if (n.includes("gái") || idx === 1) return { ...loc, phone: newPhone };
+          if (n.includes("gai") || idx === 1) return { ...loc, phone: newPhone };
           return loc;
         }),
       }))
@@ -965,9 +965,9 @@ function JobForm(props: any) {
         <div className="sticky top-0 z-20 flex items-center justify-between border-b bg-white px-6 py-4 rounded-t-2xl">
           <div>
             <h2 className="text-lg sm:text-xl font-bold text-slate-800">
-              {editingJob ? "Sửa Job & Phân công" : "Tạo mới Job & Phân công"}
+              {editingJob ? "Sua Job & Phan cong" : "Tao moi Job & Phan cong"}
             </h2>
-            <p className="text-xs text-slate-400 font-normal">Thiết lập chi tiết dâu rể, hợp đồng, hậu kỳ và phân chia thợ</p>
+            <p className="text-xs text-slate-400 font-normal">Thiet lap chi tiet dau re, hop dong, hau ky va phan chia tho</p>
           </div>
           <button
             onClick={onClose}
@@ -980,9 +980,9 @@ function JobForm(props: any) {
         <div className="p-6 overflow-y-auto space-y-6 text-xs text-slate-700 flex-1">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="border rounded-2xl p-4 space-y-3 bg-white">
-              <h3 className="font-bold text-sm text-blue-700 uppercase">1. Thông tin Khách hàng</h3>
+              <h3 className="font-bold text-sm text-blue-700 uppercase">1. Thong tin Khach hang</h3>
               <label className="block font-medium">
-                <span className="text-slate-600">Chọn khách hàng CRM</span>
+                <span className="text-slate-600">Chon khach hang CRM</span>
                 <select
                   className="mt-1 border p-2.5 rounded-xl w-full font-medium text-slate-800"
                   value={customerForm.customer_id}
@@ -1002,7 +1002,7 @@ function JobForm(props: any) {
                     });
                   }}
                 >
-                  <option value="">Khách mới hoặc chọn từ CRM</option>
+                  <option value="">Khach moi hoac chon tu CRM</option>
                   {customers.map((customer: any) => (
                     <option key={customer.id} value={customer.id}>
                       {customer.full_name} - {customer.phone}
@@ -1012,10 +1012,10 @@ function JobForm(props: any) {
               </label>
 
               <label className="block font-medium">
-                <span className="text-slate-600">Tên khách đại diện / người book *</span>
+                <span className="text-slate-600">Ten khach dai dien / nguoi book *</span>
                 <input
                   className="mt-1 border p-2.5 rounded-xl w-full font-semibold text-slate-900 placeholder:text-slate-300 text-xs"
-                  placeholder="Ví dụ: Nguyễn Văn A"
+                  placeholder="Vi du: Nguyen Van A"
                   value={customerForm.full_name}
                   onChange={(e) => {
                     const val = e.target.value;
@@ -1026,7 +1026,7 @@ function JobForm(props: any) {
 
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_1fr] sm:items-end">
                 <label className="font-medium">
-                  <span className="text-slate-600">SĐT chú rể / nhà trai *</span>
+                  <span className="text-slate-600">SDT chu re / nha trai *</span>
                   <input
                     className="mt-1 border p-2.5 rounded-xl w-full font-mono text-slate-900 text-xs"
                     placeholder="0912..."
@@ -1039,13 +1039,13 @@ function JobForm(props: any) {
                   onClick={swapBrideGroomPhones}
                   className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-xs font-bold text-blue-700"
                 >
-                  ⇄ Đổi SĐT
+                  ⇄ Doi SDT
                 </button>
                 <label className="font-medium">
-                  <span className="text-slate-600">SĐT cô dâu / nhà gái</span>
+                  <span className="text-slate-600">SDT co dau / nha gai</span>
                   <input
                     className="mt-1 border p-2.5 rounded-xl w-full font-mono text-slate-900 text-xs"
-                    placeholder="SĐT phụ..."
+                    placeholder="SDT phu..."
                     value={customerForm.secondary_phone}
                     onChange={(e) => handleBridePhoneChange(e.target.value)}
                   />
@@ -1069,17 +1069,17 @@ function JobForm(props: any) {
             </div>
 
             <div className="border rounded-2xl p-4 space-y-3 bg-white">
-              <h3 className="font-bold text-sm text-blue-700 uppercase">2. Chi tiết Booking & Hợp đồng</h3>
+              <h3 className="font-bold text-sm text-blue-700 uppercase">2. Chi tiet Booking & Hop dong</h3>
               <input
                 className="border p-2.5 rounded-xl w-full font-semibold text-slate-900 text-xs"
-                placeholder="Tên sự kiện / tên dâu rể (VD: TUẤN BEEN & THU THỦY)"
+                placeholder="Ten su kien / ten dau re"
                 value={jobForm.event_name}
                 onChange={(e) => setJobForm({ ...jobForm, event_name: e.target.value })}
               />
 
               <div className="grid grid-cols-2 gap-3">
                 <label className="text-slate-600 font-medium">
-                  Ngày đặt lịch
+                  Ngay dat lich
                   <input
                     type="date"
                     className="border p-2 rounded-xl w-full mt-1 font-semibold text-slate-800"
@@ -1088,32 +1088,32 @@ function JobForm(props: any) {
                   />
                 </label>
                 <label className="text-slate-600 font-medium">
-                  Trạng thái
+                  Trang thai
                   <select
                     className="border p-2 rounded-xl w-full mt-1 font-semibold text-slate-800"
                     value={jobForm.status}
                     onChange={(e) => setJobForm({ ...jobForm, status: e.target.value })}
                   >
-                    <option>Đã đặt cọc</option>
-                    <option>Đang chụp</option>
-                    <option>Đang hậu kỳ</option>
-                    <option>Đã bàn giao</option>
-                    <option>Hoàn thành</option>
-                    <option>Hủy</option>
+                    <option>Da dat coc</option>
+                    <option>Dang chup</option>
+                    <option>Dang hau ky</option>
+                    <option>Da ban giao</option>
+                    <option>Hoan thanh</option>
+                    <option>Huy</option>
                   </select>
                 </label>
               </div>
 
               <input
                 className="border p-2.5 rounded-xl w-full font-medium text-slate-800 text-xs"
-                placeholder="Gói dịch vụ (VD: Combo VIP - 2 chụp 1 quay)"
+                placeholder="Goi dich vu"
                 value={jobForm.service}
                 onChange={(e) => setJobForm({ ...jobForm, service: e.target.value })}
               />
 
               <div className="grid grid-cols-3 gap-3 bg-slate-50 p-2.5 rounded-xl border">
                 <label className="font-medium text-slate-700">
-                  Tổng tiền
+                  Tong tien
                   <MoneyInput
                     className="border p-2 rounded-xl w-full mt-1 font-bold text-slate-900"
                     value={jobForm.total_price}
@@ -1121,7 +1121,7 @@ function JobForm(props: any) {
                   />
                 </label>
                 <label className="font-medium text-slate-700">
-                  Đã cọc (Lần 1)
+                  Da coc
                   <MoneyInput
                     className="border p-2 rounded-xl w-full mt-1 font-bold text-emerald-600"
                     value={jobForm.deposit}
@@ -1129,7 +1129,7 @@ function JobForm(props: any) {
                   />
                 </label>
                 <label className="font-medium text-slate-700">
-                  Còn lại
+                  Con lai
                   <input
                     readOnly
                     className="border p-2 rounded-xl bg-slate-100 w-full mt-1 font-bold text-rose-600 text-xs"
@@ -1142,27 +1142,27 @@ function JobForm(props: any) {
 
           <div className="space-y-4 pt-2">
             <div className="flex items-center justify-between">
-              <h3 className="font-bold text-sm text-blue-700 uppercase">3. Ngày chụp → Địa điểm → Phân công thợ</h3>
+              <h3 className="font-bold text-sm text-blue-700 uppercase">3. Ngay chup -> Dia diem -> Phan cong tho</h3>
               <button
                 type="button"
                 onClick={addDay}
                 className="bg-slate-800 text-white px-3.5 py-1.5 rounded-xl font-semibold hover:bg-slate-900"
               >
-                + Thêm ngày chụp
+                + Them ngay chup
               </button>
             </div>
 
             {days.map((day: any, dayIndex: number) => (
               <div key={dayIndex} className="border rounded-2xl p-4 bg-slate-50 space-y-4 shadow-xs">
                 <div className="flex items-center justify-between border-b pb-2">
-                  <span className="font-bold text-slate-800 text-sm">Ngày chụp {dayIndex + 1}</span>
+                  <span className="font-bold text-slate-800 text-sm">Ngay chup {dayIndex + 1}</span>
                   <div className="flex gap-2">
                     <button
                       type="button"
                       onClick={() => duplicateDay(dayIndex)}
                       className="rounded-lg border bg-white px-2.5 py-1 font-semibold text-blue-700 shadow-xs"
                     >
-                      📋 Nhân đôi ngày
+                      Nhan doi ngay
                     </button>
                     {days.length > 1 && (
                       <button
@@ -1170,7 +1170,7 @@ function JobForm(props: any) {
                         onClick={() => removeDay(dayIndex)}
                         className="rounded-lg border bg-white px-2.5 py-1 font-semibold text-rose-600"
                       >
-                        Xóa ngày
+                        Xoa ngay
                       </button>
                     )}
                   </div>
@@ -1178,7 +1178,7 @@ function JobForm(props: any) {
 
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                   <label className="font-medium text-slate-600">
-                    Ngày thực hiện
+                    Ngay thuc hien
                     <input
                       type="date"
                       className="border p-2 rounded-xl w-full mt-1 bg-white font-semibold text-slate-800"
@@ -1187,7 +1187,7 @@ function JobForm(props: any) {
                     />
                   </label>
                   <label className="font-medium text-slate-600">
-                    Từ giờ
+                    Tu gio
                     <Time24Input
                       className="border p-2 rounded-xl w-full mt-1 bg-white font-semibold text-slate-800"
                       value={day.start_time}
@@ -1195,7 +1195,7 @@ function JobForm(props: any) {
                     />
                   </label>
                   <label className="font-medium text-slate-600">
-                    Đến giờ
+                    Den gio
                     <Time24Input
                       className="border p-2 rounded-xl w-full mt-1 bg-white font-semibold text-slate-800"
                       value={day.end_time}
@@ -1203,25 +1203,25 @@ function JobForm(props: any) {
                     />
                   </label>
                   <label className="font-medium text-slate-600">
-                    Ghi chú ngày
+                    Ghi chu ngay
                     <input
                       className="border p-2 rounded-xl w-full mt-1 bg-white font-medium text-slate-800 text-xs"
                       value={day.note}
                       onChange={(e) => updateDay(dayIndex, "note", e.target.value)}
-                      placeholder="Ăn hỏi / tiệc / lưu ý timeline..."
+                      placeholder="An hoi / tiec..."
                     />
                   </label>
                 </div>
 
                 <div className="space-y-4 pt-1">
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-700 text-xs uppercase">Các địa điểm trong ngày này</span>
+                    <span className="font-bold text-slate-700 text-xs uppercase">Cac dia diem trong ngay nay</span>
                     <button
                       type="button"
-                      onClick={() => addLocation(dayIndex, "Nhà gái")}
+                      onClick={() => addLocation(dayIndex, "Nha gai")}
                       className="rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700 shadow-sm"
                     >
-                      + Thêm địa chỉ / nhà gái
+                      + Them dia chi / nha gai
                     </button>
                   </div>
 
@@ -1229,30 +1229,30 @@ function JobForm(props: any) {
                     <div key={locIndex} className="rounded-2xl border bg-white p-4 space-y-3 shadow-xs">
                       <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
                         <div className="md:col-span-3">
-                          <label className="text-[11px] font-semibold text-slate-500 block mb-1">Tên địa điểm / nhà</label>
+                          <label className="text-[11px] font-semibold text-slate-500 block mb-1">Ten dia diem / nha</label>
                           <input
                             className="border p-2 rounded-xl w-full font-bold text-slate-800 text-xs"
                             value={loc.location_name}
                             onChange={(e) => updateLocation(dayIndex, locIndex, "location_name", e.target.value)}
-                            placeholder="Nhà trai / Nhà gái"
+                            placeholder="Nha trai / Nha gai"
                           />
                         </div>
                         <div className="md:col-span-5">
-                          <label className="text-[11px] font-semibold text-slate-500 block mb-1">Địa chỉ</label>
+                          <label className="text-[11px] font-semibold text-slate-500 block mb-1">Dia chi</label>
                           <input
                             className="border p-2 rounded-xl w-full font-medium text-slate-800 text-xs"
                             value={loc.address}
                             onChange={(e) => updateLocation(dayIndex, locIndex, "address", e.target.value)}
-                            placeholder="Số nhà, đường, xã, huyện..."
+                            placeholder="Dia chi..."
                           />
                         </div>
                         <div className="md:col-span-3">
-                          <label className="text-[11px] font-semibold text-slate-500 block mb-1">SĐT tại địa điểm</label>
+                          <label className="text-[11px] font-semibold text-slate-500 block mb-1">SDT tai dia diem</label>
                           <input
                             className="border p-2 rounded-xl w-full font-mono text-slate-800 text-xs"
                             value={loc.phone}
                             onChange={(e) => updateLocation(dayIndex, locIndex, "phone", e.target.value)}
-                            placeholder="SĐT liên hệ..."
+                            placeholder="SDT..."
                           />
                         </div>
                         <div className="md:col-span-1 flex justify-center pb-2">
@@ -1267,7 +1267,7 @@ function JobForm(props: any) {
                       </div>
 
                       <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-100">
-                        {["Thợ chụp", "Thợ quay", "Flycam", "Editor"].map((roleName) => (
+                        {["Tho chup", "Tho quay", "Flycam", "Editor"].map((roleName) => (
                           <button
                             key={roleName}
                             type="button"
@@ -1284,21 +1284,21 @@ function JobForm(props: any) {
                           <div key={assIndex} className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2">
                             <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-end">
                               <div className="md:col-span-2">
-                                <label className="text-[11px] text-slate-500 font-medium block mb-1">Vai trò</label>
+                                <label className="text-[11px] text-slate-500 font-medium block mb-1">Vai tro</label>
                                 <select
                                   className="border p-2 rounded-lg font-medium text-xs bg-white w-full text-slate-800"
                                   value={assignment.role}
                                   onChange={(e) => updateAssignment(dayIndex, locIndex, assIndex, "role", e.target.value)}
                                 >
-                                  <option>Thợ chụp</option>
-                                  <option>Thợ quay</option>
+                                  <option>Tho chup</option>
+                                  <option>Tho quay</option>
                                   <option>Flycam</option>
                                   <option>Editor</option>
                                 </select>
                               </div>
 
                               <div className="md:col-span-4">
-                                <label className="text-[11px] text-slate-500 font-medium block mb-1">Nhân sự được phân công</label>
+                                <label className="text-[11px] text-slate-500 font-medium block mb-1">Nhan su</label>
                                 <EmployeePicker
                                   employees={employees}
                                   value={assignment.employee_id}
@@ -1315,7 +1315,7 @@ function JobForm(props: any) {
                               </div>
 
                               <div className="md:col-span-2">
-                                <label className="text-[11px] text-slate-500 font-medium block mb-1">Tiền công thợ</label>
+                                <label className="text-[11px] text-slate-500 font-medium block mb-1">Luong tho</label>
                                 <MoneyInput
                                   className="border p-2 rounded-lg w-full bg-white font-bold text-slate-800"
                                   value={assignment.salary_amount}
@@ -1324,12 +1324,12 @@ function JobForm(props: any) {
                               </div>
 
                               <div className="md:col-span-3">
-                                <label className="text-[11px] text-slate-500 font-medium block mb-1">Ghi chú riêng cho thợ</label>
+                                <label className="text-[11px] text-slate-500 font-medium block mb-1">Ghi chu</label>
                                 <input
                                   className="border p-2 rounded-lg w-full bg-white text-xs font-medium text-slate-800"
                                   value={assignment.note}
                                   onChange={(e) => updateAssignment(dayIndex, locIndex, assIndex, "note", e.target.value)}
-                                  placeholder="Lưu ý riêng..."
+                                  placeholder="Ghi chu..."
                                 />
                               </div>
 
@@ -1339,10 +1339,467 @@ function JobForm(props: any) {
                                   onClick={() => removeAssignment(dayIndex, locIndex, assIndex)}
                                   className="border border-rose-300 text-rose-600 hover:bg-rose-50 px-3 py-2 rounded-lg font-semibold text-xs w-full text-center"
                                 >
-                                  Xóa
+                                  Xoa
                                 </button>
                               </div>
                             </div>
 
                             <div className="pt-2 border-t border-slate-200/60 flex flex-wrap gap-4 items-center">
-                              <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold
+                              <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-amber-700">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(assignment.client_requested)}
+                                  onChange={(e) => updateAssignment(dayIndex, locIndex, assIndex, "client_requested", e.target.checked)}
+                                  className="rounded border-amber-300 text-amber-600"
+                                />
+                                <span>⭐ Khach chi dinh tho</span>
+                              </label>
+
+                              <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-blue-700 bg-blue-50 px-3 py-1 rounded-lg border border-blue-200">
+                                <input
+                                  type="checkbox"
+                                  checked={assignment.contact_visible ?? true}
+                                  onChange={(e) => updateAssignment(dayIndex, locIndex, assIndex, "contact_visible", e.target.checked)}
+                                  className="rounded border-blue-400 text-blue-600"
+                                />
+                                <span>📞 Bat mo som SDT</span>
+                              </label>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="border rounded-2xl p-4 bg-purple-50/40 border-purple-200 space-y-3">
+            <div className="border-b border-purple-200 pb-2">
+              <h3 className="font-bold text-sm text-purple-900 uppercase">4. Phan cong hau ky</h3>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-white p-3.5 rounded-xl border border-purple-100 space-y-2">
+                <span className="font-bold text-slate-800 text-xs block">🎬 Tho Edit Video:</span>
+                <select
+                  className="w-full border p-2 rounded-lg text-xs bg-white font-medium text-slate-800"
+                  value={jobForm.video_editor_id || ""}
+                  onChange={(e) => {
+                    const empId = e.target.value;
+                    const selectedEmp = employees.find((emp: any) => emp.id === empId);
+                    setJobForm({
+                      ...jobForm,
+                      video_editor_id: empId,
+                      video_editor_salary: Number(selectedEmp?.base_fee || 0) > 0 ? Number(selectedEmp.base_fee) : (jobForm.video_editor_salary || 500000)
+                    });
+                  }}
+                >
+                  <option value="">-- Chon tho --</option>
+                  {employees.map((emp: any) => (
+                    <option key={emp.id} value={emp.id}>{emp.full_name}</option>
+                  ))}
+                </select>
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-500 text-xs whitespace-nowrap">Luong Edit:</span>
+                  <MoneyInput
+                    className="border p-1.5 rounded-lg w-full bg-white font-bold text-purple-700"
+                    value={jobForm.video_editor_salary}
+                    onChange={(v: number) => setJobForm({ ...jobForm, video_editor_salary: v })}
+                  />
+                </div>
+              </div>
+
+              <div className="bg-white p-3.5 rounded-xl border border-purple-100 space-y-2">
+                <span className="font-bold text-slate-800 text-xs block">🎨 Tho PTS:</span>
+                <select
+                  className="w-full border p-2 rounded-lg text-xs bg-white font-medium text-slate-800"
+                  value={jobForm.photo_editor_id || ""}
+                  onChange={(e) => {
+                    const empId = e.target.value;
+                    const selectedEmp = employees.find((emp: any) => emp.id === empId);
+                    setJobForm({
+                      ...jobForm,
+                      photo_editor_id: empId,
+                      photo_editor_salary: Number(selectedEmp?.base_fee || 0) > 0 ? Number(selectedEmp.base_fee) : (jobForm.photo_editor_salary || 300000)
+                    });
+                  }}
+                >
+                  <option value="">-- Chon tho --</option>
+                  {employees.map((emp: any) => (
+                    <option key={emp.id} value={emp.id}>{emp.full_name}</option>
+                  ))}
+                </select>
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-500 text-xs whitespace-nowrap">Luong PTS:</span>
+                  <MoneyInput
+                    className="border p-1.5 rounded-lg w-full bg-white font-bold text-blue-700"
+                    value={jobForm.photo_editor_salary}
+                    onChange={(v: number) => setJobForm({ ...jobForm, photo_editor_salary: v })}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="sticky bottom-0 z-20 flex justify-end gap-2 border-t bg-white px-6 py-4 rounded-b-2xl">
+          <button type="button" onClick={onClose} className="rounded-xl border px-4 py-2 font-semibold hover:bg-slate-50">Huy</button>
+          <button type="button" onClick={onSave} disabled={saving} className="rounded-xl bg-blue-600 px-5 py-2 font-semibold text-white hover:bg-blue-700">
+            {saving ? "Dang luu..." : editingJob ? "Cap nhat job" : "Luu job"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function JobDetail({ job, onClose, onEdit, onDelete, onReload }: any) {
+  const days = job.job_days || [];
+  const statusInfo = getJobDetailedStatus(job);
+  const total = Number(job.total_price || 0) + Number(job.extra_fee || 0);
+  const deposit = Number(job.deposit || 0);
+  const debt = total - deposit;
+
+  const [showPayModal, setShowPayModal] = useState(false);
+  const [payAmount, setPayAmount] = useState(debt > 0 ? debt : 0);
+  const [payNote, setPayNote] = useState("Thanh toan bo sung");
+
+  const [showExtraModal, setShowExtraModal] = useState(false);
+  const [extraAmount, setExtraAmount] = useState(0);
+  const [extraNote, setExtraNote] = useState("");
+
+  const handlePayMore = async () => {
+    if (payAmount <= 0) return alert("Vui long nhap so tien thanh toan");
+    const newDeposit = deposit + Number(payAmount);
+    const newDebt = total - newDeposit;
+
+    const { error } = await supabase.from("jobs").update({
+      deposit: newDeposit,
+      debt: newDebt,
+      status: newDebt <= 0 ? "Hoan thanh" : job.status
+    }).eq("id", job.id);
+
+    if (error) return alert(error.message);
+
+    await supabase.from("customer_payments").insert([
+      { customer_id: job.customer_id, job_id: job.id, amount: payAmount, method: "Tien mat/Chuyen khoan", note: payNote }
+    ]);
+
+    alert("Ghi nhan thanh toan thanh cong!");
+    setShowPayModal(false);
+    onReload();
+  };
+
+  const handleAddExtraFee = async () => {
+    if (extraAmount <= 0) return alert("Vui long nhap so tien phat sinh");
+    const currentExtra = Number(job.extra_fee || 0);
+    const newExtra = currentExtra + Number(extraAmount);
+    const newTotal = Number(job.total_price || 0) - currentExtra + newExtra;
+    const newDebt = newTotal - deposit;
+
+    const updatedNote = (job.note || "") + `\n[PHAT SINH] ${extraNote}: +${money(extraAmount)}`;
+
+    const { error } = await supabase.from("jobs").update({
+      total_price: newTotal,
+      extra_fee: newExtra,
+      debt: newDebt,
+      note: updatedNote.trim(),
+    }).eq("id", job.id);
+
+    if (error) return alert(error.message);
+
+    alert("Da them khoan phat sinh thanh cong!");
+    setShowExtraModal(false);
+    setExtraAmount(0);
+    setExtraNote("");
+    onReload();
+  };
+
+  const copySingleDay = (day: any, dayIndex: number) => {
+    const groomPhone = job.customers?.phone || job.customer_phone || "Chua co";
+    const bridePhone = job.customers?.secondary_phone || job.secondary_phone || "Chua co";
+
+    const locGroom = (day.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("trai")) || {};
+    const locBride = (day.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("gai")) || {};
+
+    const groomAddr = locGroom.address || job.customers?.address || "Chua cap nhat";
+    const brideAddr = locBride.address || "Chua cap nhat";
+
+    let text = `📸 [BEEN MEDIA] - THONG TIN JOB\n`;
+    text += `Su kien: ${job.event_name || job.customer_name || ""}\n`;
+    text += `Ma Job: ${job.job_code}\n`;
+    text += `Khach hang: ${job.customers?.full_name || job.customer_name || ""}\n`;
+    text += `SDT Nha trai: ${groomPhone}\n`;
+    text += `SDT Nha gai: ${bridePhone}\n`;
+    text += `----------------------------------------\n`;
+    text += `📅 Ngay ${dayIndex + 1}${day.note ? ` – ${day.note}` : ""}: ${formatDateVN(day.shooting_date)} • ${day.start_time?.slice(0, 5)} - ${day.end_time?.slice(0, 5)}\n`;
+    text += `📍 Dia diem:\n`;
+    text += `- Nha trai: ${groomAddr} (SDT: ${groomPhone})\n`;
+    text += `- Nha gai: ${brideAddr} (SDT: ${bridePhone})\n\n`;
+    text += `👥 Phan cong tho & Dia diem:\n`;
+
+    const dayAssignments = day.job_assignments || [];
+    if (dayAssignments.length > 0) {
+      dayAssignments.forEach((a: any) => {
+        const placeName = a.work_location_name || "Nha trai";
+        text += `- ${a.role || "Tho"}: ${a.employees?.full_name || "Chua chon"} | Phu trach: ${placeName} | Luong: ${money(a.salary_amount)}\n`;
+      });
+    } else {
+      text += `(Chua phan cong tho cho ngay nay)\n`;
+    }
+
+    navigator.clipboard.writeText(text);
+    alert(`Da sao chep lich chup Ngay ${dayIndex + 1}!`);
+  };
+
+  const copyFullJob = async () => {
+    const groomPhone = job.customers?.phone || job.customer_phone || "Chua co";
+    const bridePhone = job.customers?.secondary_phone || job.secondary_phone || "Chua co";
+    const eventName = job.event_name || job.customer_name || "";
+    const customerName = job.customers?.full_name || job.customer_name || "";
+
+    const lines: string[] = [
+      `📸 [BEEN MEDIA] - THONG TIN JOB`,
+      `Su kien: ${eventName}`,
+      `Ma Job: ${job.job_code}`,
+      `Dich vu: ${job.service || ""}`,
+      `Khach hang: ${customerName}`,
+      `SDT Nha trai: ${groomPhone}`,
+      `SDT Nha gai: ${bridePhone}`,
+      `Tong tien: ${money(total)} | Da coc: ${money(deposit)} | Con no: ${money(debt)}`,
+      `----------------------------------------`,
+    ];
+
+    days.forEach((d: any, i: number) => {
+      const locGroom = (d.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("trai")) || {};
+      const locBride = (d.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("gai")) || {};
+
+      const groomAddr = locGroom.address || job.customers?.address || "Chua cap nhat";
+      const brideAddr = locBride.address || "Chua cap nhat";
+
+      lines.push(
+        `\n📅 Ngay ${i + 1}${d.note ? ` – ${d.note}` : ""}: ${formatDateVN(d.shooting_date)} • ${d.start_time?.slice(0, 5)} - ${d.end_time?.slice(0, 5)}`,
+        `📍 Dia diem:`,
+        `- Nha trai: ${groomAddr} (SDT: ${groomPhone})`,
+        `- Nha gai: ${brideAddr} (SDT: ${bridePhone})`,
+        `👥 Phan cong tho & Dia diem:`
+      );
+
+      const dAssignments = d.job_assignments || [];
+      if (dAssignments.length > 0) {
+        dAssignments.forEach((a: any) => {
+          const placeName = a.work_location_name || "Nha trai";
+          lines.push(`- ${a.role || "Tho"}: ${a.employees?.full_name || "Chua chon"} | Phu trach: ${placeName} | Luong: ${money(a.salary_amount)}`);
+        });
+      } else {
+        lines.push(`(Chua phan cong tho cho ngay nay)`);
+      }
+    });
+
+    await navigator.clipboard.writeText(lines.join("\n"));
+    alert("Da sao chep day du Job tong kem phan cong chi tiet tat ca cac ngay!");
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-4 backdrop-blur-sm overflow-y-auto">
+      <div className="relative w-full max-w-5xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[92vh]">
+        <div className="sticky top-0 z-25 flex items-center justify-between border-b bg-white px-6 py-4 rounded-t-2xl">
+          <div>
+            <h2 className="text-xl sm:text-2xl font-bold text-slate-800">
+              {job.event_name || job.job_code}
+            </h2>
+            <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-slate-500">
+              <span className="font-mono">{job.job_code}</span>
+              <span>•</span>
+              <span className="font-semibold text-slate-700">{job.customers?.full_name || job.customer_name}</span>
+              <span>•</span>
+              <span>{job.service}</span>
+              <span>•</span>
+              <span className={`rounded px-2 py-0.5 font-bold ${statusInfo.badgeClass}`}>
+                {statusInfo.label}
+              </span>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 font-bold"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="p-6 overflow-y-auto space-y-4 text-xs text-slate-700 flex-1">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+            <div className="rounded-xl border p-3 bg-white shadow-xs">
+              <p className="text-slate-500">Tong tien</p>
+              <p className="text-base font-black text-slate-800 mt-1">{money(total)}</p>
+            </div>
+            <div className="rounded-xl border p-3 bg-emerald-50/50 shadow-xs">
+              <p className="text-slate-500">Da coc</p>
+              <p className="text-base font-black text-emerald-600 mt-1">{money(deposit)}</p>
+            </div>
+            <div className="rounded-xl border p-3 bg-rose-50/50 shadow-xs">
+              <p className="text-slate-500">Con lai</p>
+              <p className="text-base font-black text-rose-600 mt-1">{money(debt)}</p>
+            </div>
+            <div className="rounded-xl border p-3 bg-white shadow-xs flex flex-col justify-between">
+              <p className="text-slate-500">Thanh toan them</p>
+              <button
+                onClick={() => setShowPayModal(true)}
+                className="mt-1 bg-emerald-600 hover:bg-emerald-700 text-white py-1.5 px-3 rounded-lg font-bold text-xs shadow-xs"
+              >
+                + Thu tien
+              </button>
+            </div>
+            <div className="rounded-xl border p-3 bg-white shadow-xs flex flex-col justify-between">
+              <p className="text-slate-500">Phat sinh</p>
+              <button
+                onClick={() => setShowExtraModal(true)}
+                className="mt-1 bg-amber-600 hover:bg-amber-700 text-white py-1.5 px-3 rounded-lg font-bold text-xs shadow-xs"
+              >
+                + Them phat sinh
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {days.map((day: any, index: number) => {
+              const locGroom = (day.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("trai")) || {};
+              const locBride = (day.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("gai")) || {};
+
+              const groomAddr = locGroom.address || job.customers?.address || "";
+              const brideAddr = locBride.address || "";
+
+              return (
+                <div key={day.id || index} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
+                  <div className="flex items-center justify-between border-b pb-2">
+                    <h3 className="font-bold text-slate-800 text-sm">
+                      Ngay {index + 1}{day.note ? ` – ${day.note}` : ""}: {formatDateVN(day.shooting_date)} • {day.start_time?.slice(0, 5)} - {day.end_time?.slice(0, 5)}
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() => copySingleDay(day, index)}
+                      className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1 font-semibold text-blue-600 hover:bg-blue-100 transition-colors"
+                    >
+                      📋 Sao chep ngay nay
+                    </button>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs min-w-[750px] border rounded-xl overflow-hidden">
+                      <thead className="border-b bg-slate-50 text-slate-600 font-semibold">
+                        <tr>
+                          <th className="p-2.5">Dia diem</th>
+                          <th className="p-2.5">Dia chi / SDT</th>
+                          <th className="p-2.5">Vai tro</th>
+                          <th className="p-2.5">Tho</th>
+                          <th className="p-2.5">Luong</th>
+                          <th className="p-2.5 text-center">SDT cho tho</th>
+                          <th className="p-2.5">Ghi chu</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y text-slate-700 bg-white">
+                        {(day.job_assignments || []).map((a: any) => {
+                          const isGroom = String(a.work_location_name || "").toLowerCase().includes("trai");
+                          const address = isGroom ? (groomAddr || a.work_location_address) : (brideAddr || a.work_location_address);
+                          const phone = isGroom ? (job.customers?.phone || job.customer_phone) : (job.customers?.secondary_phone || job.secondary_phone);
+
+                          return (
+                            <tr key={a.id} className="hover:bg-slate-50/70">
+                              <td className="p-2.5 font-bold text-slate-800">{a.work_location_name || (isGroom ? "Nha trai" : "Nha gai")}</td>
+                              <td className="p-2.5">
+                                <div className="font-medium text-slate-800">{address || "Chua nhap dia chi"}</div>
+                                {phone && <div className="text-[11px] text-slate-500 font-mono mt-0.5">{phone}</div>}
+                              </td>
+                              <td className="p-2.5 text-slate-600">{a.role}</td>
+                              <td className="p-2.5 font-bold text-slate-900">{a.employees?.full_name || "Chua xep tho"}</td>
+                              <td className="p-2.5 font-bold text-slate-800">{money(a.salary_amount)}</td>
+                              <td className="p-2.5 text-center">
+                                {a.contact_visible !== false ? (
+                                  <span className="rounded bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 border border-emerald-200">
+                                    Dang mo SDT
+                                  </span>
+                                ) : (
+                                  <span className="rounded bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-500 border">
+                                    Da dong
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-2.5 text-slate-500">{a.note || "-"}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {showPayModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4 shadow-xl">
+              <h3 className="font-bold text-base text-slate-800">Thu tien thanh toan</h3>
+              <div>
+                <label className="text-xs text-slate-600 block mb-1">So tien</label>
+                <MoneyInput
+                  className="w-full border p-2.5 rounded-xl font-bold text-emerald-600 text-sm"
+                  value={payAmount}
+                  onChange={(v: number) => setPayAmount(v)}
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button onClick={() => setShowPayModal(false)} className="px-4 py-2 border rounded-xl text-xs font-semibold">Huy</button>
+                <button onClick={handlePayMore} className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold">Xac nhan</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showExtraModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4 shadow-xl">
+              <h3 className="font-bold text-base text-slate-800">Them khoan phat sinh</h3>
+              <div>
+                <label className="text-xs text-slate-600 block mb-1">So tien</label>
+                <MoneyInput
+                  className="w-full border p-2.5 rounded-xl font-bold text-amber-600 text-sm"
+                  value={extraAmount}
+                  onChange={(v: number) => setExtraAmount(v)}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-600 block mb-1">Noi dung</label>
+                <input
+                  className="w-full border p-2.5 rounded-xl text-xs"
+                  value={extraNote}
+                  onChange={(e) => setExtraNote(e.target.value)}
+                  placeholder="Phat sinh..."
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button onClick={() => setShowExtraModal(false)} className="px-4 py-2 border rounded-xl text-xs font-semibold">Huy</button>
+                <button onClick={handleAddExtraFee} className="px-4 py-2 bg-amber-600 text-white rounded-xl text-xs font-bold">Luu</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="sticky bottom-0 z-25 flex justify-end gap-2 border-t bg-white px-6 py-4 rounded-b-2xl">
+          <button
+            onClick={copyFullJob}
+            className="rounded-xl bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 shadow-sm"
+          >
+            📋 Sao chep day du Job
+          </button>
+          <button onClick={onClose} className="rounded-xl border px-4 py-2 font-semibold hover:bg-slate-50">Dong</button>
+          <button onClick={onEdit} className="rounded-xl bg-amber-500 px-4 py-2 font-semibold text-white">Sua job</button>
+          <button onClick={onDelete} className="rounded-xl bg-rose-600 px-4 py-2 font-semibold text-white">Xoa job</button>
+        </div>
+      </div>
+    </div>
+  );
+}
