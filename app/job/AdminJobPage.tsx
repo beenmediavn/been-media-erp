@@ -696,7 +696,7 @@ export default function AdminJobPage() {
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-800">Job / Booking</h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Quan ly lich quay/chụp, thanh toan linh hoạt, phát sinh và phân công ekip
+            Quan ly lich quay/chup, thanh toan linh hoạt, phát sinh và phân công ekip
           </p>
         </div>
         <div className="flex gap-2">
@@ -1142,7 +1142,7 @@ function JobForm(props: any) {
 
           <div className="space-y-4 pt-2">
             <div className="flex items-center justify-between">
-              <h3 className="font-bold text-sm text-blue-700 uppercase">3. Ngay chup -> Dia diem -> Phan cong tho</h3>
+              <h3 className="font-bold text-sm text-blue-700 uppercase">3. Ngay chup va Phan cong tho</h3>
               <button
                 type="button"
                 onClick={addDay}
@@ -1298,7 +1298,7 @@ function JobForm(props: any) {
                               </div>
 
                               <div className="md:col-span-4">
-                                <label className="text-[11px] text-slate-500 font-medium block mb-1">Nhan su</label>
+                                <label className="text-[11px] font-semibold text-slate-500 block mb-1">Nhan su</label>
                                 <EmployeePicker
                                   employees={employees}
                                   value={assignment.employee_id}
@@ -1315,7 +1315,7 @@ function JobForm(props: any) {
                               </div>
 
                               <div className="md:col-span-2">
-                                <label className="text-[11px] text-slate-500 font-medium block mb-1">Luong tho</label>
+                                <label className="text-[11px] font-semibold text-slate-500 block mb-1">Luong tho</label>
                                 <MoneyInput
                                   className="border p-2 rounded-lg w-full bg-white font-bold text-slate-800"
                                   value={assignment.salary_amount}
@@ -1324,7 +1324,7 @@ function JobForm(props: any) {
                               </div>
 
                               <div className="md:col-span-3">
-                                <label className="text-[11px] text-slate-500 font-medium block mb-1">Ghi chu</label>
+                                <label className="text-[11px] font-semibold text-slate-500 block mb-1">Ghi chu</label>
                                 <input
                                   className="border p-2 rounded-lg w-full bg-white text-xs font-medium text-slate-800"
                                   value={assignment.note}
