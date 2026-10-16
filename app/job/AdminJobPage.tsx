@@ -1560,18 +1560,19 @@ function JobDetail({ job, onClose, onEdit, onDelete, onReload }: any) {
     onReload();
   };
 
-  // SAO CHÉP NGÀY CHỤP (ĐẦY ĐỦ THÔNG TIN CHUNG + PHÂN CÔNG ĐỊA ĐIỂM)
+  // SAO CHÉP NGÀY CHỤP (ĐẦY ĐỦ THÔNG TIN CHUNG + ĐỊA ĐIỂM + PHÂN CÔNG THỢ)
   const copySingleDay = (day: any, dayIndex: number) => {
     const groomPhone = job.customers?.phone || job.customer_phone || "Chưa có";
     const bridePhone = job.customers?.secondary_phone || job.secondary_phone || "Chưa có";
-    const eventName = job.event_name || job.customer_name || "";
-    const customerName = job.customers?.full_name || job.customer_name || "";
 
     const locGroom = (day.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("trai")) || {};
     const locBride = (day.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("gái")) || {};
 
     const groomAddr = locGroom.address || job.customers?.address || "Chưa cập nhật";
     const brideAddr = locBride.address || "Chưa cập nhật";
+
+    const eventName = job.event_name || job.customer_name || "";
+    const customerName = job.customers?.full_name || job.customer_name || "";
 
     let text = `📸 [BEEN MEDIA] - THÔNG TIN JOB\n`;
     text += `Sự kiện: ${eventName}\n`;
@@ -1773,3 +1774,124 @@ function JobDetail({ job, onClose, onEdit, onDelete, onReload }: any) {
                                   </span>
                                 )}
                               </td>
+                              <td className="p-2.5 text-slate-500">{a.note || "-"}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {showPayModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4 shadow-xl">
+              <h3 className="font-bold text-base text-slate-800">Thu tiền khách thanh toán (Đợt 2, đợt 3...)</h3>
+              <div>
+                <label className="text-xs text-slate-600 block mb-1">Số tiền thanh toán thêm</label>
+                <MoneyInput
+                  className="w-full border p-2.5 rounded-xl font-bold text-emerald-600 text-sm"
+                  value={payAmount}
+                  onChange={(v: number) => setPayAmount(v)}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-600 block mb-1">Nội dung / Ghi chú</label>
+                <input
+                  className="w-full border p-2.5 rounded-xl text-xs"
+                  value={payNote}
+                  onChange={(e) => setPayNote(e.target.value)}
+                  placeholder="Thanh toán đợt 2..."
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  onClick={() => setShowPayModal(false)}
+                  className="px-4 py-2 border rounded-xl text-xs font-semibold"
+                >
+                  Hủy
+                </button>
+                <button
+                  onClick={handlePayMore}
+                  className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700"
+                >
+                  Xác nhận thu tiền
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showExtraModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4 shadow-xl">
+              <h3 className="font-bold text-base text-slate-800">Thêm khoản phát sinh cho Job</h3>
+              <div>
+                <label className="text-xs text-slate-600 block mb-1">Số tiền phát sinh</label>
+                <MoneyInput
+                  className="w-full border p-2.5 rounded-xl font-bold text-amber-600 text-sm"
+                  value={extraAmount}
+                  onChange={(v: number) => setExtraAmount(v)}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-600 block mb-1">Nội dung phát sinh (VD: Phát sinh thêm giờ)</label>
+                <input
+                  className="w-full border p-2.5 rounded-xl text-xs"
+                  value={extraNote}
+                  onChange={(e) => setExtraNote(e.target.value)}
+                  placeholder="Phát sinh thêm giờ chụp..."
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  onClick={() => setShowExtraModal(false)}
+                  className="px-4 py-2 border rounded-xl text-xs font-semibold"
+                >
+                  Hủy
+                </button>
+                <button
+                  onClick={handleAddExtraFee}
+                  className="px-4 py-2 bg-amber-600 text-white rounded-xl text-xs font-bold hover:bg-amber-700"
+                >
+                  Lưu phát sinh
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="sticky bottom-0 z-25 flex justify-end gap-2 border-t bg-white px-6 py-4 rounded-b-2xl">
+          <button
+            onClick={copyFullJob}
+            className="rounded-xl bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 shadow-sm"
+          >
+            📋 Sao chép đầy đủ Job
+          </button>
+          <button
+            onClick={onClose}
+            className="rounded-xl border px-4 py-2 font-semibold hover:bg-slate-50"
+          >
+            Đóng
+          </button>
+          <button
+            onClick={onEdit}
+            className="rounded-xl bg-amber-500 px-4 py-2 font-semibold text-white hover:bg-amber-600 shadow-sm"
+          >
+            Sửa job
+          </button>
+          <button
+            onClick={onDelete}
+            className="rounded-xl bg-rose-600 px-4 py-2 font-semibold text-white hover:bg-rose-700 shadow-sm"
+          >
+            Xóa job
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
