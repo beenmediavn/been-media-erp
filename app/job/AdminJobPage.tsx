@@ -170,7 +170,7 @@ export default function AdminJobPage() {
     const [{ data: jobData, error: jobError }, { data: customerData }, { data: empData }, { data: reserveData }] = await Promise.all([
       supabase
         .from("jobs")
-        .select("*, customers(*), job_days(*, job_locations(*, job_assignments(*, employees(*))))")
+        .select("*, customers(*), job_days(*, job_locations(*), job_assignments(*, employees(*)))")
         .is("deleted_at", null)
         .order("created_at", { ascending: false }),
       supabase.from("customers").select("*").order("created_at", { ascending: false }),
