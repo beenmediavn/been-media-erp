@@ -28,6 +28,7 @@ const emptyJob = {
   service: "Combo VIP",
   total_price: 0,
   deposit: 0,
+  extra_fee: 0,
   status: "Đã đặt cọc",
   location: "",
   note: "",
@@ -45,7 +46,7 @@ const makeAssignment = (role = "Thợ chụp") => ({
   salary_amount: role === "Thợ quay" ? 900000 : role === "Flycam" ? 1200000 : role === "Editor" ? 500000 : 700000,
   note: "",
   client_requested: false,
-  contact_visible: false,
+  contact_visible: true,
   reserve_worker_id: "",
 });
 
@@ -92,13 +93,13 @@ export const isJobDoneActual = (job: any) => {
 };
 
 export const getJobDetailedStatus = (job: any) => {
-  const isDone = isJobDoneActual(job);
-  const total = Number(job?.total_price || 0);
+  const total = Number(job?.total_price || 0) + Number(job?.extra_fee || 0);
   const deposit = Number(job?.deposit || 0);
   const debt = Number(job?.debt ?? (total - deposit));
   const isPaid = total > 0 ? debt <= 0 : deposit > 0;
+  const isDone = isJobDoneActual(job) || isPaid;
 
-  if (isDone && isPaid) {
+  if (isPaid) {
     return {
       label: "Hoàn thành - Đã thanh toán",
       badgeClass: "bg-emerald-100 text-emerald-800 border-emerald-300",
@@ -110,13 +111,6 @@ export const getJobDetailedStatus = (job: any) => {
       label: "Hoàn thành - Chưa thanh toán",
       badgeClass: "bg-amber-100 text-amber-800 border-amber-300",
       isCompleted: true,
-    };
-  }
-  if (!isDone && isPaid) {
-    return {
-      label: "Đã thanh toán - Chưa hoàn thành",
-      badgeClass: "bg-blue-100 text-blue-800 border-blue-300",
-      isCompleted: false,
     };
   }
   return {
@@ -140,7 +134,8 @@ export default function AdminJobPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
-  const [statusTab, setStatusTab] = useState<"all" | "completed" | "incomplete">("all");
+  // Bổ sung các tab lọc và sắp xếp job theo yêu cầu
+  const [statusTab, setStatusTab] = useState<"all" | "completed" | "upcoming" | "incomplete" | "paid" | "unpaid">("all");
   const [filterYear, setFilterYear] = useState(new Date().getFullYear());
   const [filterMonth, setFilterMonth] = useState<"all" | number>("all");
   const [filterEmployee, setFilterEmployee] = useState("");
@@ -249,7 +244,7 @@ export default function AdminJobPage() {
           salary_amount: Number(assignment.salary_amount || 0),
           note: assignment.note || "",
           client_requested: Boolean(assignment.client_requested),
-          contact_visible: Boolean(assignment.contact_visible),
+          contact_visible: assignment.contact_visible ?? true,
           reserve_worker_id: "",
         }))
       }));
@@ -264,7 +259,7 @@ export default function AdminJobPage() {
             salary_amount: Number(assignment.salary_amount || 0),
             note: assignment.note || "",
             client_requested: Boolean(assignment.client_requested),
-            contact_visible: Boolean(assignment.contact_visible),
+            contact_visible: assignment.contact_visible ?? true,
             reserve_worker_id: "",
           });
         });
@@ -290,7 +285,7 @@ export default function AdminJobPage() {
       secondary_phone: job.customers?.secondary_phone || job.secondary_phone || "",
       email: job.customers?.email || "",
       address: job.customers?.address || "",
-      facebook: job.customers?.facebook || "",
+      facebook: job.customers?.facebook || job.customers?.full_name || job.customer_name || "",
     });
 
     setJobForm({
@@ -299,6 +294,7 @@ export default function AdminJobPage() {
       service: job.service || "Combo VIP",
       total_price: Number(job.total_price || 0),
       deposit: Number(job.deposit || 0),
+      extra_fee: Number(job.extra_fee || 0),
       status: job.status || "Đã đặt cọc",
       location: job.location || "",
       note: job.note || "",
@@ -313,25 +309,6 @@ export default function AdminJobPage() {
     setDays(buildDaysFromJob(job));
     setOpenForm(true);
   };
-
-  useEffect(() => {
-    if (!jobs.length || typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const openId = params.get("open");
-    const isEdit = params.get("edit") === "1";
-
-    if (openId) {
-      const targetJob = jobs.find((j: any) => String(j.id) === String(openId));
-      if (targetJob) {
-        if (isEdit) {
-          openEdit(targetJob);
-        } else {
-          setSelectedJob(targetJob);
-        }
-        window.history.replaceState({}, "", window.location.pathname);
-      }
-    }
-  }, [jobs]);
 
   const openCreate = () => {
     setEditingJob(null);
@@ -489,7 +466,7 @@ export default function AdminJobPage() {
     setSaving(true);
     try {
       let customerId = customerForm.customer_id;
-      const total = Number(jobForm.total_price || 0);
+      const total = Number(jobForm.total_price || 0) + Number(jobForm.extra_fee || 0);
       const deposit = Number(jobForm.deposit || 0);
       const debt = total - deposit;
 
@@ -527,6 +504,9 @@ export default function AdminJobPage() {
         : Number(jobForm.required_video_count);
 
       let finalNote = jobForm.note || "";
+      if (jobForm.extra_fee > 0) {
+        finalNote += `\n[PHÁT SINH] Phụ thu: ${money(jobForm.extra_fee)}`;
+      }
       if (jobForm.video_editor_id) {
         const vEmp = employees.find((e) => e.id === jobForm.video_editor_id);
         finalNote += `\n[HẬU KỲ] Edit Video: ${vEmp?.full_name || "Thợ"} (Công: ${money(jobForm.video_editor_salary)})`;
@@ -546,8 +526,9 @@ export default function AdminJobPage() {
         service: jobForm.service,
         total_price: total,
         deposit,
+        extra_fee: Number(jobForm.extra_fee || 0),
         debt,
-        status: jobForm.status,
+        status: debt <= 0 ? "Hoàn thành" : jobForm.status,
         location: jobForm.location,
         required_photo_count: parsedPhotoCount,
         required_video_count: parsedVideoCount,
@@ -572,32 +553,9 @@ export default function AdminJobPage() {
 
         if (deposit > 0) {
           await supabase.from("customer_payments").insert([
-            { customer_id: customerId, job_id: jobId, amount: deposit, method: "Đặt cọc", note: "Tự tạo khi tạo job" },
+            { customer_id: customerId, job_id: jobId, amount: deposit, method: "Đặt cọc", note: "Thanh toán lần 1" },
           ]);
         }
-      }
-
-      if (jobForm.video_editor_id) {
-        try {
-          await supabase.from("job_post_productions").insert([{
-            job_id: jobId,
-            assigned_user_id: jobForm.video_editor_id,
-            type: "EDIT_VIDEO",
-            actual_price: Number(jobForm.video_editor_salary || 0),
-            status: "IN_PROGRESS"
-          }]);
-        } catch {}
-      }
-      if (jobForm.photo_editor_id) {
-        try {
-          await supabase.from("job_post_productions").insert([{
-            job_id: jobId,
-            assigned_user_id: jobForm.photo_editor_id,
-            type: "RETOUCH_PTS",
-            actual_price: Number(jobForm.photo_editor_salary || 0),
-            status: "IN_PROGRESS"
-          }]);
-        } catch {}
       }
 
       const usedReserveIds: string[] = [];
@@ -655,7 +613,7 @@ export default function AdminJobPage() {
                 salary_amount: Number(assignment.salary_amount || 0),
                 note: assignment.note,
                 client_requested: Boolean(assignment.client_requested),
-                contact_visible: Boolean(assignment.contact_visible),
+                contact_visible: assignment.contact_visible ?? true,
                 work_location_name: location.location_name,
                 work_location_address: location.address,
                 work_location_phone: location.phone,
@@ -673,9 +631,6 @@ export default function AdminJobPage() {
 
       setOpenForm(false);
       setEditingJob(null);
-      if (typeof window !== "undefined") {
-        window.history.replaceState({}, "", window.location.pathname);
-      }
       await loadData();
       alert("Đã lưu Job thành công!");
     } catch (error: any) {
@@ -702,10 +657,25 @@ export default function AdminJobPage() {
 
   const filteredJobs = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
     return periodJobs.filter((job: any) => {
       const isDone = isJobDoneActual(job);
+      const daysArr = (job.job_days || []).map((d: any) => d.shooting_date).filter(Boolean);
+      const hasFutureDate = daysArr.some((dDate: string) => dDate >= today);
+
       if (statusTab === "completed" && !isDone) return false;
+      if (statusTab === "upcoming" && !hasFutureDate) return false;
       if (statusTab === "incomplete" && isDone) return false;
+
+      const total = Number(job.total_price || 0) + Number(job.extra_fee || 0);
+      const deposit = Number(job.deposit || 0);
+      const debt = Number(job.debt ?? (total - deposit));
+      const isPaid = total > 0 ? debt <= 0 : deposit > 0;
+
+      if (statusTab === "paid" && !isPaid) return false;
+      if (statusTab === "unpaid" && isPaid) return false;
 
       const assigns = (job.job_days || []).flatMap((d: any) => d.job_assignments || []);
       if (filterEmployee && !assigns.some((a: any) => a.employee_id === filterEmployee)) return false;
@@ -729,7 +699,7 @@ export default function AdminJobPage() {
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-800">Job / Booking</h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Quản lý lịch quay/chụp, ekip thợ và tự động nhận diện hoàn thành theo ngày/giờ
+            Quản lý lịch quay/chụp, thanh toán linh hoạt, phát sinh và phân công ekip
           </p>
         </div>
         <div className="flex gap-2">
@@ -743,7 +713,7 @@ export default function AdminJobPage() {
       </div>
 
       <div className="mb-5 rounded-2xl bg-white p-4 shadow-sm border">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6 items-center">
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -760,19 +730,22 @@ export default function AdminJobPage() {
               <option key={e.id} value={e.id}>{e.full_name}</option>
             ))}
           </select>
-          <div className="flex gap-2 lg:col-span-2">
+          <div className="flex flex-wrap gap-1.5 lg:col-span-4">
             {(
               [
-                ["all", "Tất cả"],
-                ["completed", "Đã xong"],
-                ["incomplete", "Chưa xong"],
+                ["all", "📋 Tất cả"],
+                ["completed", "✅ Các job đã xong"],
+                ["upcoming", "🚀 Các job sắp tới"],
+                ["incomplete", "⏳ Chưa xong"],
+                ["paid", "💰 Đã thanh toán"],
+                ["unpaid", "⚠️ Chưa thanh toán"],
               ] as const
             ).map(([k, l]) => (
               <button
                 key={k}
                 onClick={() => setStatusTab(k)}
-                className={`flex-1 rounded-xl py-2.5 text-xs sm:text-sm font-bold ${
-                  statusTab === k ? "bg-blue-600 text-white shadow-sm" : "border bg-white text-slate-700"
+                className={`flex-1 min-w-[110px] rounded-xl py-2 px-2 text-xs font-bold transition-all ${
+                  statusTab === k ? "bg-blue-600 text-white shadow-sm" : "border bg-white text-slate-700 hover:bg-slate-50"
                 }`}
               >
                 {l}
@@ -802,7 +775,9 @@ export default function AdminJobPage() {
             <tbody className="divide-y text-slate-700">
               {filteredJobs.map((job) => {
                 const statusInfo = getJobDetailedStatus(job);
-                const debt = Number(job.debt ?? (Number(job.total_price || 0) - Number(job.deposit || 0)));
+                const total = Number(job.total_price || 0) + Number(job.extra_fee || 0);
+                const deposit = Number(job.deposit || 0);
+                const debt = Number(job.debt ?? (total - deposit));
 
                 return (
                   <tr key={job.id} className="hover:bg-slate-50/80 transition-colors">
@@ -816,7 +791,7 @@ export default function AdminJobPage() {
                     <td className="p-3.5 whitespace-nowrap">
                       {(job.job_days || []).map((d: any) => formatDateVN(d.shooting_date)).join(", ")}
                     </td>
-                    <td className="p-3.5 text-right font-bold text-slate-800">{money(job.total_price)}</td>
+                    <td className="p-3.5 text-right font-bold text-slate-800">{money(total)}</td>
                     <td className="p-3.5 text-right font-bold text-rose-600">{money(debt)}</td>
                     <td className="p-3.5">
                       <div className="flex max-w-[280px] flex-wrap gap-1">
@@ -900,9 +875,6 @@ export default function AdminJobPage() {
           onClose={() => {
             setOpenForm(false);
             setEditingJob(null);
-            if (typeof window !== "undefined") {
-              window.history.replaceState({}, "", window.location.pathname);
-            }
           }}
           onSave={saveJob}
         />
@@ -914,6 +886,7 @@ export default function AdminJobPage() {
           onClose={() => setSelectedJob(null)}
           onEdit={() => { const j = selectedJob; setSelectedJob(null); openEdit(j); }}
           onDelete={() => deleteJob(selectedJob.id)}
+          onReload={loadData}
         />
       )}
     </MainLayout>
@@ -1002,7 +975,7 @@ function JobForm(props: any) {
                   salary_amount: salary,
                   note: "Thêm từ dự phòng",
                   client_requested: false,
-                  contact_visible: false,
+                  contact_visible: true,
                   reserve_worker_id: reserve.id,
                 },
               ],
@@ -1013,25 +986,6 @@ function JobForm(props: any) {
     );
   };
 
-  const allAssignments = days.flatMap((d: any) => d.locations || []).flatMap((l: any) => l.assignments || []);
-  const currentPhoto = allAssignments.filter((a: any) => a.employee_id && a.role?.toLowerCase().includes("chụp")).length;
-  const currentVideo = allAssignments.filter((a: any) => a.employee_id && a.role?.toLowerCase().includes("quay")).length;
-
-  const reqPhoto = jobForm.required_photo_count !== "" && jobForm.required_photo_count !== null ? Number(jobForm.required_photo_count) : 0;
-  const reqVideo = jobForm.required_video_count !== "" && jobForm.required_video_count !== null ? Number(jobForm.required_video_count) : 0;
-
-  const hasInputReq = (jobForm.required_photo_count !== "" && reqPhoto > 0) || (jobForm.required_video_count !== "" && reqVideo > 0);
-  const missingPhoto = Math.max(reqPhoto - currentPhoto, 0);
-  const missingVideo = Math.max(reqVideo - currentVideo, 0);
-
-  const assignedWorkersInThisJob = Array.from(
-    new Map(
-      allAssignments
-        .filter((a: any) => a.employee_id)
-        .map((a: any) => [a.employee_id, employees.find((e: any) => e.id === a.employee_id)])
-    ).values()
-  ).filter(Boolean);
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-4 backdrop-blur-sm overflow-y-auto">
       <div className="relative w-full max-w-7xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[94vh]">
@@ -1040,12 +994,11 @@ function JobForm(props: any) {
             <h2 className="text-lg sm:text-xl font-bold text-slate-800">
               {editingJob ? "Sửa Job & Phân công" : "Tạo mới Job & Phân công"}
             </h2>
-            <p className="text-xs text-slate-400 font-normal">Thiết lập chi tiết dâu rể, phân chia thợ từng địa điểm</p>
+            <p className="text-xs text-slate-400 font-normal">Thiết lập chi tiết dâu rể, phát sinh và phân chia thợ từng địa điểm</p>
           </div>
           <button
             onClick={onClose}
             className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 font-bold"
-            title="Đóng (Esc)"
           >
             ✕
           </button>
@@ -1064,26 +1017,16 @@ function JobForm(props: any) {
                     const customer = customers.find((c: any) => c.id === e.target.value);
                     const pGroom = customer?.phone || "";
                     const pBride = customer?.secondary_phone || "";
+                    const fullName = customer?.full_name || "";
                     setCustomerForm({
                       customer_id: e.target.value,
-                      full_name: customer?.full_name || "",
+                      full_name: fullName,
                       phone: pGroom,
                       secondary_phone: pBride,
                       email: customer?.email || "",
                       address: customer?.address || "",
-                      facebook: customer?.facebook || customer?.full_name || "",
+                      facebook: customer?.facebook || fullName,
                     });
-                    setDays((prev: any[]) =>
-                      prev.map((day: any) => ({
-                        ...day,
-                        locations: (day.locations || []).map((loc: any, idx: number) => {
-                          const n = String(loc.location_name || "").toLowerCase();
-                          if (n.includes("trai") || idx === 0) return { ...loc, phone: pGroom };
-                          if (n.includes("gái") || idx === 1) return { ...loc, phone: pBride };
-                          return loc;
-                        }),
-                      }))
-                    );
                   }}
                 >
                   <option value="">Khách mới hoặc chọn từ CRM</option>
@@ -1098,10 +1041,13 @@ function JobForm(props: any) {
               <label className="block font-medium">
                 <span className="text-slate-600">Tên khách đại diện / người book *</span>
                 <input
-                  className="mt-1 border p-2.5 rounded-xl w-full font-semibold text-slate-900 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
+                  className="mt-1 border p-2.5 rounded-xl w-full font-semibold text-slate-900 placeholder:text-slate-300 text-xs"
                   placeholder="Ví dụ: Nguyễn Văn A"
                   value={customerForm.full_name}
-                  onChange={(e) => setCustomerForm({ ...customerForm, full_name: e.target.value })}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setCustomerForm({ ...customerForm, full_name: val, facebook: val });
+                  }}
                 />
               </label>
 
@@ -1109,7 +1055,7 @@ function JobForm(props: any) {
                 <label className="font-medium">
                   <span className="text-slate-600">SĐT chú rể / nhà trai *</span>
                   <input
-                    className="mt-1 border p-2.5 rounded-xl w-full font-mono text-slate-900 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
+                    className="mt-1 border p-2.5 rounded-xl w-full font-mono text-slate-900 text-xs"
                     placeholder="0912..."
                     value={customerForm.phone}
                     onChange={(e) => handleGroomPhoneChange(e.target.value)}
@@ -1125,7 +1071,7 @@ function JobForm(props: any) {
                 <label className="font-medium">
                   <span className="text-slate-600">SĐT cô dâu / nhà gái</span>
                   <input
-                    className="mt-1 border p-2.5 rounded-xl w-full font-mono text-slate-900 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
+                    className="mt-1 border p-2.5 rounded-xl w-full font-mono text-slate-900 text-xs"
                     placeholder="SĐT phụ..."
                     value={customerForm.secondary_phone}
                     onChange={(e) => handleBridePhoneChange(e.target.value)}
@@ -1135,13 +1081,13 @@ function JobForm(props: any) {
 
               <div className="grid grid-cols-2 gap-3">
                 <input
-                  className="border p-2.5 rounded-xl text-slate-800 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
+                  className="border p-2.5 rounded-xl text-slate-800 text-xs"
                   placeholder="Email..."
                   value={customerForm.email}
                   onChange={(e) => setCustomerForm({ ...customerForm, email: e.target.value })}
                 />
                 <input
-                  className="border p-2.5 rounded-xl text-slate-800 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
+                  className="border p-2.5 rounded-xl text-slate-800 text-xs"
                   placeholder="Facebook / Zalo..."
                   value={customerForm.facebook}
                   onChange={(e) => setCustomerForm({ ...customerForm, facebook: e.target.value })}
@@ -1150,9 +1096,9 @@ function JobForm(props: any) {
             </div>
 
             <div className="border rounded-2xl p-4 space-y-3 bg-white">
-              <h3 className="font-bold text-sm text-blue-700 uppercase">2. Chi tiết Booking & Hợp đồng</h3>
+              <h3 className="font-bold text-sm text-blue-700 uppercase">2. Chi tiết Booking & Hợp đồng & Phát sinh</h3>
               <input
-                className="border p-2.5 rounded-xl w-full font-semibold text-slate-900 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
+                className="border p-2.5 rounded-xl w-full font-semibold text-slate-900 text-xs"
                 placeholder="Tên sự kiện / tên dâu rể (VD: TUẤN BEEN & THU THỦY)"
                 value={jobForm.event_name}
                 onChange={(e) => setJobForm({ ...jobForm, event_name: e.target.value })}
@@ -1186,40 +1132,15 @@ function JobForm(props: any) {
               </div>
 
               <input
-                className="border p-2.5 rounded-xl w-full font-medium text-slate-800 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
+                className="border p-2.5 rounded-xl w-full font-medium text-slate-800 text-xs"
                 placeholder="Gói dịch vụ (VD: Combo VIP - 2 chụp 1 quay)"
                 value={jobForm.service}
                 onChange={(e) => setJobForm({ ...jobForm, service: e.target.value })}
               />
 
-              <div className="grid grid-cols-2 gap-3 bg-blue-50/40 p-2.5 rounded-xl border border-blue-100">
-                <label className="font-semibold text-blue-900 text-xs">
-                  📸 Số lượng thợ chụp yêu cầu:
-                  <input
-                    type="number"
-                    min={0}
-                    className="border p-2 rounded-lg w-full mt-1 bg-white font-bold text-center text-slate-900 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
-                    value={jobForm.required_photo_count}
-                    onChange={(e) => setJobForm({ ...jobForm, required_photo_count: e.target.value })}
-                    placeholder="Để trống hoặc điền số"
-                  />
-                </label>
-                <label className="font-semibold text-blue-900 text-xs">
-                  🎥 Số lượng thợ quay yêu cầu:
-                  <input
-                    type="number"
-                    min={0}
-                    className="border p-2 rounded-lg w-full mt-1 bg-white font-bold text-center text-slate-900 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
-                    value={jobForm.required_video_count}
-                    onChange={(e) => setJobForm({ ...jobForm, required_video_count: e.target.value })}
-                    placeholder="Để trống hoặc điền số"
-                  />
-                </label>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-3 gap-3 bg-slate-50 p-2.5 rounded-xl border">
                 <label className="font-medium text-slate-700">
-                  Tổng tiền
+                  Tổng tiền gốc
                   <MoneyInput
                     className="border p-2 rounded-xl w-full mt-1 font-bold text-slate-900"
                     value={jobForm.total_price}
@@ -1227,47 +1148,30 @@ function JobForm(props: any) {
                   />
                 </label>
                 <label className="font-medium text-slate-700">
-                  Đã thu / Cọc
+                  Phát sinh thêm (Tiền)
+                  <MoneyInput
+                    className="border p-2 rounded-xl w-full mt-1 font-bold text-amber-600"
+                    value={jobForm.extra_fee}
+                    onChange={(v: number) => setJobForm({ ...jobForm, extra_fee: v })}
+                  />
+                </label>
+                <label className="font-medium text-slate-700">
+                  Đã thu / Cọc (Lần 1)
                   <MoneyInput
                     className="border p-2 rounded-xl w-full mt-1 font-bold text-emerald-600"
                     value={jobForm.deposit}
                     onChange={(v: number) => setJobForm({ ...jobForm, deposit: v })}
                   />
                 </label>
-                <label className="font-medium text-slate-700">
-                  Còn nợ
-                  <input
-                    readOnly
-                    className="border p-2 rounded-xl bg-slate-50 w-full mt-1 font-bold text-rose-600"
-                    value={money(Number(jobForm.total_price || 0) - Number(jobForm.deposit || 0))}
-                  />
-                </label>
               </div>
 
-              <textarea
-                className="border p-2.5 rounded-xl w-full text-slate-800 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
-                placeholder="Ghi chú thêm về Job..."
-                value={jobForm.note}
-                onChange={(e) => setJobForm({ ...jobForm, note: e.target.value })}
-              />
+              <div className="flex items-center justify-between bg-blue-50/50 p-3 rounded-xl border border-blue-100">
+                <span className="font-bold text-blue-900">Tổng thực tế (Gốc + Phát sinh):</span>
+                <span className="font-black text-sm text-blue-700">{money(Number(jobForm.total_price || 0) + Number(jobForm.extra_fee || 0))}</span>
+              </div>
             </div>
           </div>
 
-          {hasInputReq && (missingPhoto > 0 || missingVideo > 0) && (
-            <div className="rounded-xl border border-red-300 bg-red-50 p-3 text-xs text-red-700 font-semibold flex items-center justify-between">
-              <span>
-                ⚠️ CẢNH BÁO THIẾU THỢ: 
-                {missingPhoto > 0 && ` Thiếu ${missingPhoto} thợ chụp`}
-                {missingPhoto > 0 && missingVideo > 0 && " • "}
-                {missingVideo > 0 && ` Thiếu ${missingVideo} thợ quay`}
-              </span>
-              <span className="text-[11px] font-normal text-red-600">
-                (Đã xếp: {currentPhoto}/{reqPhoto} chụp • {currentVideo}/{reqVideo} quay)
-              </span>
-            </div>
-          )}
-
-          {/* Mục 3: Ngày chụp → Địa điểm → Phân công thợ */}
           <div className="space-y-4 pt-2">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-sm text-blue-700 uppercase">3. Ngày chụp → Địa điểm → Phân công thợ</h3>
@@ -1280,388 +1184,227 @@ function JobForm(props: any) {
               </button>
             </div>
 
-            {days.map((day: any, dayIndex: number) => {
-              const reservesForThisDay = (reserveWorkers || []).filter(
-                (r: any) => r.reserve_date === day.shooting_date && r.status === "reserved"
-              );
-
-              return (
-                <div key={dayIndex} className="border rounded-2xl p-4 bg-slate-50 space-y-4 shadow-xs">
-                  <div className="flex items-center justify-between border-b pb-2">
-                    <span className="font-bold text-slate-800 text-sm">Ngày chụp {dayIndex + 1}</span>
-                    <div className="flex gap-2">
+            {days.map((day: any, dayIndex: number) => (
+              <div key={dayIndex} className="border rounded-2xl p-4 bg-slate-50 space-y-4 shadow-xs">
+                <div className="flex items-center justify-between border-b pb-2">
+                  <span className="font-bold text-slate-800 text-sm">Ngày chụp {dayIndex + 1}</span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => duplicateDay(dayIndex)}
+                      className="rounded-lg border bg-white px-2.5 py-1 font-semibold text-blue-700 shadow-xs"
+                    >
+                      📋 Nhân đôi ngày
+                    </button>
+                    {days.length > 1 && (
                       <button
                         type="button"
-                        onClick={() => duplicateDay(dayIndex)}
-                        className="rounded-lg border bg-white px-2.5 py-1 font-semibold text-blue-700 shadow-xs"
+                        onClick={() => removeDay(dayIndex)}
+                        className="rounded-lg border bg-white px-2.5 py-1 font-semibold text-rose-600"
                       >
-                        📋 Nhân đôi ngày
+                        Xóa ngày
                       </button>
-                      {days.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removeDay(dayIndex)}
-                          className="rounded-lg border bg-white px-2.5 py-1 font-semibold text-rose-600"
-                        >
-                          Xóa ngày
-                        </button>
-                      )}
-                    </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                  <label className="font-medium text-slate-600">
+                    Ngày thực hiện
+                    <input
+                      type="date"
+                      className="border p-2 rounded-xl w-full mt-1 bg-white font-semibold text-slate-800"
+                      value={day.shooting_date}
+                      onChange={(e) => updateDay(dayIndex, "shooting_date", e.target.value)}
+                    />
+                  </label>
+                  <label className="font-medium text-slate-600">
+                    Từ giờ
+                    <Time24Input
+                      className="border p-2 rounded-xl w-full mt-1 bg-white font-semibold text-slate-800"
+                      value={day.start_time}
+                      onChange={(v) => updateDay(dayIndex, "start_time", v)}
+                    />
+                  </label>
+                  <label className="font-medium text-slate-600">
+                    Đến giờ
+                    <Time24Input
+                      className="border p-2 rounded-xl w-full mt-1 bg-white font-semibold text-slate-800"
+                      value={day.end_time}
+                      onChange={(v) => updateDay(dayIndex, "end_time", v)}
+                    />
+                  </label>
+                  <label className="font-medium text-slate-600">
+                    Ghi chú ngày
+                    <input
+                      className="border p-2 rounded-xl w-full mt-1 bg-white font-medium text-slate-800 text-xs"
+                      value={day.note}
+                      onChange={(e) => updateDay(dayIndex, "note", e.target.value)}
+                      placeholder="Ăn hỏi / tiệc / lưu ý timeline..."
+                    />
+                  </label>
+                </div>
+
+                <div className="space-y-4 pt-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-700 text-xs uppercase">Các địa điểm trong ngày này</span>
+                    <button
+                      type="button"
+                      onClick={() => addLocation(dayIndex, "Nhà gái")}
+                      className="rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700 shadow-sm"
+                    >
+                      + Thêm địa chỉ / nhà gái
+                    </button>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                    <label className="font-medium text-slate-600">
-                      Ngày thực hiện
-                      <input
-                        type="date"
-                        className="border p-2 rounded-xl w-full mt-1 bg-white font-semibold text-slate-800"
-                        value={day.shooting_date}
-                        onChange={(e) => updateDay(dayIndex, "shooting_date", e.target.value)}
-                      />
-                    </label>
-                    <label className="font-medium text-slate-600">
-                      Từ giờ
-                      <Time24Input
-                        className="border p-2 rounded-xl w-full mt-1 bg-white font-semibold text-slate-800"
-                        value={day.start_time}
-                        onChange={(v) => updateDay(dayIndex, "start_time", v)}
-                      />
-                    </label>
-                    <label className="font-medium text-slate-600">
-                      Đến giờ
-                      <Time24Input
-                        className="border p-2 rounded-xl w-full mt-1 bg-white font-semibold text-slate-800"
-                        value={day.end_time}
-                        onChange={(v) => updateDay(dayIndex, "end_time", v)}
-                      />
-                    </label>
-                    <label className="font-medium text-slate-600">
-                      Ghi chú ngày
-                      <input
-                        className="border p-2 rounded-xl w-full mt-1 bg-white font-medium text-slate-800 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
-                        value={day.note}
-                        onChange={(e) => updateDay(dayIndex, "note", e.target.value)}
-                        placeholder="Ăn hỏi / tiệc / lưu ý timeline..."
-                      />
-                    </label>
-                  </div>
-
-                  {day.shooting_date && reservesForThisDay.length > 0 && (
-                    <div className="rounded-xl border border-amber-300 bg-amber-50/80 p-3 flex flex-wrap items-center justify-between gap-2">
-                      <div className="text-xs">
-                        <span className="font-bold text-amber-900">⭐ Có {reservesForThisDay.length} thợ dự phòng trùng ngày ({formatDateVN(day.shooting_date)}): </span>
-                        <span className="text-amber-800">Bấm thêm nhanh để gán vào job, sau khi lưu sẽ tự động xóa khỏi danh sách chờ:</span>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {reservesForThisDay.map((r: any) => (
+                  {day.locations.map((loc: any, locIndex: number) => (
+                    <div key={locIndex} className="rounded-2xl border bg-white p-4 space-y-3 shadow-xs">
+                      <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                        <div className="md:col-span-3">
+                          <label className="text-[11px] font-semibold text-slate-500 block mb-1">Tên địa điểm / nhà</label>
+                          <input
+                            className="border p-2 rounded-xl w-full font-bold text-slate-800 text-xs"
+                            value={loc.location_name}
+                            onChange={(e) => updateLocation(dayIndex, locIndex, "location_name", e.target.value)}
+                            placeholder="Nhà trai / Nhà gái"
+                          />
+                        </div>
+                        <div className="md:col-span-5">
+                          <label className="text-[11px] font-semibold text-slate-500 block mb-1">Địa chỉ</label>
+                          <input
+                            className="border p-2 rounded-xl w-full font-medium text-slate-800 text-xs"
+                            value={loc.address}
+                            onChange={(e) => updateLocation(dayIndex, locIndex, "address", e.target.value)}
+                            placeholder="Số nhà, đường, xã, huyện..."
+                          />
+                        </div>
+                        <div className="md:col-span-3">
+                          <label className="text-[11px] font-semibold text-slate-500 block mb-1">SĐT tại địa điểm</label>
+                          <input
+                            className="border p-2 rounded-xl w-full font-mono text-slate-800 text-xs"
+                            value={loc.phone}
+                            onChange={(e) => updateLocation(dayIndex, locIndex, "phone", e.target.value)}
+                            placeholder="SĐT liên hệ..."
+                          />
+                        </div>
+                        <div className="md:col-span-1 flex justify-center pb-2">
                           <button
-                            key={r.id}
                             type="button"
-                            onClick={() => addReservedWorkerToDay(dayIndex, r)}
-                            className="bg-white border border-amber-300 text-amber-900 hover:bg-amber-100 px-2.5 py-1 rounded-lg text-xs font-bold shadow-xs transition"
+                            onClick={() => removeLocation(dayIndex, locIndex)}
+                            className="text-rose-600 font-bold text-base hover:text-rose-800"
                           >
-                            + {r.employees?.full_name} ({r.role})
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-100">
+                        {["Thợ chụp", "Thợ quay", "Flycam", "Editor"].map((roleName) => (
+                          <button
+                            key={roleName}
+                            type="button"
+                            onClick={() => addAssignment(dayIndex, locIndex, roleName)}
+                            className="rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700"
+                          >
+                            + {roleName}
                           </button>
                         ))}
                       </div>
-                    </div>
-                  )}
 
-                  <div className="space-y-4 pt-1">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-slate-700 text-xs uppercase">Các địa điểm trong ngày này</span>
-                      <button
-                        type="button"
-                        onClick={() => addLocation(dayIndex, "Nhà gái")}
-                        className="rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700 shadow-sm"
-                      >
-                        + Thêm địa chỉ / nhà gái
-                      </button>
-                    </div>
-
-                    {day.locations.map((loc: any, locIndex: number) => (
-                      <div key={locIndex} className="rounded-2xl border bg-white p-4 space-y-3 shadow-xs">
-                        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-                          <div className="md:col-span-3">
-                            <label className="text-[11px] font-semibold text-slate-500 block mb-1">Tên địa điểm / nhà</label>
-                            <input
-                              className="border p-2 rounded-xl w-full font-bold text-slate-800 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
-                              value={loc.location_name}
-                              onChange={(e) => updateLocation(dayIndex, locIndex, "location_name", e.target.value)}
-                              placeholder="Nhà trai / Nhà gái"
-                            />
-                          </div>
-                          <div className="md:col-span-5">
-                            <label className="text-[11px] font-semibold text-slate-500 block mb-1">Địa chỉ</label>
-                            <input
-                              className="border p-2 rounded-xl w-full font-medium text-slate-800 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
-                              value={loc.address}
-                              onChange={(e) => updateLocation(dayIndex, locIndex, "address", e.target.value)}
-                              placeholder="Xóm 1 Hoàng Xá / Giáp Long..."
-                            />
-                          </div>
-                          <div className="md:col-span-3">
-                            <label className="text-[11px] font-semibold text-slate-500 block mb-1">SĐT tại địa điểm</label>
-                            <input
-                              className="border p-2 rounded-xl w-full font-mono text-slate-800 placeholder:text-slate-300 placeholder:font-normal placeholder:italic text-xs"
-                              value={loc.phone}
-                              onChange={(e) => updateLocation(dayIndex, locIndex, "phone", e.target.value)}
-                              placeholder="SĐT tại điểm..."
-                            />
-                          </div>
-                          <div className="md:col-span-1 flex justify-center pb-2">
-                            <button
-                              type="button"
-                              onClick={() => removeLocation(dayIndex, locIndex)}
-                              className="text-rose-600 font-bold text-base hover:text-rose-800"
-                              title="Xóa địa điểm này"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-100">
-                          <button
-                            type="button"
-                            onClick={() => addAssignment(dayIndex, locIndex, "Thợ chụp")}
-                            className="rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700"
-                          >
-                            + Chụp
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => addAssignment(dayIndex, locIndex, "Thợ quay")}
-                            className="rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700"
-                          >
-                            + Quay
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => addAssignment(dayIndex, locIndex, "Flycam")}
-                            className="rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700"
-                          >
-                            + Flycam
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => addAssignment(dayIndex, locIndex, "Editor")}
-                            className="rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700"
-                          >
-                            + Editor
-                          </button>
-                        </div>
-
-                        <div className="space-y-3 pt-2">
-                          {loc.assignments.map((assignment: any, assIndex: number) => (
-                            <div key={assIndex} className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2">
-                              <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-end">
-                                <div className="md:col-span-2">
-                                  <label className="text-[11px] text-slate-500 font-medium block mb-1">Vai trò</label>
-                                  <select
-                                    className="border p-2 rounded-lg font-medium text-xs bg-white w-full text-slate-800"
-                                    value={assignment.role}
-                                    onChange={(e) => updateAssignment(dayIndex, locIndex, assIndex, "role", e.target.value)}
-                                  >
-                                    <option>Thợ chụp</option>
-                                    <option>Thợ quay</option>
-                                    <option>Flycam</option>
-                                    <option>Editor</option>
-                                  </select>
-                                </div>
-
-                                <div className="md:col-span-4">
-                                  <label className="text-[11px] text-slate-500 font-medium block mb-1">Nhân sự được phân công</label>
-                                  <EmployeePicker
-                                    employees={employees}
-                                    value={assignment.employee_id}
-                                    getConflict={(id: string) => getEmployeeConflict(id, dayIndex, locIndex, assIndex)}
-                                    onChange={(id: string) => {
-                                      const matchedReserve = reservesForThisDay.find((r: any) => r.employee_id === id);
-                                      const selectedEmp = employees.find((e: any) => e.id === id);
-                                      
-                                      const autoSalary = Number(selectedEmp?.base_fee || 0) > 0
-                                        ? Number(selectedEmp.base_fee)
-                                        : assignment.salary_amount;
-
-                                      updateAssignment(dayIndex, locIndex, assIndex, "employee_id", id);
-                                      if (Number(selectedEmp?.base_fee || 0) > 0) {
-                                        updateAssignment(dayIndex, locIndex, assIndex, "salary_amount", autoSalary);
-                                      }
-
-                                      if (matchedReserve) {
-                                        updateAssignment(dayIndex, locIndex, assIndex, "reserve_worker_id", matchedReserve.id);
-                                      }
-                                    }}
-                                  />
-                                </div>
-
-                                <div className="md:col-span-2">
-                                  <label className="text-[11px] text-slate-500 font-medium block mb-1">Tiền công thợ</label>
-                                  <MoneyInput
-                                    className="border p-2 rounded-lg w-full bg-white font-bold text-slate-800"
-                                    value={assignment.salary_amount}
-                                    onChange={(v: number) => updateAssignment(dayIndex, locIndex, assIndex, "salary_amount", v)}
-                                    placeholder="Tiền công"
-                                  />
-                                </div>
-
-                                <div className="md:col-span-3">
-                                  <label className="text-[11px] text-slate-500 font-medium block mb-1">Ghi chú riêng cho thợ</label>
-                                  <input
-                                    className="border p-2 rounded-lg w-full bg-white text-xs font-medium text-slate-800 placeholder:text-slate-300 placeholder:font-normal placeholder:italic"
-                                    value={assignment.note}
-                                    onChange={(e) => updateAssignment(dayIndex, locIndex, assIndex, "note", e.target.value)}
-                                    placeholder="Lưu ý riêng..."
-                                  />
-                                </div>
-
-                                <div className="md:col-span-1 flex justify-end">
-                                  <button
-                                    type="button"
-                                    onClick={() => removeAssignment(dayIndex, locIndex, assIndex)}
-                                    className="border border-rose-300 text-rose-600 hover:bg-rose-50 px-3 py-2 rounded-lg font-semibold text-xs w-full text-center"
-                                  >
-                                    Xóa
-                                  </button>
-                                </div>
+                      <div className="space-y-3 pt-2">
+                        {loc.assignments.map((assignment: any, assIndex: number) => (
+                          <div key={assIndex} className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2">
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-end">
+                              <div className="md:col-span-2">
+                                <label className="text-[11px] text-slate-500 font-medium block mb-1">Vai trò</label>
+                                <select
+                                  className="border p-2 rounded-lg font-medium text-xs bg-white w-full text-slate-800"
+                                  value={assignment.role}
+                                  onChange={(e) => updateAssignment(dayIndex, locIndex, assIndex, "role", e.target.value)}
+                                >
+                                  <option>Thợ chụp</option>
+                                  <option>Thợ quay</option>
+                                  <option>Flycam</option>
+                                  <option>Editor</option>
+                                </select>
                               </div>
 
-                              <div className="pt-2 border-t border-slate-200/60 space-y-1.5">
-                                <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-amber-700">
-                                  <input
-                                    type="checkbox"
-                                    checked={Boolean(assignment.client_requested)}
-                                    onChange={(e) => updateAssignment(dayIndex, locIndex, assIndex, "client_requested", e.target.checked)}
-                                    className="rounded border-amber-300 text-amber-600 focus:ring-amber-500"
-                                  />
-                                  <span>⭐ Khách chỉ định đích danh thợ này</span>
-                                </label>
+                              <div className="md:col-span-4">
+                                <label className="text-[11px] text-slate-500 font-medium block mb-1">Nhân sự được phân công</label>
+                                <EmployeePicker
+                                  employees={employees}
+                                  value={assignment.employee_id}
+                                  getConflict={(id: string) => getEmployeeConflict(id, dayIndex, locIndex, assIndex)}
+                                  onChange={(id: string) => {
+                                    const selectedEmp = employees.find((e: any) => e.id === id);
+                                    const autoSalary = Number(selectedEmp?.base_fee || 0) > 0 ? Number(selectedEmp.base_fee) : assignment.salary_amount;
+                                    updateAssignment(dayIndex, locIndex, assIndex, "employee_id", id);
+                                    if (Number(selectedEmp?.base_fee || 0) > 0) {
+                                      updateAssignment(dayIndex, locIndex, assIndex, "salary_amount", autoSalary);
+                                    }
+                                  }}
+                                />
+                              </div>
 
-                                <label className="flex items-start gap-2 cursor-pointer text-xs font-semibold text-blue-700">
-                                  <input
-                                    type="checkbox"
-                                    checked={Boolean(assignment.contact_visible)}
-                                    onChange={(e) => updateAssignment(dayIndex, locIndex, assIndex, "contact_visible", e.target.checked)}
-                                    className="rounded border-blue-300 text-blue-600 focus:ring-blue-500 mt-0.5"
-                                  />
-                                  <div>
-                                    <span>📞 Mở SĐT cho thợ xem ngay</span>
-                                    <p className="text-[11px] font-normal text-slate-400 italic">
-                                      Nếu không bật, hệ thống tự mở SĐT trước giờ làm 48 giờ.
-                                    </p>
-                                  </div>
-                                </label>
+                              <div className="md:col-span-2">
+                                <label className="text-[11px] text-slate-500 font-medium block mb-1">Tiền công thợ</label>
+                                <MoneyInput
+                                  className="border p-2 rounded-lg w-full bg-white font-bold text-slate-800"
+                                  value={assignment.salary_amount}
+                                  onChange={(v: number) => updateAssignment(dayIndex, locIndex, assIndex, "salary_amount", v)}
+                                />
+                              </div>
+
+                              <div className="md:col-span-3">
+                                <label className="text-[11px] text-slate-500 font-medium block mb-1">Ghi chú riêng cho thợ</label>
+                                <input
+                                  className="border p-2 rounded-lg w-full bg-white text-xs font-medium text-slate-800"
+                                  value={assignment.note}
+                                  onChange={(e) => updateAssignment(dayIndex, locIndex, assIndex, "note", e.target.value)}
+                                  placeholder="Lưu ý riêng..."
+                                />
+                              </div>
+
+                              <div className="md:col-span-1 flex justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => removeAssignment(dayIndex, locIndex, assIndex)}
+                                  className="border border-rose-300 text-rose-600 hover:bg-rose-50 px-3 py-2 rounded-lg font-semibold text-xs w-full text-center"
+                                >
+                                  Xóa
+                                </button>
                               </div>
                             </div>
-                          ))}
-                        </div>
+
+                            <div className="pt-2 border-t border-slate-200/60 flex flex-wrap gap-4 items-center">
+                              <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-amber-700">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(assignment.client_requested)}
+                                  onChange={(e) => updateAssignment(dayIndex, locIndex, assIndex, "client_requested", e.target.checked)}
+                                  className="rounded border-amber-300 text-amber-600"
+                                />
+                                <span>⭐ Khách chỉ định đích danh thợ này</span>
+                              </label>
+
+                              <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-blue-700 bg-blue-50 px-3 py-1 rounded-lg border border-blue-200">
+                                <input
+                                  type="checkbox"
+                                  checked={assignment.contact_visible ?? true}
+                                  onChange={(e) => updateAssignment(dayIndex, locIndex, assIndex, "contact_visible", e.target.checked)}
+                                  className="rounded border-blue-400 text-blue-600"
+                                />
+                                <span>📞 Bật mở sớm SĐT cho thợ xem ngay</span>
+                              </label>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* MỤC 4: PHÂN CÔNG HẬU KỲ */}
-          <div className="border rounded-2xl p-4 bg-purple-50/40 border-purple-200 space-y-3">
-            <div className="border-b border-purple-200 pb-2">
-              <h3 className="font-bold text-sm text-purple-900 uppercase">4. Phân công hậu kỳ (Tùy chọn)</h3>
-              <p className="text-[11px] text-purple-600 font-normal">Ưu tiên thợ đã tham gia quay/chụp trong Job này làm luôn hoặc chỉ định thợ ngoài</p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="bg-white p-3.5 rounded-xl border border-purple-100 shadow-xs space-y-2">
-                <span className="font-bold text-slate-800 text-xs block">🎬 Thợ Edit Video:</span>
-                <select
-                  className="w-full border p-2 rounded-lg text-xs bg-white font-medium text-slate-800"
-                  value={jobForm.video_editor_id || ""}
-                  onChange={(e) => {
-                    const empId = e.target.value;
-                    const selectedEmp = employees.find((emp: any) => emp.id === empId);
-                    setJobForm({
-                      ...jobForm,
-                      video_editor_id: empId,
-                      video_editor_salary: Number(selectedEmp?.base_fee || 0) > 0 ? Number(selectedEmp.base_fee) : (jobForm.video_editor_salary || 500000)
-                    });
-                  }}
-                >
-                  <option value="">-- Để trống nếu không phân công --</option>
-                  {assignedWorkersInThisJob.length > 0 && (
-                    <optgroup label="⭐ Thợ đi làm trong Job này (Ưu tiên)">
-                      {assignedWorkersInThisJob.map((emp: any) => (
-                        <option key={emp.id} value={emp.id}>
-                          ⭐ {emp.full_name} ({emp.role || "Thợ"})
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                  <optgroup label="Tất cả nhân sự">
-                    {employees.map((emp: any) => (
-                      <option key={emp.id} value={emp.id}>
-                        {emp.full_name} ({emp.role || "Nhân sự"})
-                      </option>
-                    ))}
-                  </optgroup>
-                </select>
-
-                <div className="flex items-center gap-2">
-                  <span className="text-slate-500 text-xs whitespace-nowrap">Tiền công Edit:</span>
-                  <MoneyInput
-                    className="border p-1.5 rounded-lg w-full bg-white font-bold text-purple-700"
-                    value={jobForm.video_editor_salary}
-                    onChange={(v: number) => setJobForm({ ...jobForm, video_editor_salary: v })}
-                    placeholder="Tiền công video"
-                  />
+                    </div>
+                  ))}
                 </div>
               </div>
-
-              <div className="bg-white p-3.5 rounded-xl border border-purple-100 shadow-xs space-y-2">
-                <span className="font-bold text-slate-800 text-xs block">🎨 Thợ chỉnh sửa ảnh (Photoshop):</span>
-                <select
-                  className="w-full border p-2 rounded-lg text-xs bg-white font-medium text-slate-800"
-                  value={jobForm.photo_editor_id || ""}
-                  onChange={(e) => {
-                    const empId = e.target.value;
-                    const selectedEmp = employees.find((emp: any) => emp.id === empId);
-                    setJobForm({
-                      ...jobForm,
-                      photo_editor_id: empId,
-                      photo_editor_salary: Number(selectedEmp?.base_fee || 0) > 0 ? Number(selectedEmp.base_fee) : (jobForm.photo_editor_salary || 300000)
-                    });
-                  }}
-                >
-                  <option value="">-- Để trống nếu không phân công --</option>
-                  {assignedWorkersInThisJob.length > 0 && (
-                    <optgroup label="⭐ Thợ đi làm trong Job này (Ưu tiên)">
-                      {assignedWorkersInThisJob.map((emp: any) => (
-                        <option key={emp.id} value={emp.id}>
-                          ⭐ {emp.full_name} ({emp.role || "Thợ"})
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                  <optgroup label="Tất cả nhân sự">
-                    {employees.map((emp: any) => (
-                      <option key={emp.id} value={emp.id}>
-                        {emp.full_name} ({emp.role || "Nhân sự"})
-                      </option>
-                    ))}
-                  </optgroup>
-                </select>
-
-                <div className="flex items-center gap-2">
-                  <span className="text-slate-500 text-xs whitespace-nowrap">Tiền công PTS:</span>
-                  <MoneyInput
-                    className="border p-1.5 rounded-lg w-full bg-white font-bold text-blue-700"
-                    value={jobForm.photo_editor_salary}
-                    onChange={(v: number) => setJobForm({ ...jobForm, photo_editor_salary: v })}
-                    placeholder="Tiền công PTS"
-                  />
-                </div>
-              </div>
-            </div>
+            ))}
           </div>
         </div>
 
@@ -1687,22 +1430,58 @@ function JobForm(props: any) {
   );
 }
 
-function JobDetail({ job, onClose, onEdit, onDelete }: any) {
+function JobDetail({ job, onClose, onEdit, onDelete, onReload }: any) {
   const days = job.job_days || [];
   const statusInfo = getJobDetailedStatus(job);
+  const total = Number(job.total_price || 0) + Number(job.extra_fee || 0);
+  const deposit = Number(job.deposit || 0);
+  const debt = total - deposit;
+
+  const [showPayModal, setShowPayModal] = useState(false);
+  const [payAmount, setPayAmount] = useState(debt > 0 ? debt : 0);
+  const [payNote, setPayNote] = useState("Thanh toán bổ sung");
+
+  const handlePayMore = async () => {
+    if (payAmount <= 0) return alert("Vui lòng nhập số tiền thanh toán");
+    const newDeposit = deposit + Number(payAmount);
+    const newDebt = total - newDeposit;
+
+    const { error } = await supabase.from("jobs").update({
+      deposit: newDeposit,
+      debt: newDebt,
+      status: newDebt <= 0 ? "Hoàn thành" : job.status
+    }).eq("id", job.id);
+
+    if (error) return alert(error.message);
+
+    await supabase.from("customer_payments").insert([
+      { customer_id: job.customer_id, job_id: job.id, amount: payAmount, method: "Tiền mặt/Chuyển khoản", note: payNote }
+    ]);
+
+    alert("Ghi nhận thanh toán thành công!");
+    setShowPayModal(false);
+    onReload();
+  };
 
   const copySingleDay = (day: any, dayIndex: number) => {
     const locGroom = (day.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("trai")) || {};
     const locBride = (day.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("gái")) || {};
 
-    const groomAddr = locGroom.address || job.customers?.address || "";
-    const brideAddr = locBride.address || "";
+    const groomAddr = locGroom.address || job.customers?.address || "Chưa cập nhật";
+    const brideAddr = locBride.address || "Chưa cập nhật";
+    const groomPhone = job.customers?.phone || job.customer_phone || "Chưa có";
+    const bridePhone = job.customers?.secondary_phone || job.secondary_phone || "Chưa có";
 
-    let text = `Ngày ${dayIndex + 1}${day.note ? ` – ${day.note}` : ""}: ${formatDateVN(day.shooting_date)} • ${day.start_time?.slice(0, 5)} - ${day.end_time?.slice(0, 5)}\n`;
-    text += `Địa điểm: Nhà trai: ${groomAddr || "Chưa có"} | Nhà gái: ${brideAddr || "Chưa có"}\n`;
+    let text = `📸 [BEEN MEDIA] - LỊCH CHỤP NGÀY ${dayIndex + 1}\n`;
+    text += `Sự kiện: ${job.event_name || job.customer_name || ""}\n`;
+    text += `Khách hàng: ${job.customers?.full_name || job.customer_name || ""}\n`;
+    text += `SĐT Nhà trai: ${groomPhone} | SĐT Nhà gái: ${bridePhone}\n`;
+    text += `----------------------------------------\n`;
+    text += `📅 Ngày ${dayIndex + 1}${day.note ? ` – ${day.note}` : ""}: ${formatDateVN(day.shooting_date)} • ${day.start_time?.slice(0, 5)} - ${day.end_time?.slice(0, 5)}\n`;
+    text += `📍 Địa điểm:\n- Nhà trai: ${groomAddr}\n- Nhà gái: ${brideAddr}\n\n👥 Phân công thợ:\n`;
 
     (day.job_assignments || []).forEach((a: any) => {
-      text += `- ${a.role || "Thợ"}: ${a.employees?.full_name || "Chưa chọn"} | Lương: ${money(a.salary_amount)}\n`;
+      text += `- ${a.role || "Thợ"}: ${a.employees?.full_name || "Chưa chọn"} | Phụ trách: ${a.work_location_name || "Địa điểm chính"} | Lương: ${money(a.salary_amount)}\n`;
     });
 
     navigator.clipboard.writeText(text);
@@ -1710,14 +1489,18 @@ function JobDetail({ job, onClose, onEdit, onDelete }: any) {
   };
 
   const copyFullJob = async () => {
+    const groomPhone = job.customers?.phone || job.customer_phone || "Chưa có";
+    const bridePhone = job.customers?.secondary_phone || job.secondary_phone || "Chưa có";
+
     const lines: string[] = [
-      `📸 [BEEN MEDIA] - LỊCH CHỤP TOÀN BỘ JOB`,
+      `📸 [BEEN MEDIA] - THÔNG TIN JOB TỔNG`,
       `Sự kiện: ${job.event_name || job.customer_name || ""}`,
       `Mã Job: ${job.job_code}`,
-      `Gói dịch vụ: ${job.service || ""}`,
+      `Dịch vụ: ${job.service || ""}`,
       `Khách hàng: ${job.customers?.full_name || job.customer_name || ""}`,
-      `SĐT Nhà trai: ${job.customers?.phone || job.customer_phone || "Chưa có"}`,
-      `SĐT Nhà gái: ${job.customers?.secondary_phone || job.secondary_phone || "Chưa có"}`,
+      `SĐT Nhà trai: ${groomPhone}`,
+      `SĐT Nhà gái: ${bridePhone}`,
+      `Tổng tiền: ${money(total)} | Đã cọc/thanh toán: ${money(deposit)} | Còn nợ: ${money(debt)}`,
       `----------------------------------------`,
     ];
 
@@ -1727,22 +1510,25 @@ function JobDetail({ job, onClose, onEdit, onDelete }: any) {
 
       lines.push(
         `\n📅 Ngày ${i + 1}${d.note ? ` – ${d.note}` : ""}: ${formatDateVN(d.shooting_date)} • ${d.start_time?.slice(0, 5)} - ${d.end_time?.slice(0, 5)}`,
-        `📍 Địa điểm: Nhà trai: ${locGroom.address || job.customers?.address || "Chưa cập nhật"} | Nhà gái: ${locBride.address || "Chưa cập nhật"}`
+        `📍 Địa điểm:`,
+        `- Nhà trai: ${locGroom.address || job.customers?.address || "Chưa cập nhật"} (SĐT: ${groomPhone})`,
+        `- Nhà gái: ${locBride.address || "Chưa cập nhật"} (SĐT: ${bridePhone})`,
+        `👥 Phân công thợ:`
       );
 
       (d.job_assignments || []).forEach((a: any) => {
-        lines.push(`- ${a.role || "Thợ"}: ${a.employees?.full_name || "Chưa chọn"} | Lương: ${money(a.salary_amount)}`);
+        lines.push(`- ${a.role || "Thợ"}: ${a.employees?.full_name || "Chưa chọn"} | Địa điểm: ${a.work_location_name || "Chính"} | Lương: ${money(a.salary_amount)}`);
       });
     });
 
     await navigator.clipboard.writeText(lines.join("\n"));
-    alert("Đã sao chép đầy đủ Job!");
+    alert("Đã sao chép đầy đủ Job tổng kèm phân công chi tiết!");
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-4 backdrop-blur-sm overflow-y-auto">
       <div className="relative w-full max-w-5xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[92vh]">
-        <div className="sticky top-0 z-20 flex items-center justify-between border-b bg-white px-6 py-4 rounded-t-2xl">
+        <div className="sticky top-0 z-25 flex items-center justify-between border-b bg-white px-6 py-4 rounded-t-2xl">
           <div>
             <h2 className="text-xl sm:text-2xl font-bold text-slate-800">
               {job.event_name || job.job_code}
@@ -1762,41 +1548,37 @@ function JobDetail({ job, onClose, onEdit, onDelete }: any) {
           <button
             onClick={onClose}
             className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 font-bold"
-            title="Đóng (Esc)"
           >
             ✕
           </button>
         </div>
 
         <div className="p-6 overflow-y-auto space-y-4 text-xs text-slate-700 flex-1">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
             <div className="rounded-xl border p-3 bg-white shadow-xs">
-              <p className="text-slate-500">Tổng tiền hợp đồng</p>
-              <p className="text-lg font-black text-slate-800 mt-1">{money(job.total_price)}</p>
+              <p className="text-slate-500">Tổng tiền</p>
+              <p className="text-base font-black text-slate-800 mt-1">{money(total)}</p>
+            </div>
+            <div className="rounded-xl border p-3 bg-amber-50/50 shadow-xs">
+              <p className="text-slate-500">Phát sinh</p>
+              <p className="text-base font-black text-amber-600 mt-1">{money(job.extra_fee)}</p>
             </div>
             <div className="rounded-xl border p-3 bg-emerald-50/50 shadow-xs">
-              <p className="text-slate-500">Đã thanh toán / Cọc</p>
-              <p className="text-lg font-black text-emerald-600 mt-1">{money(job.deposit)}</p>
+              <p className="text-slate-500">Đã thanh toán</p>
+              <p className="text-base font-black text-emerald-600 mt-1">{money(deposit)}</p>
             </div>
             <div className="rounded-xl border p-3 bg-rose-50/50 shadow-xs">
               <p className="text-slate-500">Khách còn nợ</p>
-              <p className="text-lg font-black text-rose-600 mt-1">{money(job.debt)}</p>
+              <p className="text-base font-black text-rose-600 mt-1">{money(debt)}</p>
             </div>
-            <div className="rounded-xl border p-3 bg-white shadow-xs">
-              <p className="text-slate-500">Số ngày quay/chụp</p>
-              <p className="text-lg font-black text-slate-800 mt-1">{days.length}</p>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-3.5">
-            <p className="font-bold text-blue-900 mb-1.5">Nhu cầu nhân sự</p>
-            <div className="flex gap-2">
-              <span className="rounded-full bg-white border border-blue-200 px-3 py-0.5 text-xs font-semibold text-blue-700 shadow-xs">
-                Cần chụp: {job.required_photo_count || 0}
-              </span>
-              <span className="rounded-full bg-white border border-blue-200 px-3 py-0.5 text-xs font-semibold text-blue-700 shadow-xs">
-                Cần quay: {job.required_video_count || 0}
-              </span>
+            <div className="rounded-xl border p-3 bg-white shadow-xs flex flex-col justify-between">
+              <p className="text-slate-500">Thanh toán đợt tiếp</p>
+              <button
+                onClick={() => setShowPayModal(true)}
+                className="mt-1 bg-emerald-600 hover:bg-emerald-700 text-white py-1.5 px-3 rounded-lg font-bold text-xs shadow-xs"
+              >
+                + Thu tiền / Đợt 2, 3
+              </button>
             </div>
           </div>
 
@@ -1822,11 +1604,6 @@ function JobDetail({ job, onClose, onEdit, onDelete }: any) {
                       📋 Sao chép ngày này
                     </button>
                   </div>
-
-                  <p className="text-xs text-slate-500">
-                    <span className="font-semibold text-slate-700">Địa điểm: </span>
-                    Nhà trai: {groomAddr || "Chưa cập nhật"} | Nhà gái: {brideAddr || "Chưa cập nhật"}
-                  </p>
 
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs min-w-[750px] border rounded-xl overflow-hidden">
@@ -1858,13 +1635,13 @@ function JobDetail({ job, onClose, onEdit, onDelete }: any) {
                               <td className="p-2.5 font-bold text-slate-900">{a.employees?.full_name || "Chưa xếp thợ"}</td>
                               <td className="p-2.5 font-bold text-slate-800">{money(a.salary_amount)}</td>
                               <td className="p-2.5 text-center">
-                                {a.contact_visible ? (
+                                {a.contact_visible !== false ? (
                                   <span className="rounded bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 border border-emerald-200">
-                                    Đang mở
+                                    Đang mở SĐT
                                   </span>
                                 ) : (
-                                  <span className="rounded bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-700 border">
-                                    Mở sớm
+                                  <span className="rounded bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-500 border">
+                                    Đã đóng
                                   </span>
                                 )}
                               </td>
@@ -1881,7 +1658,46 @@ function JobDetail({ job, onClose, onEdit, onDelete }: any) {
           </div>
         </div>
 
-        <div className="sticky bottom-0 z-20 flex justify-end gap-2 border-t bg-white px-6 py-4 rounded-b-2xl">
+        {showPayModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4 shadow-xl">
+              <h3 className="font-bold text-base text-slate-800">Thu tiền khách thanh toán (Đợt 2, đợt 3...)</h3>
+              <div>
+                <label className="text-xs text-slate-600 block mb-1">Số tiền thanh toán thêm</label>
+                <MoneyInput
+                  className="w-full border p-2.5 rounded-xl font-bold text-emerald-600 text-sm"
+                  value={payAmount}
+                  onChange={(v: number) => setPayAmount(v)}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-600 block mb-1">Nội dung / Ghi chú</label>
+                <input
+                  className="w-full border p-2.5 rounded-xl text-xs"
+                  value={payNote}
+                  onChange={(e) => setPayNote(e.target.value)}
+                  placeholder="Thanh toán đợt 2..."
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  onClick={() => setShowPayModal(false)}
+                  className="px-4 py-2 border rounded-xl text-xs font-semibold"
+                >
+                  Hủy
+                </button>
+                <button
+                  onClick={handlePayMore}
+                  className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700"
+                >
+                  Xác nhận thu tiền
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="sticky bottom-0 z-25 flex justify-end gap-2 border-t bg-white px-6 py-4 rounded-b-2xl">
           <button
             onClick={copyFullJob}
             className="rounded-xl bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 shadow-sm"
