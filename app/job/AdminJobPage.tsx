@@ -170,7 +170,7 @@ export default function AdminJobPage() {
     const [{ data: jobData, error: jobError }, { data: customerData }, { data: empData }, { data: reserveData }] = await Promise.all([
       supabase
         .from("jobs")
-        .select("*, customers(*), job_days(*, job_locations(*), job_assignments(*, employees(*)))")
+        .select("*, customers(*), job_days(*, job_locations(*, job_assignments(*, employees(*))))")
         .is("deleted_at", null)
         .order("created_at", { ascending: false }),
       supabase.from("customers").select("*").order("created_at", { ascending: false }),
@@ -531,6 +531,10 @@ export default function AdminJobPage() {
         location: jobForm.location,
         required_photo_count: parsedPhotoCount,
         required_video_count: parsedVideoCount,
+        video_editor_id: jobForm.video_editor_id || null,
+        video_editor_salary: Number(jobForm.video_editor_salary || 0),
+        photo_editor_id: jobForm.photo_editor_id || null,
+        photo_editor_salary: Number(jobForm.photo_editor_salary || 0),
         note: finalNote.trim(),
       };
 
@@ -949,6 +953,14 @@ function JobForm(props: any) {
     );
   };
 
+  const assignedWorkersInThisJob = Array.from(
+    new Map(
+      days.flatMap((d: any) => d.locations || []).flatMap((l: any) => l.assignments || [])
+        .filter((a: any) => a.employee_id)
+        .map((a: any) => [a.employee_id, employees.find((e: any) => e.id === a.employee_id)])
+    ).values()
+  ).filter(Boolean);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-4 backdrop-blur-sm overflow-y-auto">
       <div className="relative w-full max-w-7xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[94vh]">
@@ -957,7 +969,7 @@ function JobForm(props: any) {
             <h2 className="text-lg sm:text-xl font-bold text-slate-800">
               {editingJob ? "Sửa Job & Phân công" : "Tạo mới Job & Phân công"}
             </h2>
-            <p className="text-xs text-slate-400 font-normal">Thiết lập chi tiết dâu rể, phát sinh và phân chia thợ từng địa điểm</p>
+            <p className="text-xs text-slate-400 font-normal">Thiết lập chi tiết dâu rể, phát sinh, hậu kỳ và phân chia thợ</p>
           </div>
           <button
             onClick={onClose}
@@ -1368,6 +1380,106 @@ function JobForm(props: any) {
                 </div>
               </div>
             ))}
+          </div>
+
+          {/* MỤC 4: PHÂN CÔNG HẬU KỲ */}
+          <div className="border rounded-2xl p-4 bg-purple-50/40 border-purple-200 space-y-3">
+            <div className="border-b border-purple-200 pb-2">
+              <h3 className="font-bold text-sm text-purple-900 uppercase">4. Phân công hậu kỳ (Tùy chọn)</h3>
+              <p className="text-[11px] text-purple-600 font-normal">Chỉ định thợ edit video và thợ chỉnh sửa ảnh (Photoshop)</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-white p-3.5 rounded-xl border border-purple-100 shadow-xs space-y-2">
+                <span className="font-bold text-slate-800 text-xs block">🎬 Thợ Edit Video:</span>
+                <select
+                  className="w-full border p-2 rounded-lg text-xs bg-white font-medium text-slate-800"
+                  value={jobForm.video_editor_id || ""}
+                  onChange={(e) => {
+                    const empId = e.target.value;
+                    const selectedEmp = employees.find((emp: any) => emp.id === empId);
+                    setJobForm({
+                      ...jobForm,
+                      video_editor_id: empId,
+                      video_editor_salary: Number(selectedEmp?.base_fee || 0) > 0 ? Number(selectedEmp.base_fee) : (jobForm.video_editor_salary || 500000)
+                    });
+                  }}
+                >
+                  <option value="">-- Để trống nếu không phân công --</option>
+                  {assignedWorkersInThisJob.length > 0 && (
+                    <optgroup label="⭐ Thợ đi làm trong Job này (Ưu tiên)">
+                      {assignedWorkersInThisJob.map((emp: any) => (
+                        <option key={emp.id} value={emp.id}>
+                          ⭐ {emp.full_name} ({emp.role || "Thợ"})
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  <optgroup label="Tất cả nhân sự">
+                    {employees.map((emp: any) => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.full_name} ({emp.role || "Nhân sự"})
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-500 text-xs whitespace-nowrap">Tiền công Edit:</span>
+                  <MoneyInput
+                    className="border p-1.5 rounded-lg w-full bg-white font-bold text-purple-700"
+                    value={jobForm.video_editor_salary}
+                    onChange={(v: number) => setJobForm({ ...jobForm, video_editor_salary: v })}
+                    placeholder="Tiền công video"
+                  />
+                </div>
+              </div>
+
+              <div className="bg-white p-3.5 rounded-xl border border-purple-100 shadow-xs space-y-2">
+                <span className="font-bold text-slate-800 text-xs block">🎨 Thợ chỉnh sửa ảnh (Photoshop):</span>
+                <select
+                  className="w-full border p-2 rounded-lg text-xs bg-white font-medium text-slate-800"
+                  value={jobForm.photo_editor_id || ""}
+                  onChange={(e) => {
+                    const empId = e.target.value;
+                    const selectedEmp = employees.find((emp: any) => emp.id === empId);
+                    setJobForm({
+                      ...jobForm,
+                      photo_editor_id: empId,
+                      photo_editor_salary: Number(selectedEmp?.base_fee || 0) > 0 ? Number(selectedEmp.base_fee) : (jobForm.photo_editor_salary || 300000)
+                    });
+                  }}
+                >
+                  <option value="">-- Để trống nếu không phân công --</option>
+                  {assignedWorkersInThisJob.length > 0 && (
+                    <optgroup label="⭐ Thợ đi làm trong Job này (Ưu tiên)">
+                      {assignedWorkersInThisJob.map((emp: any) => (
+                        <option key={emp.id} value={emp.id}>
+                          ⭐ {emp.full_name} ({emp.role || "Thợ"})
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  <optgroup label="Tất cả nhân sự">
+                    {employees.map((emp: any) => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.full_name} ({emp.role || "Nhân sự"})
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-500 text-xs whitespace-nowrap">Tiền công PTS:</span>
+                  <MoneyInput
+                    className="border p-1.5 rounded-lg w-full bg-white font-bold text-blue-700"
+                    value={jobForm.photo_editor_salary}
+                    onChange={(v: number) => setJobForm({ ...jobForm, photo_editor_salary: v })}
+                    placeholder="Tiền công PTS"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
