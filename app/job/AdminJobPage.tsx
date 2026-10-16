@@ -696,7 +696,7 @@ export default function AdminJobPage() {
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-800">Job / Booking</h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Quan ly lich quay/chup, thanh toan linh hoạt, phát sinh và phân công ekip
+            Quan ly lich quay/chup, thanh toan linh hoat, phat sinh va phan cong ekip
           </p>
         </div>
         <div className="flex gap-2">
@@ -704,7 +704,7 @@ export default function AdminJobPage() {
             onClick={openCreate}
             className="rounded-xl bg-blue-600 px-4 py-2.5 text-xs sm:text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
           >
-            + Tạo job mới
+            + Tao job moi
           </button>
         </div>
       </div>
@@ -715,14 +715,14 @@ export default function AdminJobPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full rounded-xl border p-2.5 text-xs sm:text-sm placeholder:text-slate-300 placeholder:font-normal placeholder:italic"
-            placeholder="Tìm tên khách, sự kiện, thợ..."
+            placeholder="Tim ten khach, su kien, tho..."
           />
           <select
             value={filterEmployee}
             onChange={(e) => setFilterEmployee(e.target.value)}
             className="w-full rounded-xl border p-2.5 text-xs sm:text-sm"
           >
-            <option value="">Tất cả thợ</option>
+            <option value="">Tat ca tho</option>
             {employees.map((e: any) => (
               <option key={e.id} value={e.id}>{e.full_name}</option>
             ))}
@@ -730,12 +730,12 @@ export default function AdminJobPage() {
           <div className="flex flex-wrap gap-1.5 lg:col-span-4">
             {(
               [
-                ["all", "📋 Tất cả"],
-                ["completed", "✅ Các job đã xong"],
-                ["upcoming", "🚀 Các job sắp tới"],
-                ["incomplete", "⏳ Chưa xong"],
-                ["paid", "💰 Đã thanh toán"],
-                ["unpaid", "⚠️ Chưa thanh toán"],
+                ["all", "📋 Tat ca"],
+                ["completed", "✅ Da xong"],
+                ["upcoming", "🚀 Sap toi"],
+                ["incomplete", "⏳ Chua xong"],
+                ["paid", "💰 Da thanh toan"],
+                ["unpaid", "⚠️ Chua thanh toan"],
               ] as const
             ).map(([k, l]) => (
               <button
@@ -757,16 +757,16 @@ export default function AdminJobPage() {
           <table className="w-full min-w-[1000px] text-left text-xs">
             <thead className="border-b bg-slate-50 text-[11px] font-semibold uppercase text-slate-600">
               <tr>
-                <th className="p-3.5">Mã job</th>
-                <th className="p-3.5">Sự kiện</th>
-                <th className="p-3.5">Khách hàng</th>
-                <th className="p-3.5">Dịch vụ</th>
-                <th className="p-3.5">Ngày chụp</th>
+                <th className="p-3.5">Ma job</th>
+                <th className="p-3.5">Su kien</th>
+                <th className="p-3.5">Khach hang</th>
+                <th className="p-3.5">Dich vu</th>
+                <th className="p-3.5">Ngay chup</th>
                 <th className="p-3.5 text-right">Doanh thu</th>
-                <th className="p-3.5 text-right">Còn nợ</th>
+                <th className="p-3.5 text-right">Con no</th>
                 <th className="p-3.5">Ekip</th>
-                <th className="p-3.5 text-center">Trạng thái</th>
-                <th className="p-3.5 text-center">Thao tác</th>
+                <th className="p-3.5 text-center">Trang thai</th>
+                <th className="p-3.5 text-center">Thao tac</th>
               </tr>
             </thead>
             <tbody className="divide-y text-slate-700">
@@ -827,13 +827,13 @@ export default function AdminJobPage() {
                         onClick={() => openEdit(job)}
                         className="rounded-lg bg-amber-500 px-3 py-1 text-xs font-semibold text-white"
                       >
-                        Sửa
+                        Sua
                       </button>
                       <button
                         onClick={() => deleteJob(job.id)}
                         className="rounded-lg bg-rose-600 px-3 py-1 text-xs font-semibold text-white"
                       >
-                        Xóa
+                        Xoa
                       </button>
                     </td>
                   </tr>
