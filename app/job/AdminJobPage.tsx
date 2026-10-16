@@ -1560,7 +1560,7 @@ function JobDetail({ job, onClose, onEdit, onDelete, onReload }: any) {
     onReload();
   };
 
-  // SAO CHÉP NGÀY CHỤP (RIÊNG TỪNG NGÀY - PHÂN CÔNG ĐỊA ĐIỂM RÕ RÀNG)
+  // SAO CHÉP NGÀY CHỤP (ĐẦY ĐỦ THÔNG TIN CHUNG + ĐỊA ĐIỂM + PHÂN CÔNG THỢ RÕ RÀNG)
   const copySingleDay = (day: any, dayIndex: number) => {
     const groomPhone = job.customers?.phone || job.customer_phone || "Chưa có";
     const bridePhone = job.customers?.secondary_phone || job.secondary_phone || "Chưa có";
