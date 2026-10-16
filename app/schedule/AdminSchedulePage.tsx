@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import MainLayout from "../components/layout/MainLayout";
 import MoneyInput from "../components/MoneyInput";
@@ -13,6 +13,9 @@ import { makeOfflineJobBundle, queueOfflineJob } from "@/lib/offline-job";
 import { getOfflineCache, setOfflineCache } from "@/lib/offline-db";
 import { formatDateVN } from "@/lib/date-vn";
 
+import { getSession } from "@/lib/auth";
+
+const scheduleMemory = new Map<string, { days: any[]; reserves: any[] }>();
 const money = (v: any) => Number(v || 0).toLocaleString("vi-VN") + " đ";
 const pad = (n: number) => String(n).padStart(2, "0");
 const dateText = (y: number, m: number, d: number) => `${y}-${pad(m + 1)}-${pad(d)}`;
@@ -84,55 +87,117 @@ export default function AdminSchedulePage() {
   const year = cursor.getFullYear(),
     month = cursor.getMonth();
 
-  async function load() {
-    setLoading(true);
-    const [{ data, error }, { data: reserveData, error: reserveError }, { data: customerData }, { data: employeeData }] =
-      await Promise.all([
-        supabase
-          .from("job_days")
-          .select("*, jobs(*, customers(*), job_days(*, job_locations(*), job_assignments(*, employees(*)))), job_assignments(*, employees(*))")
-          .order("shooting_date", { ascending: true }),
-        supabase.from("reserve_workers").select("*, employees(*)").eq("status", "reserved").order("reserve_date", { ascending: true }),
-        supabase.from("customers").select("*").order("full_name"),
-        supabase.from("employees").select("*").eq("active", true).is("deleted_at", null).order("full_name"),
-      ]);
-    setLoading(false);
+  const reserveMemory = useRef(new Map<string, any[]>());
+  const requestVersion = useRef(0);
+  const detailVersion = useRef(0);
+  const [reserveRefresh, setReserveRefresh] = useState(0);
+  const [loadError, setLoadError] = useState("");
+  const [detailLoading, setDetailLoading] = useState(false);
+  const cacheKey = `admin-schedule-v2:${getSession()?.id || "anonymous"}:${year}-${pad(month + 1)}`;
+  const monthStart = dateText(year, month, 1);
+  const monthEnd = dateText(year, month, new Date(year, month + 1, 0).getDate());
 
-    if (error || reserveError) {
-      try {
-        const cached = await getOfflineCache<any>("admin-schedule-data");
-        if (cached?.data) {
-          setDays(cached.data.days || []);
-          setReserves(cached.data.reserves || []);
-          setCustomers(cached.data.customers || []);
-          setEmployees(cached.data.employees || []);
-          return;
-        }
-      } catch {}
-      if (navigator.onLine) alert((error || reserveError)?.message);
-      return;
-    }
-
-    const activeDays = (data || []).filter((d: any) => d.jobs && !d.jobs.deleted_at);
-    const activeReserves = (reserveData || []).filter((r: any) => r.employees && !r.employees.deleted_at);
-    setDays(activeDays);
-    setReserves(activeReserves);
-    setCustomers(customerData || []);
-    setEmployees(employeeData || []);
-    setOfflineCache("admin-schedule-data", {
-      days: activeDays,
-      reserves: activeReserves,
-      customers: customerData || [],
-      employees: employeeData || [],
+  const load = useCallback(async () => {
+    const version = ++requestVersion.current;
+    const isCurrent = () => requestVersion.current === version;
+    let hasCache = false;
+    const apply = (value: { days: any[]; reserves: any[] }) => {
+      if (!isCurrent()) return;
+      setDays(value.days);
+      setReserves(value.reserves);
+      setLoading(false);
+      hasCache = true;
+    };
+    setLoadError("");
+    const memory = scheduleMemory.get(cacheKey);
+    if (memory) apply(memory);
+    else { setDays([]); setReserves([]); setLoading(true); }
+    // Read cached month immediately while fresh data is fetched independently.
+    let networkFinished = false;
+    let networkFailed = false;
+    const cacheRead = getOfflineCache<any>(cacheKey).then(cached => {
+      if ((!networkFinished || networkFailed) && !hasCache && cached?.data) apply(cached.data);
     }).catch(() => {});
-  }
+    try {
+      const { data, error } = await supabase.from("job_days")
+        .select("id,job_id,shooting_date,start_time,end_time,location,note,jobs!inner(id,event_name,customer_name,service,total_price,deposit,debt,status,location,deleted_at),job_assignments(id,role,client_requested,employees(id,full_name))")
+        .gte("shooting_date", monthStart).lte("shooting_date", monthEnd)
+        .is("jobs.deleted_at", null).order("shooting_date", { ascending: true });
+      if (error) throw error;
+      networkFinished = true;
+      if (!isCurrent()) return;
+      const value = { days: (data || []).filter((d: any) => d.jobs && !d.jobs.deleted_at), reserves: reserveMemory.current.get(cacheKey) || scheduleMemory.get(cacheKey)?.reserves || [] };
+      scheduleMemory.set(cacheKey, value);
+      apply(value);
+      void setOfflineCache(cacheKey, value).catch(() => {});
+    } catch (error: any) {
+      networkFailed = true;
+      networkFinished = true;
+      await cacheRead;
+      if (isCurrent()) {
+        setLoading(false);
+        setLoadError(hasCache ? "Đang hiển thị lịch đã lưu. Chưa cập nhật được dữ liệu mới." : (error.message || "Không tải được lịch"));
+      }
+    }
+  }, [cacheKey, monthStart, monthEnd]);
 
   useEffect(() => {
-    load();
-    const synced = () => load();
+    void load();
+    const synced = () => { void load(); setReserveRefresh(n => n + 1); };
     window.addEventListener("been:offline-sync-complete", synced);
-    return () => window.removeEventListener("been:offline-sync-complete", synced);
-  }, []);
+    return () => {
+      requestVersion.current++;
+      window.removeEventListener("been:offline-sync-complete", synced);
+    };
+  }, [load]);
+
+  // Reserves never block the calendar, and only cover the visible month.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const { data, error } = await supabase.from("reserve_workers")
+        .select("*,employees(id,full_name,deleted_at)").eq("status", "reserved")
+        .gte("reserve_date", monthStart).lte("reserve_date", monthEnd).order("reserve_date");
+      if (cancelled) return;
+      if (error) { setLoadError(prev => prev || "Chưa cập nhật được thợ dự phòng."); return; }
+      const rows = (data || []).filter((r: any) => r.employees && !r.employees.deleted_at);
+      reserveMemory.current.set(cacheKey, rows);
+      setReserves(rows);
+      const cached = scheduleMemory.get(cacheKey);
+      if (cached) {
+        const value = { ...cached, reserves: rows };
+        scheduleMemory.set(cacheKey, value);
+        void setOfflineCache(cacheKey, value).catch(() => {});
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [cacheKey, monthStart, monthEnd, reserveRefresh]);
+
+  useEffect(() => {
+    if (!openQuick) return;
+    let cancelled = false;
+    void Promise.all([
+      supabase.from("customers").select("id,full_name,phone,secondary_phone").order("full_name"),
+      supabase.from("employees").select("id,full_name").eq("active", true).is("deleted_at", null).order("full_name"),
+    ]).then(([c, e]) => {
+      if (cancelled) return;
+      if (c.error || e.error) { alert("Chưa tải được danh sách khách / nhân sự. Vui lòng mở lại form khi có mạng."); return; }
+      setCustomers(c.data || []); setEmployees(e.data || []);
+    });
+    return () => { cancelled = true; };
+  }, [openQuick]);
+
+  async function openJob(jobId: string) {
+    const version = ++detailVersion.current;
+    setDetailLoading(true);
+    const { data, error } = await supabase.from("jobs")
+      .select("*,customers(*),job_days(*,job_locations(*),job_assignments(*,employees(id,full_name)))")
+      .eq("id", jobId).is("deleted_at", null).single();
+    if (version !== detailVersion.current) return;
+    setDetailLoading(false);
+    if (error) { alert("Không tải được chi tiết Job: " + error.message); return; }
+    setViewingJob(data);
+  }
 
   useEffect(() => {
     try {
@@ -407,7 +472,7 @@ export default function AdminSchedulePage() {
       alert("Lỗi khi cập nhật SĐT: " + error.message);
       return;
     }
-    await load();
+    setViewingJob((job: any) => job ? { ...job, job_days: (job.job_days || []).map((day: any) => ({ ...day, job_assignments: (day.job_assignments || []).map((a: any) => a.id === assignmentId ? { ...a, contact_visible: nextVal } : a) })) } : job);
   };
 
   const copySingleDay = (day: any, dayIdx: number) => {
@@ -474,6 +539,8 @@ export default function AdminSchedulePage() {
           </button>
         </div>
 
+        {loadError && <div role="status" className="mb-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">{loadError} <button onClick={() => void load()} className="underline">Thử lại</button></div>}
+        {detailLoading && <p role="status" className="mb-3 text-sm">Đang tải chi tiết Job...</p>}
         <div className="bm-card rounded-3xl p-4 shadow-xl sm:p-6">
           <div className="mb-5 flex items-center justify-between">
             <button onClick={() => setCursor(new Date(year, month - 1, 1))} className="rounded-full p-2 text-slate-700 hover:bg-slate-100">
@@ -557,7 +624,7 @@ export default function AdminSchedulePage() {
               return (
                 <div
                   key={r.id}
-                  onClick={() => setViewingJob(j)}
+                  onClick={() => void openJob(j.id)}
                   className={`bm-card rounded-3xl p-4 sm:p-5 cursor-pointer transition hover:border-blue-400 hover:shadow-md ${
                     requested.length ? "ring-2 ring-red-400" : ""
                   }`}
@@ -616,7 +683,7 @@ export default function AdminSchedulePage() {
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        setViewingJob(j);
+                        void openJob(j.id);
                       }}
                       className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100 transition shadow-xs"
                     >
