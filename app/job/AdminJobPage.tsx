@@ -28,7 +28,6 @@ const emptyJob = {
   service: "Combo VIP",
   total_price: 0,
   deposit: 0,
-  extra_fee: 0,
   status: "Đã đặt cọc",
   location: "",
   note: "",
@@ -291,9 +290,8 @@ export default function AdminJobPage() {
       event_name: job.event_name || "",
       booking_date: job.booking_date || new Date().toISOString().slice(0, 10),
       service: job.service || "Combo VIP",
-      total_price: Number(job.total_price || 0),
+      total_price: Number(job.total_price || 0) - Number(job.extra_fee || 0), // Tách riêng giá gốc
       deposit: Number(job.deposit || 0),
-      extra_fee: Number(job.extra_fee || 0),
       status: job.status || "Đã đặt cọc",
       location: job.location || "",
       note: job.note || "",
@@ -465,7 +463,7 @@ export default function AdminJobPage() {
     setSaving(true);
     try {
       let customerId = customerForm.customer_id;
-      const total = Number(jobForm.total_price || 0) + Number(jobForm.extra_fee || 0);
+      const total = Number(jobForm.total_price || 0) + Number(editingJob?.extra_fee || 0);
       const deposit = Number(jobForm.deposit || 0);
       const debt = total - deposit;
 
@@ -503,9 +501,6 @@ export default function AdminJobPage() {
         : Number(jobForm.required_video_count);
 
       let finalNote = jobForm.note || "";
-      if (jobForm.extra_fee > 0) {
-        finalNote += `\n[PHÁT SINH] Phụ thu: ${money(jobForm.extra_fee)}`;
-      }
       if (jobForm.video_editor_id) {
         const vEmp = employees.find((e) => e.id === jobForm.video_editor_id);
         finalNote += `\n[HẬU KỲ] Edit Video: ${vEmp?.full_name || "Thợ"} (Công: ${money(jobForm.video_editor_salary)})`;
@@ -525,7 +520,6 @@ export default function AdminJobPage() {
         service: jobForm.service,
         total_price: total,
         deposit,
-        extra_fee: Number(jobForm.extra_fee || 0),
         debt,
         status: debt <= 0 ? "Hoàn thành" : jobForm.status,
         location: jobForm.location,
@@ -548,7 +542,7 @@ export default function AdminJobPage() {
       } else {
         const { data: createdJob, error: jobError } = await supabase
           .from("jobs")
-          .insert([{ job_code: "JOB" + Date.now(), ...jobPayload }])
+          .insert([{ job_code: "JOB" + Date.now(), ...jobPayload, extra_fee: 0 }])
           .select("id")
           .single();
         if (jobError) throw jobError;
@@ -961,6 +955,10 @@ function JobForm(props: any) {
     ).values()
   ).filter(Boolean);
 
+  const totalCalc = Number(jobForm.total_price || 0);
+  const depositCalc = Number(jobForm.deposit || 0);
+  const debtCalc = totalCalc - depositCalc;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-4 backdrop-blur-sm overflow-y-auto">
       <div className="relative w-full max-w-7xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[94vh]">
@@ -969,7 +967,7 @@ function JobForm(props: any) {
             <h2 className="text-lg sm:text-xl font-bold text-slate-800">
               {editingJob ? "Sửa Job & Phân công" : "Tạo mới Job & Phân công"}
             </h2>
-            <p className="text-xs text-slate-400 font-normal">Thiết lập chi tiết dâu rể, phát sinh, hậu kỳ và phân chia thợ</p>
+            <p className="text-xs text-slate-400 font-normal">Thiết lập chi tiết dâu rể, hợp đồng, hậu kỳ và phân chia thợ</p>
           </div>
           <button
             onClick={onClose}
@@ -1071,7 +1069,7 @@ function JobForm(props: any) {
             </div>
 
             <div className="border rounded-2xl p-4 space-y-3 bg-white">
-              <h3 className="font-bold text-sm text-blue-700 uppercase">2. Chi tiết Booking & Hợp đồng & Phát sinh</h3>
+              <h3 className="font-bold text-sm text-blue-700 uppercase">2. Chi tiết Booking & Hợp đồng</h3>
               <input
                 className="border p-2.5 rounded-xl w-full font-semibold text-slate-900 text-xs"
                 placeholder="Tên sự kiện / tên dâu rể (VD: TUẤN BEEN & THU THỦY)"
@@ -1115,7 +1113,7 @@ function JobForm(props: any) {
 
               <div className="grid grid-cols-3 gap-3 bg-slate-50 p-2.5 rounded-xl border">
                 <label className="font-medium text-slate-700">
-                  Tổng tiền gốc
+                  Tổng tiền
                   <MoneyInput
                     className="border p-2 rounded-xl w-full mt-1 font-bold text-slate-900"
                     value={jobForm.total_price}
@@ -1123,26 +1121,21 @@ function JobForm(props: any) {
                   />
                 </label>
                 <label className="font-medium text-slate-700">
-                  Phát sinh thêm (Tiền)
-                  <MoneyInput
-                    className="border p-2 rounded-xl w-full mt-1 font-bold text-amber-600"
-                    value={jobForm.extra_fee}
-                    onChange={(v: number) => setJobForm({ ...jobForm, extra_fee: v })}
-                  />
-                </label>
-                <label className="font-medium text-slate-700">
-                  Đã thu / Cọc (Lần 1)
+                  Đã cọc (Lần 1)
                   <MoneyInput
                     className="border p-2 rounded-xl w-full mt-1 font-bold text-emerald-600"
                     value={jobForm.deposit}
                     onChange={(v: number) => setJobForm({ ...jobForm, deposit: v })}
                   />
                 </label>
-              </div>
-
-              <div className="flex items-center justify-between bg-blue-50/50 p-3 rounded-xl border border-blue-100">
-                <span className="font-bold text-blue-900">Tổng thực tế (Gốc + Phát sinh):</span>
-                <span className="font-black text-sm text-blue-700">{money(Number(jobForm.total_price || 0) + Number(jobForm.extra_fee || 0))}</span>
+                <label className="font-medium text-slate-700">
+                  Còn lại
+                  <input
+                    readOnly
+                    className="border p-2 rounded-xl bg-slate-100 w-full mt-1 font-bold text-rose-600 text-xs"
+                    value={money(debtCalc)}
+                  />
+                </label>
               </div>
             </div>
           </div>
@@ -1516,6 +1509,10 @@ function JobDetail({ job, onClose, onEdit, onDelete, onReload }: any) {
   const [payAmount, setPayAmount] = useState(debt > 0 ? debt : 0);
   const [payNote, setPayNote] = useState("Thanh toán bổ sung");
 
+  const [showExtraModal, setShowExtraModal] = useState(false);
+  const [extraAmount, setExtraAmount] = useState(0);
+  const [extraNote, setExtraNote] = useState("");
+
   const handlePayMore = async () => {
     if (payAmount <= 0) return alert("Vui lòng nhập số tiền thanh toán");
     const newDeposit = deposit + Number(payAmount);
@@ -1535,6 +1532,31 @@ function JobDetail({ job, onClose, onEdit, onDelete, onReload }: any) {
 
     alert("Ghi nhận thanh toán thành công!");
     setShowPayModal(false);
+    onReload();
+  };
+
+  const handleAddExtraFee = async () => {
+    if (extraAmount <= 0) return alert("Vui lòng nhập số tiền phát sinh");
+    const currentExtra = Number(job.extra_fee || 0);
+    const newExtra = currentExtra + Number(extraAmount);
+    const newTotal = Number(job.total_price || 0) - currentExtra + newExtra; // cập nhật tổng mới
+    const newDebt = newTotal - deposit;
+
+    const updatedNote = (job.note || "") + `\n[PHÁT SINH] ${extraNote}: +${money(extraAmount)}`;
+
+    const { error } = await supabase.from("jobs").update({
+      total_price: newTotal,
+      extra_fee: newExtra,
+      debt: newDebt,
+      note: updatedNote.trim(),
+    }).eq("id", job.id);
+
+    if (error) return alert(error.message);
+
+    alert("Đã thêm khoản phát sinh thành công!");
+    setShowExtraModal(false);
+    setExtraAmount(0);
+    setExtraNote("");
     onReload();
   };
 
@@ -1634,25 +1656,30 @@ function JobDetail({ job, onClose, onEdit, onDelete, onReload }: any) {
               <p className="text-slate-500">Tổng tiền</p>
               <p className="text-base font-black text-slate-800 mt-1">{money(total)}</p>
             </div>
-            <div className="rounded-xl border p-3 bg-amber-50/50 shadow-xs">
-              <p className="text-slate-500">Phát sinh</p>
-              <p className="text-base font-black text-amber-600 mt-1">{money(job.extra_fee)}</p>
-            </div>
             <div className="rounded-xl border p-3 bg-emerald-50/50 shadow-xs">
-              <p className="text-slate-500">Đã thanh toán</p>
+              <p className="text-slate-500">Đã cọc</p>
               <p className="text-base font-black text-emerald-600 mt-1">{money(deposit)}</p>
             </div>
             <div className="rounded-xl border p-3 bg-rose-50/50 shadow-xs">
-              <p className="text-slate-500">Khách còn nợ</p>
+              <p className="text-slate-500">Còn lại</p>
               <p className="text-base font-black text-rose-600 mt-1">{money(debt)}</p>
             </div>
             <div className="rounded-xl border p-3 bg-white shadow-xs flex flex-col justify-between">
-              <p className="text-slate-500">Thanh toán đợt tiếp</p>
+              <p className="text-slate-500">Thanh toán thêm</p>
               <button
                 onClick={() => setShowPayModal(true)}
                 className="mt-1 bg-emerald-600 hover:bg-emerald-700 text-white py-1.5 px-3 rounded-lg font-bold text-xs shadow-xs"
               >
-                + Thu tiền / Đợt 2, 3
+                + Thu tiền (Đợt 2, 3)
+              </button>
+            </div>
+            <div className="rounded-xl border p-3 bg-white shadow-xs flex flex-col justify-between">
+              <p className="text-slate-500">Phát sinh thêm</p>
+              <button
+                onClick={() => setShowExtraModal(true)}
+                className="mt-1 bg-amber-600 hover:bg-amber-700 text-white py-1.5 px-3 rounded-lg font-bold text-xs shadow-xs"
+              >
+                + Thêm phát sinh
               </button>
             </div>
           </div>
@@ -1766,6 +1793,45 @@ function JobDetail({ job, onClose, onEdit, onDelete, onReload }: any) {
                   className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700"
                 >
                   Xác nhận thu tiền
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showExtraModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="bg-white rounded-2xl p-6 w-full max-w-md space-y-4 shadow-xl">
+              <h3 className="font-bold text-base text-slate-800">Thêm khoản phát sinh cho Job</h3>
+              <div>
+                <label className="text-xs text-slate-600 block mb-1">Số tiền phát sinh</label>
+                <MoneyInput
+                  className="w-full border p-2.5 rounded-xl font-bold text-amber-600 text-sm"
+                  value={extraAmount}
+                  onChange={(v: number) => setExtraAmount(v)}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-600 block mb-1">Nội dung phát sinh (VD: Phát sinh thêm giờ)</label>
+                <input
+                  className="w-full border p-2.5 rounded-xl text-xs"
+                  value={extraNote}
+                  onChange={(e) => setExtraNote(e.target.value)}
+                  placeholder="Phát sinh thêm giờ chụp..."
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  onClick={() => setShowExtraModal(false)}
+                  className="px-4 py-2 border rounded-xl text-xs font-semibold"
+                >
+                  Hủy
+                </button>
+                <button
+                  onClick={handleAddExtraFee}
+                  className="px-4 py-2 bg-amber-600 text-white rounded-xl text-xs font-bold hover:bg-amber-700"
+                >
+                  Lưu phát sinh
                 </button>
               </div>
             </div>
