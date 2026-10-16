@@ -19,7 +19,7 @@ export default function WorkerJobPage({ user }: { user: any }) {
     const { data, error } = await supabase
       .from("job_assignments")
       .select("id, role, salary_amount, note, client_requested, contact_visible, work_location_name, work_location_address, work_location_phone, job_days(shooting_date, start_time, end_time, note), jobs(id, job_code, event_name, customer_name, customer_phone, secondary_phone, service, total_price, deposit, note, customers(full_name, phone, secondary_phone, address, facebook))")
-      .eq("employee_id", user.id)
+      .eq("employee_id", user?.id)
       .order("created_at", { ascending: false });
 
     setLoading(false);
@@ -29,11 +29,11 @@ export default function WorkerJobPage({ user }: { user: any }) {
   }
 
   useEffect(() => {
-    load();
-  }, [user.id]);
+    if (user?.id) load();
+  }, [user?.id]);
 
   return (
-    <MainLayout user={user}>
+    <MainLayout>
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-slate-800">Lịch Job Cá Nhân</h1>
         <p className="text-xs sm:text-sm text-slate-500 mt-1">
