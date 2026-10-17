@@ -307,6 +307,30 @@ export default function AdminJobPage() {
     setOpenForm(true);
   };
 
+  useEffect(() => {
+    if (loading || typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    const jobId = url.searchParams.get("open");
+    if (!jobId) return;
+    const job = jobs.find((item) => String(item.id) === jobId);
+    if (!job) return;
+
+    if (url.searchParams.get("edit") === "1") {
+      setSelectedJob(null);
+      openEdit(job);
+    } else {
+      setSelectedJob(job);
+    }
+
+    // Consume the request once so saving/reloading data cannot reopen the form.
+    url.searchParams.delete("open");
+    url.searchParams.delete("edit");
+    url.searchParams.delete("focus");
+    window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+  // openEdit only uses state setters and buildDaysFromJob; rerun after data loads.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobs, loading]);
+
   const openCreate = () => {
     setEditingJob(null);
     setCustomerForm({ ...emptyCustomer });
