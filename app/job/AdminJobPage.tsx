@@ -1,5 +1,7 @@
 "use client";
 
+import { copyJobText, formatDayJobCopy, formatFullJobCopy } from "@/lib/job-copy";
+
 import { useEffect, useMemo, useState } from "react";
 import MainLayout from "../components/layout/MainLayout";
 import { supabase } from "@/lib/supabase";
@@ -1584,90 +1586,11 @@ function JobDetail({ job, onClose, onEdit, onDelete, onReload }: any) {
     onReload();
   };
 
-  const copySingleDay = (day: any, dayIndex: number) => {
-    const groomPhone = job.customers?.phone || job.customer_phone || "Chưa có";
-    const bridePhone = job.customers?.secondary_phone || job.secondary_phone || "Chưa có";
+  const copySingleDay = (day: any, dayIndex: number) =>
+    copyJobText(formatDayJobCopy(job, day, dayIndex), `Đã sao chép lịch Ngày ${dayIndex + 1}!`);
 
-    const locGroom = (day.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("trai")) || {};
-    const locBride = (day.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("gái")) || {};
-
-    const groomAddr = locGroom.address || job.customers?.address || "Chưa cập nhật";
-    const brideAddr = locBride.address || "Chưa cập nhật";
-
-    let text = `📸 [BEEN MEDIA] - THÔNG TIN JOB\n`;
-    text += `Sự kiện: ${job.event_name || job.customer_name || ""}\n`;
-    text += `Mã Job: ${job.job_code}\n`;
-    text += `Khách hàng: ${job.customers?.full_name || job.customer_name || ""}\n`;
-    text += `SĐT Nhà trai: ${groomPhone}\n`;
-    text += `SĐT Nhà gái: ${bridePhone}\n`;
-    text += `----------------------------------------\n`;
-    text += `📅 Ngày ${dayIndex + 1}${day.note ? ` – ${day.note}` : ""}: ${formatDateVN(day.shooting_date)} • ${day.start_time?.slice(0, 5)} - ${day.end_time?.slice(0, 5)}\n`;
-    text += `📍 Địa điểm:\n`;
-    text += `- Nhà trai: ${groomAddr} (SĐT: ${groomPhone})\n`;
-    text += `- Nhà gái: ${brideAddr} (SĐT: ${bridePhone})\n\n`;
-    text += `👥 Phân công thợ & Địa điểm:\n`;
-
-    const dayAssignments = day.job_assignments || [];
-    if (dayAssignments.length > 0) {
-      dayAssignments.forEach((a: any) => {
-        const placeName = a.work_location_name || "Nhà trai";
-        text += `- ${a.role || "Thợ"}: ${a.employees?.full_name || "Chưa chọn"} | Phụ trách: ${placeName} | Lương: ${money(a.salary_amount)}\n`;
-      });
-    } else {
-      text += `(Chưa phân công thợ cho ngày này)\n`;
-    }
-
-    navigator.clipboard.writeText(text);
-    alert(`Đã sao chép lịch chụp Ngày ${dayIndex + 1}!`);
-  };
-
-  const copyFullJob = async () => {
-    const groomPhone = job.customers?.phone || job.customer_phone || "Chưa có";
-    const bridePhone = job.customers?.secondary_phone || job.secondary_phone || "Chưa có";
-    const eventName = job.event_name || job.customer_name || "";
-    const customerName = job.customers?.full_name || job.customer_name || "";
-
-    const lines: string[] = [
-      `📸 [BEEN MEDIA] - THÔNG TIN JOB`,
-      `Sự kiện: ${eventName}`,
-      `Mã Job: ${job.job_code}`,
-      `Dịch vụ: ${job.service || ""}`,
-      `Khách hàng: ${customerName}`,
-      `SĐT Nhà trai: ${groomPhone}`,
-      `SĐT Nhà gái: ${bridePhone}`,
-      `Tổng tiền: ${money(total)} | Đã cọc: ${money(deposit)} | Còn nợ: ${money(debt)}`,
-      `----------------------------------------`,
-    ];
-
-    days.forEach((d: any, i: number) => {
-      const locGroom = (d.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("trai")) || {};
-      const locBride = (d.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("gái")) || {};
-
-      const groomAddr = locGroom.address || job.customers?.address || "Chưa cập nhật";
-      const brideAddr = locBride.address || "Chưa cập nhật";
-
-      lines.push(
-        `\n📅 Ngày ${i + 1}${d.note ? ` – ${d.note}` : ""}: ${formatDateVN(d.shooting_date)} • ${d.start_time?.slice(0, 5)} - ${d.end_time?.slice(0, 5)}`,
-        `📍 Địa điểm:`,
-        `- Nhà trai: ${groomAddr} (SĐT: ${groomPhone})`,
-        `- Nhà gái: ${brideAddr} (SĐT: ${bridePhone})`,
-        `👥 Phân công thợ & Địa điểm:`
-      );
-
-      const dAssignments = d.job_assignments || [];
-      if (dAssignments.length > 0) {
-        dAssignments.forEach((a: any) => {
-          const placeName = a.work_location_name || "Nhà trai";
-          lines.push(`- ${a.role || "Tho"}: ${a.employees?.full_name || "Chua chon"} | Phu trach: ${placeName} | Luong: ${money(a.salary_amount)}`);
-        });
-      } else {
-        lines.push(`(Chưa phân công thợ cho ngày này)`);
-      }
-    });
-
-    await navigator.clipboard.writeText(lines.join("\n"));
-    alert("Đã sao chép đầy đủ Job tổng kèm phân công chi tiết tất cả các ngày!");
-  };
+  const copyFullJob = () =>
+    copyJobText(formatFullJobCopy({ ...job, total_price: total, deposit, debt, job_days: days }), "Đã sao chép đầy đủ Job!");
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-4 backdrop-blur-sm overflow-y-auto">

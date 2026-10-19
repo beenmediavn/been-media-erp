@@ -1,5 +1,7 @@
 "use client";
 
+import { copyJobText, formatDayJobCopy, formatFullJobCopy } from "@/lib/job-copy";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import MainLayout from "../components/layout/MainLayout";
@@ -476,50 +478,12 @@ export default function AdminSchedulePage() {
   };
 
   const copySingleDay = (day: any, dayIdx: number) => {
-    const locGroom = (day.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("trai")) || {};
-    const locBride = (day.job_locations || []).find((l: any) => String(l.location_name || "").toLowerCase().includes("gái")) || {};
-
-    let text = `Ngày ${dayIdx + 1}${day.note ? ` – ${day.note}` : ""}: ${formatDateVN(day.shooting_date)} • ${day.start_time?.slice(0, 5)} - ${day.end_time?.slice(0, 5)}\n`;
-    text += `Địa điểm: Nhà trai: ${locGroom.address || "Chưa có"} | Nhà gái: ${locBride.address || "Chưa có"}\n`;
-
-    (day.job_assignments || []).forEach((a: any) => {
-      text += `- ${a.role || "Thợ"}: ${a.employees?.full_name || "Chưa chọn"} | Lương: ${money(a.salary_amount)}\n`;
-    });
-
-    navigator.clipboard.writeText(text);
-    alert(`Đã sao chép lịch Ngày ${dayIdx + 1}!`);
+    if (!viewingJob) return;
+    return copyJobText(formatDayJobCopy(viewingJob, day, dayIdx), `Đã sao chép lịch Ngày ${dayIdx + 1}!`);
   };
 
-  const handleCopyFullJob = (job: any) => {
-    const lines = [
-      `📸 [BEEN MEDIA] - THÔNG TIN JOB`,
-      `Sự kiện: ${job.event_name || job.customer_name || ""}`,
-      `Mã Job: ${job.job_code || ""}`,
-      `Dịch vụ: ${job.service || ""}`,
-      `Khách hàng: ${job.customers?.full_name || job.customer_name || ""}`,
-      `SĐT Nhà trai: ${job.customers?.phone || job.customer_phone || "Chưa có"}`,
-      `SĐT Nhà gái: ${job.customers?.secondary_phone || job.secondary_phone || "Chưa có"}`,
-      `Tổng tiền: ${money(job.total_price)} | Đã cọc: ${money(job.deposit)} | Còn nợ: ${money(job.debt)}`,
-      `----------------------------------------`,
-    ];
-
-    const sortedDays = [...(job.job_days || [])].sort((a: any, b: any) => 
-      String(a.shooting_date || "").localeCompare(String(b.shooting_date || ""))
-    );
-
-    sortedDays.forEach((d: any, idx: number) => {
-      lines.push(
-        `\n📅 Ngày ${idx + 1}${d.note ? ` (${d.note})` : ""}: ${formatDateVN(d.shooting_date)} • ${d.start_time?.slice(0, 5)} - ${d.end_time?.slice(0, 5)}`,
-        `📍 Địa điểm: ${d.location || "Chưa nhập"}`
-      );
-      (d.job_assignments || []).forEach((a: any) => {
-        lines.push(`- ${a.role}: ${a.employees?.full_name || "Chưa chọn"} | Lương: ${money(a.salary_amount)}`);
-      });
-    });
-
-    navigator.clipboard.writeText(lines.join("\n"));
-    alert("Đã sao chép toàn bộ thông tin Job!");
-  };
+  const handleCopyFullJob = (job: any) =>
+    copyJobText(formatFullJobCopy(job), "Đã sao chép toàn bộ thông tin Job!");
 
   const handleGoToEditJob = (jobId: string) => {
     window.location.href = `/job?open=${jobId}&edit=1`;
