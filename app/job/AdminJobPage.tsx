@@ -67,6 +67,19 @@ const makeDay = () => ({
   locations: [makeLocation("Nhà trai"), makeLocation("Nhà gái")],
 });
 
+// Requirements apply separately to every shooting day, across all locations.
+const getDayCrewStatus = (day: any, form: any) => {
+  const assignments = (day.locations || []).flatMap((loc: any) => loc.assignments || []);
+  return [
+    { role: "Thợ chụp", field: "required_photo_count", label: "Chụp" },
+    { role: "Thợ quay", field: "required_video_count", label: "Quay" },
+  ].map(({ role, field, label }) => {
+    const required = Number(form[field] || 0);
+    const assigned = new Set(assignments.filter((a: any) => a.employee_id && a.role === role).map((a: any) => a.employee_id)).size;
+    return { label, required, assigned, missing: Math.max(0, required - assigned) };
+  });
+};
+
 const timeToMinutes = (value: any) => {
   const m = String(value || "00:00").match(/^(\d{1,2}):(\d{2})/);
   return m ? Number(m[1]) * 60 + Number(m[2]) : 0;
@@ -485,6 +498,18 @@ export default function AdminJobPage() {
       alert("Vui lòng nhập đầy đủ ngày chụp");
       return;
     }
+
+    if ([jobForm.required_photo_count, jobForm.required_video_count].some((value) =>
+      !Number.isInteger(Number(value)) || Number(value) < 0
+    )) {
+      alert("Số thợ cần phải là số nguyên từ 0 trở lên");
+      return;
+    }
+    const missingCrew = days.flatMap((day: any, index: number) =>
+      getDayCrewStatus(day, jobForm).filter((crew) => crew.missing > 0)
+        .map((crew) => `Ngày ${index + 1} (${formatDateVN(day.shooting_date)}): thiếu ${crew.missing} thợ ${crew.label.toLowerCase()}`)
+    );
+    if (missingCrew.length && !window.confirm(`Job còn thiếu thợ:\n${missingCrew.join("\n")}\n\nAnh vẫn muốn lưu Job để phân công sau?`)) return;
 
     setSaving(true);
     try {
@@ -1178,6 +1203,23 @@ function JobForm(props: any) {
               </button>
             </div>
 
+            <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-3">
+              <p className="font-bold text-blue-800">Số thợ cần theo Job (áp dụng cho mỗi ngày/buổi)</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="font-medium">Số thợ chụp cần
+                  <input type="number" min="0" step="1" placeholder="0" className="mt-1 w-full rounded-xl border bg-white p-2"
+                    value={jobForm.required_photo_count}
+                    onChange={(e) => setJobForm({ ...jobForm, required_photo_count: e.target.value })} />
+                </label>
+                <label className="font-medium">Số thợ quay cần
+                  <input type="number" min="0" step="1" placeholder="0" className="mt-1 w-full rounded-xl border bg-white p-2"
+                    value={jobForm.required_video_count}
+                    onChange={(e) => setJobForm({ ...jobForm, required_video_count: e.target.value })} />
+                </label>
+              </div>
+              <p className="text-xs text-slate-600">Tính tổng thợ đã chọn tại tất cả địa điểm trong từng ngày. Để trống hoặc nhập 0 nếu không cần vai trò đó.</p>
+            </div>
+
             {days.map((day: any, dayIndex: number) => (
               <div key={dayIndex} className="border rounded-2xl p-4 bg-slate-50 space-y-4 shadow-xs">
                 <div className="flex items-center justify-between border-b pb-2">
@@ -1200,6 +1242,14 @@ function JobForm(props: any) {
                       </button>
                     )}
                   </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2" aria-live="polite">
+                  {getDayCrewStatus(day, jobForm).map((crew) => (
+                    <span key={crew.label} className={`rounded-lg border px-3 py-2 text-sm font-semibold ${crew.missing > 0 ? "border-red-300 bg-red-50 text-red-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
+                      {crew.label}: cần {crew.required} • Đã xếp {crew.assigned} • {crew.missing > 0 ? `Thiếu ${crew.missing} thợ` : crew.required > 0 ? "Đã đủ thợ" : "Không yêu cầu"}
+                    </span>
+                  ))}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
